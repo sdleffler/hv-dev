@@ -1,0 +1,101 @@
+[package]
+name = "hv-lua"
+version = "0.6.6" # remember to update html_root_url and mlua_derive
+authors = ["Shea 'Decibel' Leffler <shea@errno.com>", "Aleksandr Orlenko <zxteam@pm.me>", "kyren <catherine@chucklefish.org>"]
+edition = "2018"
+readme = "README.md"
+keywords = ["lua", "luajit", "async", "futures", "scripting"]
+categories = ["api-bindings", "asynchronous"]
+license = "MIT"
+links = "lua"
+build = "build/main.rs"
+description = """
+High level bindings to Lua 5.4/5.3/5.2/5.1 (including LuaJIT)
+with async/await features and support of writing native Lua modules in Rust.
+"""
+
+[package.metadata.docs.rs]
+features = ["lua53", "async", "send", "serialize", "macros"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+lua54 = []
+lua53 = []
+lua52 = []
+lua51 = []
+luajit = []
+vendored = ["lua-src", "luajit-src"]
+module = ["hv-lua-derive"]
+async = ["futures-core", "futures-task", "futures-util"]
+send = []
+serialize = ["serde", "erased-serde"]
+hv-reexport = ["hv-lua-derive/hv-reexport"]
+macros = ["hv-lua-derive/macros"]
+default = ["luajit", "macros", "hecs", "send", "serialize"]
+
+[dependencies]
+hv-lua-derive = { version = "=0.6.0", optional = true, path = "../hv-lua-derive" }
+bstr = { version = "0.2", features = ["std"], default_features = false }
+once_cell = { version = "1.0" }
+num-traits = { version = "0.2.14" }
+futures-core = { version = "0.3.5", optional = true }
+futures-task = { version = "0.3.5", optional = true }
+futures-util = { version = "0.3.5", optional = true }
+serde = { version = "1.0", optional = true }
+erased-serde = { version = "0.3", optional = true }
+hecs = { path = "../hecs", optional = true }
+hv-sync = { path = "../hv-sync" }
+hv-alchemy = { path = "../hv-alchemy" }
+hv-math = { path = "../hv-math" }
+
+[build-dependencies]
+cc = { version = "1.0" }
+pkg-config = { version = "0.3.17" }
+lua-src = { version = ">= 540.0.0, < 550.0.0", optional = true }
+luajit-src = { version = ">= 210.1.2, < 220.0.0", optional = true }
+
+[dev-dependencies]
+rustyline = "8.0"
+criterion = { version = "0.3.4", features = ["html_reports", "async_tokio"] }
+trybuild = "1.0"
+futures = "0.3.5"
+hyper = { version = "0.14", features = ["client", "server"] }
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1.0", features = ["full"] }
+futures-timer = "3.0"
+serde_json = "1.0"
+maplit = "1.0"
+hv = { path = "../hv" }
+
+[[bench]]
+name = "benchmark"
+harness = false
+required-features = ["async"]
+
+[[example]]
+name = "async_http_client"
+required-features = ["async", "macros"]
+
+[[example]]
+name = "async_http_reqwest"
+required-features = ["async", "serialize", "macros"]
+
+[[example]]
+name = "async_http_server"
+required-features = ["async", "macros"]
+
+[[example]]
+name = "async_tcp_server"
+required-features = ["async", "macros"]
+
+[[example]]
+name = "guided_tour"
+required-features = ["macros"]
+
+[[example]]
+name = "serialize"
+required-features = ["serialize"]
+
+[[example]]
+name = "userdata"
+required-features = ["macros"]

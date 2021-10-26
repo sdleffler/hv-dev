@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "hecs",
+    "hv-alchemy",
+    "hv-boxed",
+    "hv-filesystem",
+    "hv-lua-derive",
+    "hv-lua",
+    "hv-lua/examples/module",
+    "hv-lua/tests/module",
+    "hv-math",
+    "hv-sync",
+    "hv-vfs",
+    "hv",
+    "projects/scratch",
+]

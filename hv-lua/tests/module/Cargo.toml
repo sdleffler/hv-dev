@@ -1,0 +1,16 @@
+[package]
+name = "module_runner"
+version = "0.0.0"
+authors = ["Aleksandr Orlenko <zxteam@pm.me>"]
+edition = "2018"
+
+[features]
+lua54 = ["hv/lua54"]
+lua53 = ["hv/lua53"]
+lua52 = ["hv/lua52"]
+lua51 = ["hv/lua51"]
+luajit = ["hv/luajit"]
+vendored = ["hv/vendored"]
+
+[dependencies]
+hv = { path = "../../../hv" }

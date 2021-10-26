@@ -1,0 +1,22 @@
+[package]
+name = "hv"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+lua54 = ["lua/lua54"]
+lua53 = ["lua/lua53"]
+lua52 = ["lua/lua52"]
+lua51 = ["lua/lua51"]
+luajit = ["lua/luajit"]
+vendored = ["lua/vendored"]
+module = ["lua/module"]
+
+[dependencies]
+anyhow = "1.0.44"
+alchemy = { path = "../hv-alchemy", package = "hv-alchemy" }
+ecs = { path = "../hecs", package = "hecs" }
+lua = { path = "../hv-lua", package = "hv-lua", features = ["hv-reexport"] }
+sync = { path = "../hv-sync", package = "hv-sync" }
+petgraph = "0.6.0"
+thiserror = "1.0.30"

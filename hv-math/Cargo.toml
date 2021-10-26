@@ -1,0 +1,11 @@
+[package]
+name = "hv-math"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+na = { version = "0.29.0", package = "nalgebra", features = ["serde-serialize"] }
+serde = "1.0.130"
+hv-alchemy = { path = "../hv-alchemy" }

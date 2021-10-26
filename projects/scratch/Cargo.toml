@@ -1,0 +1,13 @@
+[package]
+name = "scratch"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+glfw = { version = "0.41" }
+hv = { path = "../../hv", features = ["vendored", "luajit"] }
+luminance-front = { version = "0.4.0", features = ["gl33", "webgl2"] }
+luminance-glfw = "0.16.0"
+luminance-windowing = "0.10.0"
+
+[features]

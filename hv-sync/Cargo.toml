@@ -1,0 +1,8 @@
+[package]
+name = "hv-sync"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+track-leases = []
+default = []
