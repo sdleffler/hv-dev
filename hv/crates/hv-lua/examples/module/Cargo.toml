@@ -17,4 +17,4 @@ vendored = ["hv/vendored"]
 
 [dependencies]
 # hv = { path = "../../../hv", features = ["module"] }
-hv = { path = "../../../hv" } 
+hv = { path = "../../../.." } 

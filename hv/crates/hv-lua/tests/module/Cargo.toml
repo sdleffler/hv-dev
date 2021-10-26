@@ -13,4 +13,4 @@ luajit = ["hv/luajit"]
 vendored = ["hv/vendored"]
 
 [dependencies]
-hv = { path = "../../../hv" }
+hv = { path = "../../../.." }

@@ -42,6 +42,18 @@
 //!   [`dyn AlchemicalAny`](AlchemicalAny) objects.
 //! - [`AlchemicalCopy`] is an object-safe [`Copy`] abstraction which can allow for copying
 //!   [`AlchemicalAny`] objects.
+//!
+//! # Caveats
+//!
+//! In order for an `AlchemyTable` to be useful with respect to some object-safe trait `U`
+//! implemented for some type `T`, that trait's impl for `T` has to be registered with the global
+//! static registry, which is initialized at program runtime. There are a number of ways to do this,
+//! but the most convenient is [`TypedAlchemyTable::add`] (and also the related `mark_copy` and
+//! `mark_clone`) traits. It's always a good idea to add the copy/clone markings and also `dyn Send`
+//! and `dyn Sync` if they can be applied! Note that it is impossible to add a trait which is
+//! unimplemented by `T`, so you don't have to worry about causing unsafety or anything with such.
+//! This library should (unless some soundness bug has escaped my notice) be completely safe as long
+//! as it is kept to its safe API.
 
 #![no_std]
 #![feature(ptr_metadata, unsize)]
