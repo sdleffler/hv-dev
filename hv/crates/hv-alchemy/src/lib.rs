@@ -2,18 +2,18 @@
 //! form'.* (Wikipedia)
 //!
 //! Functionality for dynamically examining and manipulating `dyn Trait` objects. This is done
-//! mainly through [`AlchemyTable`], which is a bit like a superpowered
+//! mainly through [`MetaTable`], which is a bit like a superpowered
 //! [`TypeId`](core::any::TypeId) that also allows you to ask whether the type it pertains to
 //! implements some object safe trait. If you can write it as a `dyn Trait`, then you can try to get
-//! a [`DynVtable`] corresponding to that trait's implementation for the type the [`AlchemyTable`]
+//! a [`DynVtable`] corresponding to that trait's implementation for the type the [`MetaTable`]
 //! corresponds to.
 //!
 //! A few basic relationships:
-//! - [`AlchemyTable`] => one per type, potentially many [`DynVtable`]s per [`AlchemyTable`]
-//!     - A single [`AlchemyTable`] provides all the information necessary to dynamically allocate,
+//! - [`MetaTable`] => one per type, potentially many [`DynVtable`]s per [`MetaTable`]
+//!     - A single [`MetaTable`] provides all the information necessary to dynamically allocate,
 //!       deallocate, drop, and manipulate the type it corresponds to.
-//! - [`TypedAlchemyTable`] => just a wrapper around [`AlchemyTable`] that adds the type, for use in
-//!   dynamically dispatching over [`TypedAlchemyTable<T>`]. Useful for when you want to represent
+//! - [`TypedMetaTable`] => just a wrapper around [`MetaTable`] that adds the type, for use in
+//!   dynamically dispatching over [`TypedMetaTable<T>`]. Useful for when you want to represent
 //!   the type of an object in a way that can be `Box<dyn Any>` or `Box<dyn AlchemicalAny>`'d.
 //! - [`DynVtable`] => at most one per pair of types (object-safe trait `dyn` type, implementor
 //!   type.) Contains the necessary metadata to reconstruct a `*const` or `*mut dyn Trait` for the
@@ -37,7 +37,7 @@
 //!
 //! There are also a handful of other convenient traits included:
 //! - [`AlchemicalAny`] is a powered-up version of [`Any`] which allows for easily fetching the
-//!   corresponding [`AlchemyTable`] for a type.
+//!   corresponding [`MetaTable`] for a type.
 //! - [`AlchemicalClone`] is an object-safe [`Clone`] abstraction which can allow for cloning boxed
 //!   [`dyn AlchemicalAny`](AlchemicalAny) objects.
 //! - [`AlchemicalCopy`] is an object-safe [`Copy`] abstraction which can allow for copying
@@ -45,10 +45,10 @@
 //!
 //! # Caveats
 //!
-//! In order for an `AlchemyTable` to be useful with respect to some object-safe trait `U`
+//! In order for an `MetaTable` to be useful with respect to some object-safe trait `U`
 //! implemented for some type `T`, that trait's impl for `T` has to be registered with the global
 //! static registry, which is initialized at program runtime. There are a number of ways to do this,
-//! but the most convenient is [`TypedAlchemyTable::add`] (and also the related `mark_copy` and
+//! but the most convenient is [`TypedMetaTable::add`] (and also the related `mark_copy` and
 //! `mark_clone`) traits. It's always a good idea to add the copy/clone markings and also `dyn Send`
 //! and `dyn Sync` if they can be applied! Note that it is impossible to add a trait which is
 //! unimplemented by `T`, so you don't have to worry about causing unsafety or anything with such.
@@ -76,27 +76,27 @@ use hv_sync::{atom::AtomSetOnce, cell::AtomicRefCell, monotonic_list::MonotonicL
 use lazy_static::lazy_static;
 use spin::RwLock;
 
-/// Convenience function for getting the [`TypedAlchemyTable`] for some `T`.
-pub fn of<T: 'static>() -> TypedAlchemyTable<T> {
-    TypedAlchemyTable::of()
+/// Convenience function for getting the [`TypedMetaTable`] for some `T`.
+pub fn of<T: 'static>() -> TypedMetaTable<T> {
+    TypedMetaTable::of()
 }
 
-fn typed<T: 'static>() -> TypedAlchemyTable<T> {
-    TypedAlchemyTable::new()
+fn typed<T: 'static>() -> TypedMetaTable<T> {
+    TypedMetaTable::new()
 }
 
 macro_rules! add_types {
     ($m:ident, $closure:expr; $($t:ty),*) => {{
         $({
-            let t = <TypedAlchemyTable<$t>>::new();
+            let t = <TypedMetaTable<$t>>::new();
             $closure(t);
             $m.insert(TypeId::of::<$t>(), t.as_untyped());
         })*
     }}
 }
 
-fn make_registry() -> HashMap<TypeId, &'static AlchemyTable> {
-    fn smart_pointers<T: 'static>(_: TypedAlchemyTable<T>) {
+fn make_registry() -> HashMap<TypeId, &'static MetaTable> {
+    fn smart_pointers<T: 'static>(_: TypedMetaTable<T>) {
         use alloc::{
             rc::{Rc, Weak as RcWeak},
             sync::{Arc, Weak as ArcWeak},
@@ -109,13 +109,13 @@ fn make_registry() -> HashMap<TypeId, &'static AlchemyTable> {
         typed::<&'static T>().mark_clone().mark_copy();
     }
 
-    fn wrappers<T: 'static>(_: TypedAlchemyTable<T>) {
+    fn wrappers<T: 'static>(_: TypedMetaTable<T>) {
         smart_pointers::<T>(typed());
         smart_pointers::<core::cell::RefCell<T>>(typed());
         smart_pointers::<AtomicRefCell<T>>(typed());
     }
 
-    fn primitive<T: 'static>(t: TypedAlchemyTable<T>)
+    fn primitive<T: 'static>(t: TypedMetaTable<T>)
     where
         T: Clone
             + Copy
@@ -158,7 +158,7 @@ fn make_registry() -> HashMap<TypeId, &'static AlchemyTable> {
 }
 
 lazy_static! {
-    static ref ALCHEMY_TABLE_REGISTRY: RwLock<HashMap<TypeId, &'static AlchemyTable>> =
+    static ref ALCHEMY_TABLE_REGISTRY: RwLock<HashMap<TypeId, &'static MetaTable>> =
         RwLock::new(make_registry());
     static ref VALID_ALCHEMY_TABLES: RwLock<HashSet<usize>> = RwLock::new(HashSet::new());
 }
@@ -221,7 +221,7 @@ static_assertions::assert_impl_all!(dyn Any: Alchemy);
 static_assertions::assert_impl_all!((): AlchemicalClone);
 
 /// A table of information about a type, effectively acting as a superpowered [`TypeId`].
-pub struct AlchemyTable {
+pub struct MetaTable {
     /// The `TypeId` of this table's type.
     pub id: TypeId,
     /// The layout of this table's type, for allocating/deallocating/copying around.
@@ -243,7 +243,7 @@ pub struct AlchemyTable {
     pub(crate) sync: AtomSetOnce<&'static DynVtable>,
 }
 
-impl AlchemyTable {
+impl MetaTable {
     fn new<T: 'static>() -> &'static Self {
         unsafe fn drop_ptr<T>(x: *mut u8) {
             x.cast::<T>().drop_in_place()
@@ -321,13 +321,13 @@ impl AlchemyTable {
     }
 
     /// Get the [`DynVtable`] corresponding to an object-safe trait `U`'s implementation for some
-    /// type `T` (which is also the type that this `AlchemyTable` corresponds to), and insert the
-    /// implementation into the `AlchemyTable` if it's not already present.
+    /// type `T` (which is also the type that this `MetaTable` corresponds to), and insert the
+    /// implementation into the `MetaTable` if it's not already present.
     ///
-    /// Unlike [`AlchemyTable::get_or_insert_sized`], this function can deal with an unsized `T`,
+    /// Unlike [`MetaTable::get_or_insert_sized`], this function can deal with an unsized `T`,
     /// but needs a pointer to convert in order to extract a vtable.
     ///
-    /// Will panic if `T` is not the type this `AlchemyTable` corresponds to.
+    /// Will panic if `T` is not the type this `MetaTable` corresponds to.
     pub fn get_or_insert<T, U>(&self, ptr: *const T) -> &DynVtable
     where
         T: ?Sized + Alchemical<U>,
@@ -364,8 +364,8 @@ impl AlchemyTable {
     }
 
     /// Get the [`DynVtable`] corresponding to an object-safe trait `U`'s implementation for some
-    /// type `T` (where `T` is also the type this `AlchemyTable` corresponds to.) If `T` is
-    /// `?Sized`, you'll need to use [`AlchemyTable::get_or_insert`] instead.
+    /// type `T` (where `T` is also the type this `MetaTable` corresponds to.) If `T` is
+    /// `?Sized`, you'll need to use [`MetaTable::get_or_insert`] instead.
     ///
     /// Will panic if `T` is not the type for this table.
     pub fn get_or_insert_sized<T, U>(&self) -> &DynVtable
@@ -405,7 +405,7 @@ impl AlchemyTable {
     }
 
     /// Register the vtable for some object-safe trait `U`'s implementation for `T`, the type of
-    /// this `AlchemyTable`. If `T` is `?Sized`, use [`AlchemyTable::add_with`] (which will need a
+    /// this `MetaTable`. If `T` is `?Sized`, use [`MetaTable::add_with`] (which will need a
     /// pointer.)
     ///
     /// Panics if `T` is not the type of this table.
@@ -419,7 +419,7 @@ impl AlchemyTable {
     }
 
     /// Register the vtable for some object-safe trait `U`'s implementation for `T`, the type of
-    /// this `AlchemyTable`.
+    /// this `MetaTable`.
     ///
     /// Panics if `T` is not the type of this table.
     pub fn add_with<T, U>(&self, ptr: *const T) -> &Self
@@ -431,14 +431,14 @@ impl AlchemyTable {
         self
     }
 
-    /// Convert this `&'static AlchemyTable` to a raw pointer.
-    pub fn to_ptr(&'static self) -> *const AlchemyTable {
+    /// Convert this `&'static MetaTable` to a raw pointer.
+    pub fn to_ptr(&'static self) -> *const MetaTable {
         self
     }
 
-    /// Get an `&'static AlchemyTable` back from a raw pointer, ensuring it is valid (will return
-    /// `None` if the pointer does not correspond to a previously fetched `AlchemyTable`.)
-    pub fn from_ptr(ptr: *const AlchemyTable) -> Option<&'static AlchemyTable> {
+    /// Get an `&'static MetaTable` back from a raw pointer, ensuring it is valid (will return
+    /// `None` if the pointer does not correspond to a previously fetched `MetaTable`.)
+    pub fn from_ptr(ptr: *const MetaTable) -> Option<&'static MetaTable> {
         VALID_ALCHEMY_TABLES
             .read()
             .contains(&(ptr as usize))
@@ -446,25 +446,25 @@ impl AlchemyTable {
     }
 }
 
-/// A statically-typed wrapper around an [`AlchemyTable`] which corresponds to the parameter type
-/// `T`. Most of the time you'll want to use this when interfacing w/ `AlchemyTable`s, because it
-/// lets you call almost every method on [`AlchemyTable`] without having to specify `T` every time.
-pub struct TypedAlchemyTable<T: ?Sized>(&'static AlchemyTable, PhantomData<fn(T)>);
+/// A statically-typed wrapper around an [`MetaTable`] which corresponds to the parameter type
+/// `T`. Most of the time you'll want to use this when interfacing w/ `MetaTable`s, because it
+/// lets you call almost every method on [`MetaTable`] without having to specify `T` every time.
+pub struct TypedMetaTable<T: ?Sized>(&'static MetaTable, PhantomData<fn(T)>);
 
-impl<T: ?Sized> Clone for TypedAlchemyTable<T> {
+impl<T: ?Sized> Clone for TypedMetaTable<T> {
     fn clone(&self) -> Self {
         Self(self.0, self.1)
     }
 }
 
-impl<T: ?Sized> Copy for TypedAlchemyTable<T> {}
+impl<T: ?Sized> Copy for TypedMetaTable<T> {}
 
-impl<T: ?Sized + 'static> TypedAlchemyTable<T> {
+impl<T: ?Sized + 'static> TypedMetaTable<T> {
     fn new() -> Self
     where
         T: Sized,
     {
-        Self(AlchemyTable::new::<T>(), PhantomData)
+        Self(MetaTable::new::<T>(), PhantomData)
     }
 
     /// Get the typed alchemy table corresponding to `T`.
@@ -472,7 +472,7 @@ impl<T: ?Sized + 'static> TypedAlchemyTable<T> {
     where
         T: Sized,
     {
-        Self(AlchemyTable::of::<T>(), PhantomData)
+        Self(MetaTable::of::<T>(), PhantomData)
     }
 
     /// Get the vtable of `T`'s implementation of some object-safe trait `U`, if it exists in the
@@ -496,7 +496,7 @@ impl<T: ?Sized + 'static> TypedAlchemyTable<T> {
     }
 
     /// Get the vtable of `T`'s implementation of some object-safe trait `U`. Requires `T: Sized`;
-    /// if your `T` is not `Sized`, use [`TypedAlchemyTable::get_or_insert`] and provide a pointer
+    /// if your `T` is not `Sized`, use [`TypedMetaTable::get_or_insert`] and provide a pointer
     /// to extract from.
     pub fn get_or_insert_sized<U>(self) -> &'static DynVtable
     where
@@ -546,8 +546,8 @@ impl<T: ?Sized + 'static> TypedAlchemyTable<T> {
         self
     }
 
-    /// Get the [`&'static AlchemyTable`](AlchemyTable) underlying this `TypedAlchemyTable<T>`.
-    pub fn as_untyped(self) -> &'static AlchemyTable {
+    /// Get the [`&'static MetaTable`](MetaTable) underlying this `TypedMetaTable<T>`.
+    pub fn as_untyped(self) -> &'static MetaTable {
         self.0
     }
 }
@@ -656,7 +656,7 @@ impl DynVtable {
 #[derive(Clone, Copy)]
 pub struct AlchemicalPtr {
     data: *mut (),
-    table: &'static AlchemyTable,
+    table: &'static MetaTable,
 }
 
 impl AlchemicalPtr {
@@ -664,7 +664,7 @@ impl AlchemicalPtr {
     pub fn new<T: Any>(ptr: *mut T) -> Self {
         Self {
             data: ptr.cast(),
-            table: AlchemyTable::of::<T>(),
+            table: MetaTable::of::<T>(),
         }
     }
 
@@ -673,8 +673,8 @@ impl AlchemicalPtr {
         self.data
     }
 
-    /// Get the [`AlchemyTable`] of the type pointed to by this `AlchemicalPtr`.
-    pub fn table(self) -> &'static AlchemyTable {
+    /// Get the [`MetaTable`] of the type pointed to by this `AlchemicalPtr`.
+    pub fn table(self) -> &'static MetaTable {
         self.table
     }
 
@@ -700,13 +700,13 @@ impl AlchemicalPtr {
     ///
     /// # Safety
     ///
-    /// `data` must be a valid pointer, and `table`  must be the `AlchemyTable` corresponding to the
+    /// `data` must be a valid pointer, and `table`  must be the `MetaTable` corresponding to the
     /// actual un-erased type that `data` points to.
-    pub unsafe fn from_raw_parts(data: *mut (), table: &'static AlchemyTable) -> Self {
+    pub unsafe fn from_raw_parts(data: *mut (), table: &'static MetaTable) -> Self {
         Self { data, table }
     }
 
-    /// If the vtable corresponding to the type `U` is found in this pointer's `AlchemyTable`,
+    /// If the vtable corresponding to the type `U` is found in this pointer's `MetaTable`,
     /// construct a "fat" `*const` pointer from it and the data pointer of this `AlchemicalNonNull`.
     pub fn downcast_dyn_ptr<U: ?Sized + Alchemy>(self) -> Option<*const U> {
         self.table
@@ -714,7 +714,7 @@ impl AlchemicalPtr {
             .map(|vtable| unsafe { vtable.to_dyn_object_ptr::<U>(self.data.cast()) })
     }
 
-    /// If the vtable corresponding to the type `U` is found in this pointer's `AlchemyTable`,
+    /// If the vtable corresponding to the type `U` is found in this pointer's `MetaTable`,
     /// construct a "fat" `*mut` pointer from it and the data pointer of this `AlchemicalNonNull`.
     pub fn downcast_dyn_mut_ptr<U: ?Sized + Alchemy>(self) -> Option<*mut U> {
         self.table
@@ -727,7 +727,7 @@ impl AlchemicalPtr {
     /// # Safety
     ///
     /// This `AlchemicalNonNull` must point to a valid object of the type registered in its internal
-    /// `AlchemyTable`. In addition, it must be safe to immutably borrow that object. This function
+    /// `MetaTable`. In addition, it must be safe to immutably borrow that object. This function
     /// also returns a completely arbitrary lifetime, so be sure that it does not outlive the
     /// pointee.
     pub unsafe fn downcast_dyn_ref<'a, U: ?Sized + Alchemy>(self) -> Option<&'a U> {
@@ -741,7 +741,7 @@ impl AlchemicalPtr {
     /// # Safety
     ///
     /// This `AlchemicalNonNull` must point to a valid object of the type registered in its internal
-    /// `AlchemyTable`. In addition, it must be safe to mutably borrow that object. This function
+    /// `MetaTable`. In addition, it must be safe to mutably borrow that object. This function
     /// also returns a completely arbitrary lifetime, so be sure that it does not outlive the
     /// pointee.
     pub unsafe fn downcast_dyn_mut<'a, U: ?Sized + Alchemy>(self) -> Option<&'a mut U> {
@@ -751,15 +751,15 @@ impl AlchemicalPtr {
     }
 }
 
-/// A superpowered version of [`Any`] which provides an [`AlchemyTable`] rather than a [`TypeId`].
+/// A superpowered version of [`Any`] which provides an [`MetaTable`] rather than a [`TypeId`].
 pub trait AlchemicalAny {
     /// Get the alchemy table of the underlying type.
-    fn alchemy_table(&self) -> &'static AlchemyTable;
+    fn alchemy_table(&self) -> &'static MetaTable;
 }
 
 impl<T: Any> AlchemicalAny for T {
-    fn alchemy_table(&self) -> &'static AlchemyTable {
-        AlchemyTable::of::<T>()
+    fn alchemy_table(&self) -> &'static MetaTable {
+        MetaTable::of::<T>()
     }
 }
 
@@ -918,7 +918,7 @@ mod tests {
         // `AlchemicalClone` is an object-safe but very unsafe trait implementing `Clone`-ing into a
         // pointer) and where `register_sized` is shorthand for `.register::<i32, dyn
         // AlchemicalClone>(core::ptr::null())`
-        TypedAlchemyTable::<i32>::of().mark_clone();
+        TypedMetaTable::<i32>::of().mark_clone();
 
         let boxed: Box<dyn AlchemicalAny> = Box::new(5i32);
         let other: Box<dyn AlchemicalAny> = boxed.try_clone().unwrap();
@@ -935,7 +935,7 @@ mod tests {
         // `AlchemicalClone` is an object-safe but very unsafe trait implementing `Clone`-ing into a
         // pointer) and where `register_sized` is shorthand for `.register::<i32, dyn
         // AlchemicalClone>(core::ptr::null())`
-        TypedAlchemyTable::<i32>::of().mark_copy();
+        TypedMetaTable::<i32>::of().mark_copy();
 
         let boxed: Box<dyn AlchemicalAny> = Box::new(5i32);
         let other: Box<dyn AlchemicalAny> = boxed.try_copy().unwrap();

@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use hv_alchemy::{AlchemicalAny, TypedAlchemyTable};
+use hv_alchemy::{AlchemicalAny, TypedMetaTable};
 use hv_sync::elastic::Elastic;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
 };
 
 impl UserData for hecs::ColumnBatchType {
-    fn on_metatable_init(table: TypedAlchemyTable<Self>) {
+    fn on_metatable_init(table: TypedMetaTable<Self>) {
         table.mark_clone().add::<dyn Send>().add::<dyn Sync>();
     }
 
@@ -25,7 +25,7 @@ impl UserData for hecs::ColumnBatchType {
         });
     }
 
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedAlchemyTable<Self>>>(methods: &mut M)
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M)
     where
         Self: 'static,
     {
@@ -183,7 +183,7 @@ pub trait ComponentType: Send + Sync {
     ) -> Result<Option<AnyUserData<'lua>>>;
 }
 
-impl<T: hecs::Component + UserData> ComponentType for TypedAlchemyTable<T> {
+impl<T: hecs::Component + UserData> ComponentType for TypedMetaTable<T> {
     fn type_id(&self) -> TypeId {
         TypeId::of::<T>()
     }
@@ -227,7 +227,7 @@ impl<T: hecs::Component + UserData> ComponentType for TypedAlchemyTable<T> {
 }
 
 impl UserData for hecs::DynamicQuery {
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedAlchemyTable<Self>>>(methods: &mut M) {
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M) {
         methods.add_function("new", move |_, table: Table| {
             let mut free_elements = Vec::new();
             for try_element in table.sequence_values::<hecs::DynamicQuery>() {
@@ -305,7 +305,7 @@ impl UserData for hecs::World {
         );
     }
 
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedAlchemyTable<Self>>>(methods: &mut M) {
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, ()| Ok(hecs::World::new()));
     }
 }

@@ -22,7 +22,7 @@ struct Car {
 }
 
 impl UserData for Car {
-    fn on_metatable_init(table: hv_alchemy::TypedAlchemyTable<Self>) {
+    fn on_metatable_init(table: hv_alchemy::TypedMetaTable<Self>) {
         table.add::<dyn erased_serde::Serialize>();
     }
 }

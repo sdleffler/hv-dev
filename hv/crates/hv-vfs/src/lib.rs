@@ -37,7 +37,7 @@
  */
 
 use anyhow::*;
-use hv_alchemy::TypedAlchemyTable;
+use hv_alchemy::TypedMetaTable;
 use hv_lua::{AnyUserData, UserData, UserDataMethods};
 use std::{
     collections::VecDeque,
@@ -126,7 +126,7 @@ impl OpenOptions {
 }
 
 impl UserData for OpenOptions {
-    fn on_metatable_init(table: TypedAlchemyTable<Self>) {
+    fn on_metatable_init(table: TypedMetaTable<Self>) {
         table
             .mark_clone()
             .mark_copy()
