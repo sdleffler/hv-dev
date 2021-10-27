@@ -790,7 +790,7 @@ impl dyn AlchemicalAny {
 
     /// Try to cast this `Box<dyn AlchemicalAny>` to some other trait object `U`.
     pub fn dyncast<U: Alchemy + ?Sized>(self: Box<Self>) -> Option<Box<U>> {
-        let at = Self::alchemy_table(&(*self));
+        let at = Self::alchemy_table(&self);
         let downcast_alchemy = at.get::<U>()?;
         unsafe {
             let ptr = Box::into_raw(self);
@@ -812,6 +812,13 @@ impl dyn AlchemicalAny {
         let at = Self::alchemy_table(self);
         (at.id == TypeId::of::<T>())
             .then(|| unsafe { &mut *(self as *mut dyn AlchemicalAny as *mut T) })
+    }
+
+    /// Try to cast this `Box<dyn AlchemicalAny>` to some type `T`.
+    pub fn downcast<T: Any>(self: Box<Self>) -> Option<Box<T>> {
+        let at = Self::alchemy_table(&self);
+        (at.id == TypeId::of::<T>())
+            .then(|| unsafe { Box::from_raw(Box::into_raw(self) as *mut T) })
     }
 
     /// Try to copy this value into a `Box<dyn AlchemicalAny>`. If it succeeds, a copy is created

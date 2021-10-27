@@ -857,6 +857,45 @@ impl<'lua> AnyUserData<'lua> {
         }
     }
 
+    /// Clones the data inside the `UserData`, or takes out the value of `UserData` and sets the
+    /// special "destructed" metatable that prevents any further operations with this userdata. It
+    /// will first try cloning, and if that fails, it will take and destroy the userdata.
+    pub fn clone_or_take<T: 'static + UserData>(&self) -> Result<Box<T>> {
+        let lua = self.0.lua;
+        unsafe {
+            let _sg = StackGuard::new(lua.state);
+            check_stack(lua.state, 2)?;
+
+            let type_id = lua.push_userdata_ref(&self.0)?.map(|tinfo| tinfo.id);
+            match type_id {
+                Some(type_id) if type_id == TypeId::of::<T>() => {
+                    // Try to borrow userdata exclusively. At the same time, try cloning it.
+                    let maybe_cloned = (*get_userdata::<UserDataCell>(lua.state, -1))
+                        .try_dyn_borrow_mut::<dyn AlchemicalAny>()?
+                        .try_clone();
+
+                    if let Some(cloned) = maybe_cloned {
+                        Ok(*cloned.downcast().unwrap())
+                    } else {
+                        // Clear uservalue
+                        #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
+                        ffi::lua_pushnil(lua.state);
+                        #[cfg(any(feature = "lua51", feature = "luajit"))]
+                        protect_lua!(lua.state, 0, 1, fn(state) ffi::lua_newtable(state))?;
+                        ffi::lua_setuservalue(lua.state, -2);
+
+                        Ok(take_userdata::<UserDataCell>(lua.state)
+                            .into_boxed()
+                            .downcast()
+                            .unwrap())
+                    }
+                }
+                Some(_) => Err(Error::UserDataDestructed),
+                _ => Err(Error::UserDataTypeMismatch),
+            }
+        }
+    }
+
     /// Takes out the value of `UserData` and sets the special "destructed" metatable that prevents
     /// any further operations with this userdata.
     pub fn dyn_take(&self) -> Result<Box<dyn AlchemicalAny>> {

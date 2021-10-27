@@ -724,6 +724,7 @@ dependencies = [
  "anyhow",
  "hecs",
  "hv-alchemy",
+ "hv-filesystem",
  "hv-lua",
  "hv-sync",
  "petgraph",
@@ -816,6 +817,9 @@ dependencies = [
 [[package]]
 name = "hv-sync"
 version = "0.1.0"
+dependencies = [
+ "hecs",
+]
 
 [[package]]
 name = "hv-vfs"

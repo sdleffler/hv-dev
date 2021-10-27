@@ -6,3 +6,6 @@ edition = "2021"
 [features]
 track-leases = []
 default = []
+
+[dependencies]
+hecs = { path = "../../../hecs" }

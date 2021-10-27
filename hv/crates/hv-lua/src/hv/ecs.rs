@@ -1,12 +1,75 @@
 use std::any::TypeId;
 
-use hecs::DynamicItem;
 use hv_alchemy::{AlchemicalAny, TypedAlchemyTable};
+use hv_sync::elastic::Elastic;
 
 use crate::{
     AnyUserData, Error, ExternalResult, FromLua, Function, LightUserData, Lua, MultiValue, Result,
     Table, ToLua, ToLuaMulti, UserData, UserDataMethods, Value,
 };
+
+impl UserData for hecs::ColumnBatchType {
+    fn on_metatable_init(table: TypedAlchemyTable<Self>) {
+        table.mark_clone().add::<dyn Send>().add::<dyn Sync>();
+    }
+
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("add", |_, this, ty: AnyUserData| {
+            ty.dyn_borrow::<dyn ComponentType>()?
+                .column_batch_type_add(this);
+            Ok(())
+        });
+
+        methods.add_function("into_batch", |_, (this, size): (AnyUserData, u32)| {
+            Ok(this.take::<Self>()?.into_batch(size))
+        });
+    }
+
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedAlchemyTable<Self>>>(methods: &mut M)
+    where
+        Self: 'static,
+    {
+        methods.add_function("new", |_, ()| Ok(Self::new()));
+    }
+}
+
+impl UserData for hecs::ColumnBatchBuilder {
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut(
+            "writer",
+            |lua, this, (ty, scope): (AnyUserData, Function)| {
+                let (guard, writer) = ty
+                    .dyn_borrow::<dyn ComponentType>()?
+                    .column_batch_builder_writer(lua, this)?;
+                let res = scope.call::<_, MultiValue>(writer);
+                drop(guard);
+                res
+            },
+        );
+    }
+}
+
+impl UserData for hecs::ColumnBatch {}
+
+impl<T: 'static + UserData> UserData for Elastic<hecs::BatchWriter<'static, T>> {
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("push", |_, this, ud: AnyUserData| {
+            this.borrow_mut()
+                .ok_or_else(|| Error::external("BatchWriter already destructed!"))?
+                .push(*ud.clone_or_take::<T>()?)
+                .ok()
+                .ok_or_else(|| Error::external("BatchWriter is full!"))?;
+            Ok(())
+        });
+
+        methods.add_method("fill", |_, this, ()| {
+            Ok(this
+                .borrow()
+                .ok_or_else(|| Error::external("BatchWriter already destructed!"))?
+                .fill())
+        });
+    }
+}
 
 struct RawSingleBundle {
     data: *mut u8,
@@ -106,10 +169,17 @@ pub trait ComponentType: Send + Sync {
     fn read(&self) -> hecs::DynamicQuery;
     fn write(&self) -> hecs::DynamicQuery;
 
-    fn dynamic_take<'lua>(
+    fn column_batch_type_add(&self, column_batch_type: &mut hecs::ColumnBatchType);
+    fn column_batch_builder_writer<'lua, 'a>(
         &self,
         lua: &'lua Lua,
-        dynamic_item: &mut DynamicItem,
+        column_batch: &'a mut hecs::ColumnBatchBuilder,
+    ) -> Result<(Box<dyn Send + 'a>, AnyUserData<'lua>)>;
+
+    fn dynamic_item_take<'lua>(
+        &self,
+        lua: &'lua Lua,
+        dynamic_item: &mut hecs::DynamicItem,
     ) -> Result<Option<AnyUserData<'lua>>>;
 }
 
@@ -126,10 +196,28 @@ impl<T: hecs::Component + UserData> ComponentType for TypedAlchemyTable<T> {
         hecs::DynamicQuery::lift::<&mut T>()
     }
 
-    fn dynamic_take<'lua>(
+    fn column_batch_type_add(&self, column_batch_type: &mut hecs::ColumnBatchType) {
+        column_batch_type.add::<T>();
+    }
+
+    fn column_batch_builder_writer<'lua, 'a>(
         &self,
         lua: &'lua Lua,
-        dynamic_item: &mut DynamicItem,
+        column_batch_builder: &'a mut hecs::ColumnBatchBuilder,
+    ) -> Result<(Box<dyn Send + 'a>, AnyUserData<'lua>)> {
+        let elastic = <Elastic<hecs::BatchWriter<'static, T>>>::new();
+        let guard = elastic.loan(
+            column_batch_builder
+                .writer::<T>()
+                .ok_or_else(|| Error::external("not in ColumnBatch"))?,
+        );
+        Ok((Box::new(guard), lua.create_userdata(elastic)?))
+    }
+
+    fn dynamic_item_take<'lua>(
+        &self,
+        lua: &'lua Lua,
+        dynamic_item: &mut hecs::DynamicItem,
     ) -> Result<Option<AnyUserData<'lua>>> {
         dynamic_item
             .take::<T>()
@@ -165,7 +253,7 @@ impl UserData for hecs::DynamicItem {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("take", move |lua, this, ty: AnyUserData| {
             ty.dyn_borrow::<dyn ComponentType>()?
-                .dynamic_take(lua, this)
+                .dynamic_item_take(lua, this)
         });
     }
 }
