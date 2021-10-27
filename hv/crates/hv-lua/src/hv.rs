@@ -1,6 +1,9 @@
 use hv_alchemy::Type;
 
-use crate::hv::ecs::DynamicBundleProxy;
+use crate::{
+    hv::ecs::{ComponentType, DynamicBundleProxy},
+    UserData,
+};
 
 #[cfg(feature = "hecs")]
 pub mod ecs;
@@ -21,7 +24,14 @@ pub trait LuaUserDataTypeExt<T> {
         T: hecs::DynamicBundle;
 }
 
-impl<T: 'static> LuaUserDataTypeExt<T> for Type<T> {
+pub trait LuaUserDataTypeTypeExt<T> {
+    /// Mark [`Type<T>: ComponentType`](ComponentType) (allows use for constructing dynamic queries)
+    fn mark_component_type(self) -> Self
+    where
+        T: hecs::Component;
+}
+
+impl<T: 'static + UserData> LuaUserDataTypeExt<T> for Type<T> {
     fn mark_component(self) -> Self
     where
         T: hecs::Component,
@@ -34,5 +44,14 @@ impl<T: 'static> LuaUserDataTypeExt<T> for Type<T> {
         T: hecs::DynamicBundle,
     {
         self.add::<dyn DynamicBundleProxy>()
+    }
+}
+
+impl<T: 'static + UserData> LuaUserDataTypeTypeExt<T> for Type<Type<T>> {
+    fn mark_component_type(self) -> Self
+    where
+        T: hecs::Component,
+    {
+        self.add::<dyn ComponentType>()
     }
 }

@@ -3,9 +3,13 @@ use std::sync::Arc;
 use glfw::Context;
 use hv::{
     alchemy::Type,
-    ecs::{ComponentType, DynamicQuery, Entity, World},
+    ecs::{DynamicQuery, Entity, World},
     error::*,
-    lua::{chunk, hv::LuaUserDataTypeExt, Lua, UserData, UserDataFields, UserDataMethods},
+    lua::{
+        chunk,
+        hv::{LuaUserDataTypeExt, LuaUserDataTypeTypeExt},
+        Lua, UserData, UserDataFields, UserDataMethods,
+    },
     sync::cell::AtomicRefCell,
 };
 use luminance_glfw::GlfwSurface;
@@ -30,7 +34,7 @@ impl UserData for I32Component {
     }
 
     fn on_type_metatable_init(t: Type<Type<Self>>) {
-        t.add::<dyn ComponentType>();
+        t.mark_component_type();
     }
 }
 
@@ -53,7 +57,7 @@ impl UserData for BoolComponent {
     }
 
     fn on_type_metatable_init(t: Type<Type<Self>>) {
-        t.add::<dyn ComponentType>();
+        t.mark_component_type();
     }
 }
 
