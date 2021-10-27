@@ -15,7 +15,6 @@ use {
 
 use hv_alchemy::{AlchemicalAny, AlchemicalPtr, Alchemy, AlchemyTable, TypedAlchemyTable};
 
-use crate::ffi;
 use crate::function::Function;
 use crate::lua::Lua;
 use crate::table::{Table, TablePairs};
@@ -26,6 +25,7 @@ use crate::{
     error::{Error, Result},
     types::DestructedUserdataMT,
 };
+use crate::{ffi, RegistryKey};
 
 #[cfg(any(feature = "lua52", feature = "lua51", feature = "luajit"))]
 use crate::value::Value;
@@ -1208,5 +1208,29 @@ impl<'lua> Serialize for AnyUserData<'lua> {
             Err(Error::UserDataDynMismatch) => UserDataSerializeError.serialize(serializer),
             Err(other) => Err(ser::Error::custom(other)),
         }
+    }
+}
+
+impl UserData for RegistryKey {
+    fn on_metatable_init(table: TypedAlchemyTable<Self>) {
+        table.add::<dyn Send>().add::<dyn Sync>();
+    }
+
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("value", |lua, key| lua.registry_value::<Value>(key));
+    }
+
+    fn on_type_metatable_init(table: TypedAlchemyTable<TypedAlchemyTable<Self>>) {
+        #[cfg(feature = "hecs")]
+        table.add::<dyn crate::hv::ecs::ComponentType>();
+    }
+
+    #[allow(clippy::unit_arg)]
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedAlchemyTable<Self>>>(methods: &mut M)
+    where
+        Self: 'static,
+    {
+        methods.add_function("new", |lua, value: Value| lua.create_registry_value(value));
+        methods.add_function("expire", |lua, ()| Ok(lua.expire_registry_values()));
     }
 }
