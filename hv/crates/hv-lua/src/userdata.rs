@@ -13,7 +13,7 @@ use {
     std::result::Result as StdResult,
 };
 
-use hv_alchemy::{AlchemicalAny, AlchemicalPtr, Alchemy, MetaTable, TypedMetaTable};
+use hv_alchemy::{AlchemicalAny, AlchemicalPtr, Alchemy, Type, TypeTable};
 
 use crate::function::Function;
 use crate::lua::Lua;
@@ -596,27 +596,27 @@ pub trait UserData: Sized {
     /// Hook to perform static initialization when the metatable for this userdata is created.
     /// Called before `add_fields` and `add_methods`.
     ///
-    /// This is useful, for example, for ensuring that the [`AlchemyTable`] for this type has some
+    /// This is useful, for example, for ensuring that the [`TypeTable`] for this type has some
     /// necessary traits registered with it.
-    fn on_metatable_init(_table: TypedMetaTable<Self>) {}
+    fn on_metatable_init(_table: Type<Self>) {}
 
     /// Adds custom fields to the *type* object for this userdata.
-    fn add_type_fields<'lua, F: UserDataFields<'lua, TypedMetaTable<Self>>>(_fields: &mut F)
+    fn add_type_fields<'lua, F: UserDataFields<'lua, Type<Self>>>(_fields: &mut F)
     where
         Self: 'static,
     {
     }
 
     /// Adds custom methods and operators to the *type* object for this userdata.
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(_methods: &mut M)
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(_methods: &mut M)
     where
         Self: 'static,
     {
     }
 
-    /// Hook to perform static initialization when the metatable for the [`TypedAlchemyTable<Self>`]
+    /// Hook to perform static initialization when the metatable for the [`TypedTypeTable<Self>`]
     /// userdata is created. Called before `add_type_fields` and `add_type_methods`.
-    fn on_type_metatable_init(_table: TypedMetaTable<TypedMetaTable<Self>>) {}
+    fn on_type_metatable_init(_table: Type<Type<Self>>) {}
 }
 
 // Wraps UserData in a way to always implement `serde::Serialize` trait.
@@ -635,7 +635,7 @@ impl UserDataCell {
         UserDataCell(RefCell::new(unsafe {
             AlchemicalPtr::from_raw_parts(
                 Box::into_raw(Box::new(data)).cast(),
-                MetaTable::of::<()>(),
+                TypeTable::of::<()>(),
             )
         }))
     }
@@ -787,8 +787,8 @@ impl<'lua> AnyUserData<'lua> {
         }
     }
 
-    /// Get the [`AlchemyTable`] of the value inside this userdata, if it has one.
-    pub fn alchemy_table(&self) -> Option<&'static MetaTable> {
+    /// Get the [`TypeTable`] of the value inside this userdata, if it has one.
+    pub fn type_table(&self) -> Option<&'static TypeTable> {
         let lua = self.0.lua;
         unsafe {
             let _sg = StackGuard::new(lua.state);
@@ -1212,7 +1212,7 @@ impl<'lua> Serialize for AnyUserData<'lua> {
 }
 
 impl UserData for RegistryKey {
-    fn on_metatable_init(table: TypedMetaTable<Self>) {
+    fn on_metatable_init(table: Type<Self>) {
         table.add::<dyn Send>().add::<dyn Sync>();
     }
 
@@ -1220,13 +1220,13 @@ impl UserData for RegistryKey {
         fields.add_field_method_get("value", |lua, key| lua.registry_value::<Value>(key));
     }
 
-    fn on_type_metatable_init(table: TypedMetaTable<TypedMetaTable<Self>>) {
+    fn on_type_metatable_init(table: Type<Type<Self>>) {
         #[cfg(feature = "hecs")]
         table.add::<dyn crate::hv::ecs::ComponentType>();
     }
 
     #[allow(clippy::unit_arg)]
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M)
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M)
     where
         Self: 'static,
     {

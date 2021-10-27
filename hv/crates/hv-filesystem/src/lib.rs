@@ -46,7 +46,7 @@ extern crate hv_vfs as vfs;
 
 use anyhow::*;
 use directories::ProjectDirs;
-use hv_alchemy::TypedMetaTable;
+use hv_alchemy::Type;
 use hv_lua::{ExternalError, ExternalResult, UserData, UserDataMethods};
 use std::{
     env, fmt,
@@ -390,7 +390,7 @@ impl Filesystem {
 }
 
 impl UserData for Filesystem {
-    fn on_metatable_init(table: TypedMetaTable<Self>) {
+    fn on_metatable_init(table: Type<Self>) {
         table.add::<dyn Send>().add::<dyn Sync>();
     }
 
@@ -457,7 +457,7 @@ impl UserData for Filesystem {
         );
     }
 
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M)
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M)
     where
         Self: 'static,
     {
@@ -477,7 +477,7 @@ impl UserData for Filesystem {
 }
 
 impl UserData for File {
-    fn on_metatable_init(table: TypedMetaTable<Self>) {
+    fn on_metatable_init(table: Type<Self>) {
         table
             .add::<dyn Send>()
             .add::<dyn Sync>()

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use glfw::Context;
 use hv::{
-    alchemy::TypedMetaTable,
+    alchemy::Type,
     ecs::{ComponentType, DynamicQuery, Entity, World},
     lua::{chunk, Lua, UserData, UserDataFields, UserDataMethods},
     sync::cell::AtomicRefCell,
@@ -20,18 +20,18 @@ impl UserData for I32Component {
         fields.add_field_method_set("value", |_, this, value| Ok(this.0 = value));
     }
 
-    fn on_metatable_init(t: TypedMetaTable<Self>) {
+    fn on_metatable_init(t: Type<Self>) {
         t.mark_clone()
             .mark_copy()
             .add::<dyn Send>()
             .add::<dyn Sync>();
     }
 
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M) {
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, i: i32| Ok(Self(i)));
     }
 
-    fn on_type_metatable_init(t: TypedMetaTable<TypedMetaTable<Self>>) {
+    fn on_type_metatable_init(t: Type<Type<Self>>) {
         t.add::<dyn ComponentType>();
     }
 }
@@ -46,18 +46,18 @@ impl UserData for BoolComponent {
         fields.add_field_method_set("value", |_, this, value| Ok(this.0 = value));
     }
 
-    fn on_metatable_init(t: TypedMetaTable<Self>) {
+    fn on_metatable_init(t: Type<Self>) {
         t.mark_clone()
             .mark_copy()
             .add::<dyn Send>()
             .add::<dyn Sync>();
     }
 
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M) {
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, b: bool| Ok(Self(b)));
     }
 
-    fn on_type_metatable_init(t: TypedMetaTable<TypedMetaTable<Self>>) {
+    fn on_type_metatable_init(t: Type<Type<Self>>) {
         t.add::<dyn ComponentType>();
     }
 }

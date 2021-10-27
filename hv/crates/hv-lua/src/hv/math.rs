@@ -1,4 +1,4 @@
-use hv_alchemy::TypedMetaTable;
+use hv_alchemy::Type;
 use hv_math::{Isometry2, RealField, Vector2};
 
 use crate::{AnyUserData, FromLua, MetaMethod, ToLua, UserData, UserDataMethods};
@@ -10,7 +10,7 @@ impl<T> LuaRealField for T where
 }
 
 impl<T: LuaRealField> UserData for Vector2<T> {
-    fn on_metatable_init(table: TypedMetaTable<Self>) {
+    fn on_metatable_init(table: Type<Self>) {
         table
             .mark_clone()
             .mark_copy()
@@ -50,7 +50,7 @@ impl<T: LuaRealField> UserData for Vector2<T> {
         methods.add_meta_function(MetaMethod::Sub, |_, (a, b): (Self, Self)| Ok(a - b));
     }
 
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M)
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M)
     where
         Self: 'static,
     {
@@ -59,7 +59,7 @@ impl<T: LuaRealField> UserData for Vector2<T> {
 }
 
 impl<T: LuaRealField> UserData for Isometry2<T> {
-    fn on_metatable_init(table: TypedMetaTable<Self>) {
+    fn on_metatable_init(table: Type<Self>) {
         table
             .mark_clone()
             .mark_copy()
@@ -69,7 +69,7 @@ impl<T: LuaRealField> UserData for Isometry2<T> {
 
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(_methods: &mut M) {}
 
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M)
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M)
     where
         Self: 'static,
     {

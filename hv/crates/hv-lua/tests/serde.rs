@@ -14,7 +14,7 @@ fn test_serialize() -> Result<(), Box<dyn std::error::Error>> {
     struct MyUserData(i64, String);
 
     impl UserData for MyUserData {
-        fn on_metatable_init(table: hv_alchemy::TypedMetaTable<Self>) {
+        fn on_metatable_init(table: hv_alchemy::Type<Self>) {
             table.add::<dyn erased_serde::Serialize>();
         }
     }
@@ -80,7 +80,7 @@ fn test_serialize_in_scope() -> LuaResult<()> {
     struct MyUserData(i64, String);
 
     impl UserData for MyUserData {
-        fn on_metatable_init(table: hv_alchemy::TypedMetaTable<Self>) {
+        fn on_metatable_init(table: hv_alchemy::Type<Self>) {
             table.add::<dyn erased_serde::Serialize>();
         }
     }

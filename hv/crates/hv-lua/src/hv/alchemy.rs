@@ -1,31 +1,31 @@
-use hv_alchemy::{MetaTable, TypedMetaTable};
+use hv_alchemy::{Type, TypeTable};
 
 use crate::{
     Error, FromLua, LightUserData, Lua, Result, ToLua, UserData, UserDataFields, UserDataMethods,
     Value,
 };
 
-impl<'lua> ToLua<'lua> for &'static MetaTable {
+impl<'lua> ToLua<'lua> for &'static TypeTable {
     #[inline]
     fn to_lua(self, _lua: &'lua Lua) -> Result<Value<'lua>> {
         Ok(Value::LightUserData(LightUserData(
-            MetaTable::to_ptr(self) as *const _ as *mut _,
+            TypeTable::to_ptr(self) as *const _ as *mut _,
         )))
     }
 }
 
-impl<'lua> FromLua<'lua> for &'static MetaTable {
+impl<'lua> FromLua<'lua> for &'static TypeTable {
     #[inline]
     fn from_lua(lua_value: Value<'lua>, lua: &'lua Lua) -> Result<Self> {
         LightUserData::from_lua(lua_value, lua).and_then(|lud| {
-            MetaTable::from_ptr(lud.0 as *const _ as *const _)
-                .ok_or_else(|| Error::external("invalid AlchemyTable pointer!"))
+            TypeTable::from_ptr(lud.0 as *const _ as *const _)
+                .ok_or_else(|| Error::external("invalid TypeTable pointer!"))
         })
     }
 }
 
-impl<T: 'static + UserData> UserData for TypedMetaTable<T> {
-    fn on_metatable_init(t: TypedMetaTable<Self>) {
+impl<T: 'static + UserData> UserData for Type<T> {
+    fn on_metatable_init(t: Type<Self>) {
         t.mark_clone()
             .mark_copy()
             .add::<dyn Send>()

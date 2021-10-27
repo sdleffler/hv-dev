@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use hv_alchemy::{AlchemicalAny, TypedMetaTable};
+use hv_alchemy::{AlchemicalAny, Type};
 use hv_sync::elastic::Elastic;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
 };
 
 impl UserData for hecs::ColumnBatchType {
-    fn on_metatable_init(table: TypedMetaTable<Self>) {
+    fn on_metatable_init(table: Type<Self>) {
         table.mark_clone().add::<dyn Send>().add::<dyn Sync>();
     }
 
@@ -25,7 +25,7 @@ impl UserData for hecs::ColumnBatchType {
         });
     }
 
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M)
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M)
     where
         Self: 'static,
     {
@@ -81,7 +81,7 @@ impl<'lua> FromLua<'lua> for RawSingleBundle {
     fn from_lua(lua_value: Value<'lua>, lua: &'lua Lua) -> Result<Self> {
         let ud = AnyUserData::from_lua(lua_value, lua)?;
         let borrowed = ud.dyn_borrow::<dyn AlchemicalAny>()?;
-        let alchemy_table = (*borrowed).alchemy_table();
+        let alchemy_table = (*borrowed).type_table();
 
         if !(alchemy_table.is::<dyn Send>() && alchemy_table.is::<dyn Sync>()) {
             return Err(Error::external(format!(
@@ -183,7 +183,7 @@ pub trait ComponentType: Send + Sync {
     ) -> Result<Option<AnyUserData<'lua>>>;
 }
 
-impl<T: hecs::Component + UserData> ComponentType for TypedMetaTable<T> {
+impl<T: hecs::Component + UserData> ComponentType for Type<T> {
     fn type_id(&self) -> TypeId {
         TypeId::of::<T>()
     }
@@ -227,7 +227,7 @@ impl<T: hecs::Component + UserData> ComponentType for TypedMetaTable<T> {
 }
 
 impl UserData for hecs::DynamicQuery {
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M) {
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", move |_, table: Table| {
             let mut free_elements = Vec::new();
             for try_element in table.sequence_values::<hecs::DynamicQuery>() {
@@ -305,7 +305,7 @@ impl UserData for hecs::World {
         );
     }
 
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, TypedMetaTable<Self>>>(methods: &mut M) {
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, ()| Ok(hecs::World::new()));
     }
 }

@@ -47,7 +47,7 @@ use {
     futures_util::future::{self, TryFutureExt},
 };
 
-use hv_alchemy::MetaTable;
+use hv_alchemy::TypeTable;
 use hv_sync::cell::{ArcRef, ArcRefMut, AtomicRefCell};
 
 /// Top level Lua struct which holds the Lua state itself.
@@ -64,7 +64,7 @@ pub struct Lua {
 // Data associated with the Lua.
 struct ExtraData {
     registered_userdata: HashMap<TypeId, c_int>,
-    registered_userdata_mt: HashMap<*const c_void, Option<&'static MetaTable>>,
+    registered_userdata_mt: HashMap<*const c_void, Option<&'static TypeTable>>,
     registry_unref_list: Arc<Mutex<Option<Vec<c_int>>>>,
 
     libs: StdLib,
@@ -489,7 +489,7 @@ impl Lua {
         let destructed_mt_ptr = ffi::lua_topointer(main_state, -1);
         (*extra.get()).registered_userdata_mt.insert(
             destructed_mt_ptr,
-            Some(MetaTable::of::<DestructedUserdataMT>()),
+            Some(TypeTable::of::<DestructedUserdataMT>()),
         );
         ffi::lua_pop(main_state, 1);
 
@@ -1859,7 +1859,7 @@ impl Lua {
     pub(crate) unsafe fn register_userdata_metatable(
         &self,
         ptr: *const c_void,
-        alchemy_table: Option<&'static MetaTable>,
+        alchemy_table: Option<&'static TypeTable>,
     ) {
         let extra = &mut *self.extra.get();
         extra.registered_userdata_mt.insert(ptr, alchemy_table);
@@ -1875,7 +1875,7 @@ impl Lua {
     pub(crate) unsafe fn push_userdata_ref(
         &self,
         lref: &LuaRef,
-    ) -> Result<Option<&'static MetaTable>> {
+    ) -> Result<Option<&'static TypeTable>> {
         self.push_ref(lref);
         if ffi::lua_getmetatable(self.state, -1) == 0 {
             return Err(Error::UserDataTypeMismatch);
