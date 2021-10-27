@@ -3,6 +3,7 @@ members = [
     "hecs",
     "hv/crates/hv-alchemy",
     "hv/crates/hv-boxed",
+    "hv/crates/hv-ecs-derive",
     "hv/crates/hv-filesystem",
     "hv/crates/hv-lua-derive",
     "hv/crates/hv-lua",

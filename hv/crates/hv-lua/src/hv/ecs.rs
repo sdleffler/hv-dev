@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::{any::TypeId, cell::Ref, mem::MaybeUninit};
 
 use hv_alchemy::{AlchemicalAny, Type};
 use hv_sync::elastic::Elastic;
@@ -71,57 +71,121 @@ impl<T: 'static + UserData> UserData for Elastic<hecs::BatchWriter<'static, T>> 
     }
 }
 
-struct RawSingleBundle {
+pub(crate) unsafe trait DynamicBundleProxy {
+    fn key(&self) -> Option<TypeId>;
+    unsafe fn with_ids(&self, f: &mut dyn FnMut(&[TypeId]));
+    fn type_info(&self) -> Vec<hecs::TypeInfo>;
+    unsafe fn put(self: Box<Self>, f: &mut dyn FnMut(*mut u8, hecs::TypeInfo));
+}
+
+static_assertions::assert_obj_safe!(DynamicBundleProxy);
+
+unsafe impl<T: hecs::DynamicBundle> DynamicBundleProxy for T {
+    fn key(&self) -> Option<TypeId> {
+        hecs::DynamicBundle::key(self)
+    }
+
+    unsafe fn with_ids(&self, f: &mut dyn FnMut(&[TypeId])) {
+        hecs::DynamicBundle::with_ids(self, f)
+    }
+
+    fn type_info(&self) -> Vec<hecs::TypeInfo> {
+        hecs::DynamicBundle::type_info(self)
+    }
+
+    unsafe fn put(self: Box<Self>, f: &mut dyn FnMut(*mut u8, hecs::TypeInfo)) {
+        hecs::DynamicBundle::put(*self, f)
+    }
+}
+
+unsafe impl hecs::DynamicBundle for Box<dyn DynamicBundleProxy> {
+    fn key(&self) -> Option<TypeId> {
+        <dyn DynamicBundleProxy>::key(self)
+    }
+
+    fn with_ids<T>(&self, f: impl FnOnce(&[TypeId]) -> T) -> T {
+        let mut uninit = MaybeUninit::zeroed();
+        let t = unsafe {
+            <dyn DynamicBundleProxy>::with_ids(self, &mut |type_ids| {
+                uninit.write(core::ptr::read(&f)(type_ids));
+            });
+            uninit.assume_init()
+        };
+        core::mem::forget(f);
+        t
+    }
+
+    fn type_info(&self) -> Vec<hecs::TypeInfo> {
+        <dyn DynamicBundleProxy>::type_info(self)
+    }
+
+    unsafe fn put(self, mut f: impl FnMut(*mut u8, hecs::TypeInfo)) {
+        <dyn DynamicBundleProxy>::put(self, &mut f);
+    }
+}
+
+struct LuaSingleBundle<'a> {
     data: *mut u8,
-    owning: bool,
+    // `None` if data is a piece of allocated heap memory that needs to be freed after use
+    // if `Some`, then data is just a pointer to a piece of memory we don't own
+    borrow: Option<Ref<'a, dyn AlchemicalAny>>,
+    // drop flag: if this is true, no need to run the destructor for the data
+    moved: bool,
     info: hecs::TypeInfo,
 }
 
-impl<'lua> FromLua<'lua> for RawSingleBundle {
-    fn from_lua(lua_value: Value<'lua>, lua: &'lua Lua) -> Result<Self> {
-        let ud = AnyUserData::from_lua(lua_value, lua)?;
+impl<'a> LuaSingleBundle<'a> {
+    fn from_lua_userdata<'lua>(ud: &'a AnyUserData<'lua>) -> Result<Self> {
         let borrowed = ud.dyn_borrow::<dyn AlchemicalAny>()?;
-        let alchemy_table = (*borrowed).type_table();
+        let type_table = (*borrowed).type_table();
 
-        if !(alchemy_table.is::<dyn Send>() && alchemy_table.is::<dyn Sync>()) {
+        if !(type_table.is::<dyn Send>() && type_table.is::<dyn Sync>()) {
             return Err(Error::external(format!(
                 "userdata type `{}` is not registered as Send + Sync!",
-                alchemy_table.type_name
+                type_table.type_name
             )));
         }
 
-        let owning = !alchemy_table.is_copy();
+        let owning = !type_table.is_copy();
         let data;
+        let borrow;
 
         if owning {
             unsafe {
-                data = std::alloc::alloc(alchemy_table.layout);
+                data = std::alloc::alloc(type_table.layout);
                 drop(borrowed);
                 let mut borrowed_mut = ud.dyn_borrow_mut::<dyn AlchemicalAny>()?;
                 if hv_alchemy::clone_or_move(&mut *borrowed_mut, data as *mut _) {
                     std::alloc::dealloc(
-                        Box::into_raw(ud.dyn_take()?) as *mut u8,
-                        alchemy_table.layout,
+                        Box::into_raw(ud.dyn_take::<dyn AlchemicalAny>().unwrap()) as *mut u8,
+                        type_table.layout,
                     );
                 }
+                borrow = None;
             }
         } else {
             data = (&*borrowed) as *const _ as *mut dyn AlchemicalAny as *mut u8;
+            borrow = Some(borrowed);
         }
 
         let info = hecs::TypeInfo {
-            id: alchemy_table.id,
-            layout: alchemy_table.layout,
-            drop: alchemy_table.drop,
+            id: type_table.id,
+            layout: type_table.layout,
+            drop: type_table.drop,
             #[cfg(debug_assertions)]
-            type_name: alchemy_table.type_name,
+            type_name: type_table.type_name,
         };
 
-        Ok(RawSingleBundle { data, owning, info })
+        Ok(LuaSingleBundle {
+            data,
+            borrow,
+            moved: false,
+            info,
+        })
     }
 }
 
-unsafe impl hecs::DynamicBundle for RawSingleBundle {
+unsafe impl hecs::DynamicBundle for LuaSingleBundle<'_> {
     fn key(&self) -> Option<TypeId> {
         Some(self.info.id)
     }
@@ -134,12 +198,26 @@ unsafe impl hecs::DynamicBundle for RawSingleBundle {
         vec![self.info]
     }
 
-    unsafe fn put(self, mut f: impl FnMut(*mut u8, hecs::TypeInfo)) {
+    unsafe fn put(mut self, mut f: impl FnMut(*mut u8, hecs::TypeInfo)) {
         f(self.data as *mut u8, self.info);
-        if self.owning {
-            // Drop the box to deallocate the memory but not drop the actual component there, since it
-            // has now been moved.
-            std::alloc::dealloc(self.data, self.info.layout);
+        self.moved = true;
+        drop(self);
+    }
+}
+
+impl Drop for LuaSingleBundle<'_> {
+    fn drop(&mut self) {
+        // if we didn't borrow this data, we have to deallocate the associated heap allocation
+        if self.borrow.is_none() {
+            // if this bundle wasn't actually used/emptied, we have to deallocate the object inside,
+            // too.
+            if !self.moved {
+                unsafe { (self.info.drop)(self.data) };
+            }
+
+            // Drop the box to deallocate the memory but not drop the actual component there, since
+            // it has now been moved.
+            unsafe { std::alloc::dealloc(self.data, self.info.layout) };
         }
     }
 }
@@ -267,12 +345,36 @@ impl UserData for hecs::World {
         methods.add_method("len", |_lua, this, ()| Ok(this.len()));
 
         let mut builder = hecs::EntityBuilder::new();
-        methods.add_method_mut("spawn", move |lua, this, components: Table| {
-            for component in components.sequence_values() {
-                builder.add_bundle(RawSingleBundle::from_lua(component?, lua)?);
+        methods.add_method_mut("spawn", move |_, this, args: MultiValue| {
+            assert_eq!(args.len(), 1, "spawn only takes one argument!");
+            let arg = args.into_iter().next().unwrap();
+            match arg {
+                Value::Table(table) => {
+                    builder.clear();
+                    for component in table.sequence_values::<AnyUserData>() {
+                        let component = component?;
+                        if let Ok(bundle) = component
+                            .clone()
+                            .dyn_clone_or_take::<dyn DynamicBundleProxy>()
+                        {
+                            builder.add_bundle(bundle);
+                        } else if let Ok(single) = LuaSingleBundle::from_lua_userdata(&component) {
+                            builder.add_bundle(single);
+                        } else {
+                            return Err(Error::external(
+                                "expected a table of bundles and components",
+                            ));
+                        }
+                    }
+                    Ok(this.spawn(builder.build()))
+                }
+                Value::UserData(ud) => {
+                    Ok(this.spawn(ud.dyn_clone_or_take::<dyn DynamicBundleProxy>()?))
+                }
+                _ => Err(Error::external(
+                    "expected either a bundle or a table of bundles and components",
+                )),
             }
-
-            Ok(this.spawn(builder.build()))
         });
 
         methods.add_method(

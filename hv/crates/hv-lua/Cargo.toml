@@ -47,6 +47,7 @@ hecs = { path = "../../../hecs", optional = true }
 hv-sync = { path = "../hv-sync" }
 hv-alchemy = { path = "../hv-alchemy" }
 hv-math = { path = "../hv-math" }
+static_assertions = "1.1.0"
 
 [build-dependencies]
 cc = { version = "1.0" }

@@ -739,6 +739,7 @@ dependencies = [
  "anyhow",
  "hecs",
  "hv-alchemy",
+ "hv-ecs-derive",
  "hv-filesystem",
  "hv-lua",
  "hv-sync",
@@ -761,6 +762,15 @@ dependencies = [
 [[package]]
 name = "hv-boxed"
 version = "0.1.0"
+
+[[package]]
+name = "hv-ecs-derive"
+version = "0.7.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "hv-filesystem"
@@ -804,6 +814,7 @@ dependencies = [
  "rustyline",
  "serde",
  "serde_json",
+ "static_assertions",
  "tokio",
  "trybuild",
 ]

@@ -4,7 +4,8 @@ use glfw::Context;
 use hv::{
     alchemy::Type,
     ecs::{ComponentType, DynamicQuery, Entity, World},
-    lua::{chunk, Lua, UserData, UserDataFields, UserDataMethods},
+    error::*,
+    lua::{chunk, hv::LuaUserDataTypeExt, Lua, UserData, UserDataFields, UserDataMethods},
     sync::cell::AtomicRefCell,
 };
 use luminance_glfw::GlfwSurface;
@@ -21,10 +22,7 @@ impl UserData for I32Component {
     }
 
     fn on_metatable_init(t: Type<Self>) {
-        t.mark_clone()
-            .mark_copy()
-            .add::<dyn Send>()
-            .add::<dyn Sync>();
+        t.mark_clone().mark_copy().mark_component();
     }
 
     fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
@@ -47,10 +45,7 @@ impl UserData for BoolComponent {
     }
 
     fn on_metatable_init(t: Type<Self>) {
-        t.mark_clone()
-            .mark_copy()
-            .add::<dyn Send>()
-            .add::<dyn Sync>();
+        t.mark_clone().mark_copy().mark_component();
     }
 
     fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
@@ -62,7 +57,7 @@ impl UserData for BoolComponent {
     }
 }
 
-fn main() -> hv::lua::Result<()> {
+fn main() -> Result<()> {
     let lua = Lua::new();
 
     let world_ty = lua.create_userdata_type::<World>()?;

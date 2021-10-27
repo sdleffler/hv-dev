@@ -16,6 +16,7 @@ module = ["lua/module"]
 anyhow = "1.0.44"
 alchemy = { path = "crates/hv-alchemy", package = "hv-alchemy" }
 ecs = { path = "../hecs", package = "hecs" }
+ecs-derive = { path = "crates/hv-ecs-derive", package = "hv-ecs-derive" }
 yaks = { path = "../yaks" }
 fs = { path = "crates/hv-filesystem", package = "hv-filesystem" }
 lua = { path = "crates/hv-lua", package = "hv-lua", features = ["hv-reexport"] }

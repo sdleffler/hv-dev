@@ -1,0 +1,15 @@
+[package]
+name = "hv-ecs-derive"
+version = "0.7.0"
+description = "Procedural macro definitions for hecs"
+authors = ["Benjamin Saunders <ben.e.saunders@gmail.com>", "Shea 'Decibel' Leffler <shea@errno.com>"]
+edition = "2018"
+license = "Apache-2.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0", default-features = false, features = ["proc-macro", "parsing", "printing", "derive", "clone-impls", "visit-mut"] }
+quote = "1.0.3"
+proc-macro2 = "1.0.1"
