@@ -1,0 +1,36 @@
+[package]
+name = "yaks"
+version = "0.1.0"
+description = "Minimalistic framework for automatic multithreading of hecs via rayon"
+authors = ["Alexander Sepity <alexander.sepity@gmail.com>", "Shea 'Decibel' Leffler <shea@errno.com>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Ratysz/yaks"
+readme = "README.md"
+keywords = ["hecs", "parallel", "ecs", "entity", "component"]
+categories = ["concurrency", "game-engines"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[features]
+default = ["parallel"]
+# If disabled, forces everything to work on a single thread.
+parallel = ["crossbeam-channel", "fixedbitset", "rayon"]
+# If enabled, allows `Executor::run()` to also accept `resources::Resources`.
+
+[dependencies]
+crossbeam-channel = { version = "0.5.1", optional = true }
+fixedbitset = { version = "0.4.0", optional = true }
+hecs = { path = "../hecs" }
+parking_lot = "0.11.2"
+paste = "1.0.5"
+rayon = { version = "1.5.1", optional = true }
+resources = { version = "1.1.0", features = ["fetch"] }
+
+[dev-dependencies]
+rand = "0.8.4"
+

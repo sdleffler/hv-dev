@@ -358,6 +358,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "downcast-rs"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
+
+[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -557,6 +563,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -729,6 +744,7 @@ dependencies = [
  "hv-sync",
  "petgraph",
  "thiserror",
+ "yaks",
 ]
 
 [[package]]
@@ -1664,6 +1680,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "resources"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42070ea13709eb92d2977b48c7d3bd44866fa328e14248f8d1f00d6ea14d5066"
+dependencies = [
+ "downcast-rs",
+ "fxhash",
+ "parking_lot",
+]
+
+[[package]]
 name = "rust_module"
 version = "0.0.0"
 dependencies = [
@@ -2366,6 +2393,20 @@ name = "xml-rs"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2d7d3948613f75c98fd9328cfdcc45acc4d360655289d0a7d4ec931392200a3"
+
+[[package]]
+name = "yaks"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "fixedbitset",
+ "hecs",
+ "parking_lot",
+ "paste",
+ "rand",
+ "rayon",
+ "resources",
+]
 
 [[package]]
 name = "zip"

@@ -13,4 +13,5 @@ members = [
     "hv/crates/hv-vfs",
     "hv",
     "projects/scratch",
+    "yaks",
 ]

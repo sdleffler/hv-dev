@@ -2,3 +2,4 @@
 
 pub use ::ecs::*;
 pub use ::lua::hv::ecs::*;
+pub use ::yaks::*;
