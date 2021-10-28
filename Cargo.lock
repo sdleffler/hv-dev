@@ -29,6 +29,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "altar"
+version = "0.1.0"
+dependencies = [
+ "hv",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -742,6 +749,7 @@ dependencies = [
  "hv-ecs-derive",
  "hv-filesystem",
  "hv-lua",
+ "hv-math",
  "hv-sync",
  "petgraph",
  "thiserror",

@@ -128,8 +128,8 @@ impl OpenOptions {
 impl UserData for OpenOptions {
     fn on_metatable_init(table: Type<Self>) {
         table
-            .mark_clone()
-            .mark_copy()
+            .add_clone()
+            .add_copy()
             .add::<dyn Send>()
             .add::<dyn Sync>();
     }

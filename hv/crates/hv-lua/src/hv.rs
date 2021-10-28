@@ -2,14 +2,14 @@ use hv_alchemy::Type;
 
 use crate::{
     hv::ecs::{ComponentType, DynamicBundleProxy},
-    UserData,
+    Lua, RegistryKey, Result, Table, UserData,
 };
 
 #[cfg(feature = "hecs")]
 pub mod ecs;
+pub mod math;
 
 mod alchemy;
-mod math;
 mod sync;
 
 pub trait LuaUserDataTypeExt<T> {
@@ -54,4 +54,16 @@ impl<T: 'static + UserData> LuaUserDataTypeTypeExt<T> for Type<Type<T>> {
     {
         self.add::<dyn ComponentType>()
     }
+}
+
+pub fn types(lua: &Lua) -> Result<Table> {
+    use crate::Value::*;
+    lua.create_table_from(vec![
+        ("ecs", Table(self::ecs::types(lua)?)),
+        ("math", Table(self::math::types(lua)?)),
+        (
+            "RegistryKey",
+            UserData(lua.create_userdata_type::<RegistryKey>()?),
+        ),
+    ])
 }

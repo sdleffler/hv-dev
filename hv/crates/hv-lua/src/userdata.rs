@@ -1,8 +1,8 @@
-use std::any::TypeId;
 use std::cell::{Ref, RefCell, RefMut};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::string::String as StdString;
+use std::{any::TypeId, mem::MaybeUninit};
 
 #[cfg(feature = "async")]
 use std::future::Future;
@@ -13,7 +13,7 @@ use {
     std::result::Result as StdResult,
 };
 
-use hv_alchemy::{AlchemicalAny, AlchemicalPtr, Alchemy, Type, TypeTable};
+use hv_alchemy::{AlchemicalAny, AlchemicalPtr, Alchemy, IntoProxy, Type, TypeTable};
 
 use crate::function::Function;
 use crate::lua::Lua;
@@ -603,14 +603,14 @@ pub trait UserData: Sized {
     /// Adds custom fields to the *type* object for this userdata.
     fn add_type_fields<'lua, F: UserDataFields<'lua, Type<Self>>>(_fields: &mut F)
     where
-        Self: 'static,
+        Self: 'static + MaybeSend,
     {
     }
 
     /// Adds custom methods and operators to the *type* object for this userdata.
     fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(_methods: &mut M)
     where
-        Self: 'static,
+        Self: 'static + MaybeSend,
     {
     }
 
@@ -963,6 +963,54 @@ impl<'lua> AnyUserData<'lua> {
                             .into_boxed()
                             .dyncast::<U>()
                             .unwrap())
+                    }
+                }
+                Some(_) => Err(Error::UserDataDestructed),
+                _ => Err(Error::UserDataTypeMismatch),
+            }
+        }
+    }
+
+    pub fn convert_into<T: 'static>(&self) -> Result<T> {
+        let lua = self.0.lua;
+        unsafe {
+            let _sg = StackGuard::new(lua.state);
+            check_stack(lua.state, 2)?;
+
+            let type_table = lua.push_userdata_ref(&self.0)?;
+            match type_table {
+                Some(type_table) if type_table.id != TypeId::of::<DestructedUserdataMT>() => {
+                    let into_proxy_t = type_table
+                        .get::<dyn IntoProxy<T>>()
+                        .ok_or(Error::UserDataDynMismatch)?;
+
+                    // Try to borrow userdata exclusively. At the same time, try cloning it.
+                    let this_ptr = (*get_userdata::<UserDataCell>(lua.state, -1))
+                        .0
+                        .try_borrow_mut()
+                        .map_err(|_| Error::UserDataBorrowMutError)?
+                        .as_ptr();
+
+                    let mut converted = MaybeUninit::<T>::uninit();
+                    into_proxy_t
+                        .to_dyn_object_ptr::<dyn IntoProxy<T>>(this_ptr)
+                        .convert_into_ptr(converted.as_mut_ptr());
+
+                    if type_table.is_copy() {
+                        Ok(converted.assume_init())
+                    } else {
+                        // Clear uservalue
+                        #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
+                        ffi::lua_pushnil(lua.state);
+                        #[cfg(any(feature = "lua51", feature = "luajit"))]
+                        protect_lua!(lua.state, 0, 1, fn(state) ffi::lua_newtable(state))?;
+                        ffi::lua_setuservalue(lua.state, -2);
+
+                        let ptr =
+                            Box::into_raw(take_userdata::<UserDataCell>(lua.state).into_boxed());
+                        std::alloc::dealloc(ptr as *mut u8, type_table.layout);
+
+                        Ok(converted.assume_init())
                     }
                 }
                 Some(_) => Err(Error::UserDataDestructed),

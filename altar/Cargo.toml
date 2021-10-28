@@ -1,0 +1,8 @@
+[package]
+name = "altar"
+version = "0.1.0"
+authors = ["Shea 'Decibel' Leffler <shea@errno.com>", "Maxim Veligan <maximveligan@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+hv = { path = "../hv" }

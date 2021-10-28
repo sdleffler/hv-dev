@@ -26,7 +26,7 @@ impl UserData for I32Component {
     }
 
     fn on_metatable_init(t: Type<Self>) {
-        t.mark_clone().mark_copy().mark_component();
+        t.add_clone().add_copy().mark_component();
     }
 
     fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
@@ -49,7 +49,7 @@ impl UserData for BoolComponent {
     }
 
     fn on_metatable_init(t: Type<Self>) {
-        t.mark_clone().mark_copy().mark_component();
+        t.add_clone().add_copy().mark_component();
     }
 
     fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
@@ -64,18 +64,17 @@ impl UserData for BoolComponent {
 fn main() -> Result<()> {
     let lua = Lua::new();
 
-    let world_ty = lua.create_userdata_type::<World>()?;
-    let query_ty = lua.create_userdata_type::<DynamicQuery>()?;
+    let hv = hv::lua::types(&lua)?;
+
     let i32_ty = lua.create_userdata_type::<I32Component>()?;
     let bool_ty = lua.create_userdata_type::<BoolComponent>()?;
     let world = Arc::new(AtomicRefCell::new(World::new()));
     let world_clone = world.clone();
 
     let chunk = chunk! {
-        local World = $world_ty
-        local Query = $query_ty
-        local I32 = $i32_ty
-        local Bool = $bool_ty
+        local hv = $hv
+        local Query = hv.ecs.Query
+        local I32, Bool = $i32_ty, $bool_ty
 
         local world = $world_clone
         local entity = world:spawn { I32.new(5), Bool.new(true) }

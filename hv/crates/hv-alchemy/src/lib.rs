@@ -2,27 +2,26 @@
 //! form'.* (Wikipedia)
 //!
 //! Functionality for dynamically examining and manipulating `dyn Trait` objects. This is done
-//! mainly through [`TypeTable`], which is a bit like a superpowered
-//! [`TypeId`](core::any::TypeId) that also allows you to ask whether the type it pertains to
-//! implements some object safe trait. If you can write it as a `dyn Trait`, then you can try to get
-//! a [`DynVtable`] corresponding to that trait's implementation for the type the [`TypeTable`]
-//! corresponds to.
+//! mainly through [`TypeTable`], which is a bit like a superpowered [`TypeId`](core::any::TypeId)
+//! that also allows you to ask whether the type it pertains to implements some object safe trait.
+//! If you can write it as a `dyn Trait`, then you can try to get a [`DynVtable`] corresponding to
+//! that trait's implementation for the type the [`TypeTable`] corresponds to.
 //!
 //! A few basic relationships:
 //! - [`TypeTable`] => one per type, potentially many [`DynVtable`]s per [`TypeTable`]
 //!     - A single [`TypeTable`] provides all the information necessary to dynamically allocate,
 //!       deallocate, drop, and manipulate the type it corresponds to.
-//! - [`Type`] => just a wrapper around [`TypeTable`] that adds the type, for use in
-//!   dynamically dispatching over [`Type<T>`]. Useful for when you want to represent
-//!   the type of an object in a way that can be `Box<dyn Any>` or `Box<dyn AlchemicalAny>`'d.
+//! - [`Type`] => just a wrapper around [`TypeTable`] that adds the type, for use in dynamically
+//!   dispatching over [`Type<T>`]. Useful for when you want to represent the type of an object in a
+//!   way that can be `Box<dyn Any>` or `Box<dyn AlchemicalAny>`'d.
 //! - [`DynVtable`] => at most one per pair of types (object-safe trait `dyn` type, implementor
 //!   type.) Contains the necessary metadata to reconstruct a `*const` or `*mut dyn Trait` for the
 //!   object-safe trait type it pertains to, pointing to the implementor type it pertains to.
 //!
 //! Non-object-safe traits can also be represented using this crate, but they have to be done
 //! through blanket-impl'd object-safe traits. For a couple of builtin examples, the [`Clone`] trait
-//! is represented through [`AlchemicalClone`], and the [`Copy`] trait is represented through
-//! [`AlchemicalCopy`]. Although you cannot directly see a type as `Clone` or `Copy` through its
+//! is represented through [`CloneProxy`], and the [`Copy`] trait is represented through
+//! [`CopyProxy`]. Although you cannot directly see a type as `Clone` or `Copy` through its
 //! `DynVtable`, you can still do equivalent things (and make use of the consequences of a type
 //! being `Clone` or `Copy`.) Also see [`try_clone`](crate::AlchemicalAny::try_clone) and
 //! [`try_copy`](crate::AlchemicalAny::try_copy).
@@ -38,25 +37,25 @@
 //! There are also a handful of other convenient traits included:
 //! - [`AlchemicalAny`] is a powered-up version of [`Any`] which allows for easily fetching the
 //!   corresponding [`TypeTable`] for a type.
-//! - [`AlchemicalClone`] is an object-safe [`Clone`] abstraction which can allow for cloning boxed
-//!   [`dyn AlchemicalAny`](AlchemicalAny) objects.
-//! - [`AlchemicalCopy`] is an object-safe [`Copy`] abstraction which can allow for copying
+//! - [`CloneProxy`] is an object-safe [`Clone`] abstraction which can allow for cloning boxed [`dyn
+//!   AlchemicalAny`](AlchemicalAny) objects.
+//! - [`CopyProxy`] is an object-safe [`Copy`] abstraction which can allow for copying
 //!   [`AlchemicalAny`] objects.
 //!
 //! # Caveats
 //!
-//! In order for an `TypeTable` to be useful with respect to some object-safe trait `U`
-//! implemented for some type `T`, that trait's impl for `T` has to be registered with the global
-//! static registry, which is initialized at program runtime. There are a number of ways to do this,
-//! but the most convenient is [`Type::add`] (and also the related `mark_copy` and
-//! `mark_clone`) traits. It's always a good idea to add the copy/clone markings and also `dyn Send`
-//! and `dyn Sync` if they can be applied! Note that it is impossible to add a trait which is
-//! unimplemented by `T`, so you don't have to worry about causing unsafety or anything with such.
-//! This library should (unless some soundness bug has escaped my notice) be completely safe as long
-//! as it is kept to its safe API.
+//! In order for an `TypeTable` to be useful with respect to some object-safe trait `U` implemented
+//! for some type `T`, that trait's impl for `T` has to be registered with the global static
+//! registry, which is initialized at program runtime. There are a number of ways to do this, but
+//! the most convenient is [`Type::add`] (and also the related `mark_copy` and `mark_clone`) traits.
+//! It's always a good idea to add the copy/clone markings and also `dyn Send` and `dyn Sync` if
+//! they can be applied! Note that it is impossible to add a trait which is unimplemented by `T`, so
+//! you don't have to worry about causing unsafety or anything with such. This library should
+//! (unless some soundness bug has escaped my notice) be completely safe as long as it is kept to
+//! its safe API.
 
 #![no_std]
-#![feature(ptr_metadata, unsize)]
+#![feature(ptr_metadata, unsize, arbitrary_self_types)]
 #![warn(missing_docs)]
 
 extern crate alloc;
@@ -72,13 +71,19 @@ use core::{
     sync::atomic::Ordering,
 };
 use hashbrown::{HashMap, HashSet};
-use hv_sync::{atom::AtomSetOnce, cell::AtomicRefCell, monotonic_list::MonotonicList};
+use hv_sync::{atom::AtomSetOnce, cell::AtomicRefCell};
 use lazy_static::lazy_static;
 use spin::RwLock;
 
 /// Convenience function for getting the [`Type`] for some `T`.
 pub fn of<T: 'static>() -> Type<T> {
     Type::of()
+}
+
+/// Convenience function for marking some `T` as being convertible into some `U`.
+pub fn convertible<T: 'static, U: 'static + From<T>>() {
+    of::<T>().add_into::<U>();
+    of::<U>().add_from::<T>();
 }
 
 fn typed<T: 'static>() -> Type<T> {
@@ -102,11 +107,11 @@ fn make_registry() -> HashMap<TypeId, &'static TypeTable> {
             sync::{Arc, Weak as ArcWeak},
         };
 
-        typed::<Rc<T>>().mark_clone();
-        typed::<RcWeak<T>>().mark_clone();
-        typed::<Arc<T>>().mark_clone();
-        typed::<ArcWeak<T>>().mark_clone();
-        typed::<&'static T>().mark_clone().mark_copy();
+        typed::<Rc<T>>().add_clone();
+        typed::<RcWeak<T>>().add_clone();
+        typed::<Arc<T>>().add_clone();
+        typed::<ArcWeak<T>>().add_clone();
+        typed::<&'static T>().add_clone().add_copy();
     }
 
     fn wrappers<T: 'static>(_: Type<T>) {
@@ -129,10 +134,7 @@ fn make_registry() -> HashMap<TypeId, &'static TypeTable> {
             + Send
             + Sync,
     {
-        t.mark_clone()
-            .mark_copy()
-            .add::<dyn Send>()
-            .add::<dyn Sync>();
+        t.add_clone().add_copy().add::<dyn Send>().add::<dyn Sync>();
         wrappers(t);
     }
 
@@ -165,12 +167,12 @@ lazy_static! {
 
 /// An object-safe clone trait. Useful to have around as a marker for when a type is [`Clone`], and
 /// for easily/efficiently performing the clone.
-pub trait AlchemicalClone {
+pub trait CloneProxy {
     #[doc(hidden)]
     unsafe fn clone_into_ptr(&self, ptr: *mut u8);
 }
 
-impl<T: Clone> AlchemicalClone for T {
+impl<T: Clone> CloneProxy for T {
     unsafe fn clone_into_ptr(&self, ptr: *mut u8) {
         (&mut *ptr.cast::<T>()).clone_from(self);
     }
@@ -178,18 +180,65 @@ impl<T: Clone> AlchemicalClone for T {
 
 /// An object-safe copy trait. Useful to have around as a marker for when a type is [`Copy`], and
 /// for easily/efficiently performing the copy.
-pub trait AlchemicalCopy {
+pub trait CopyProxy {
     #[doc(hidden)]
     unsafe fn copy_into_ptr(&self, ptr: *mut u8);
 }
 
-impl<T: Copy> AlchemicalCopy for T {
+impl<T: Copy> CopyProxy for T {
     unsafe fn copy_into_ptr(&self, ptr: *mut u8) {
         *ptr.cast::<T>() = *self;
     }
 }
 
-static_assertions::assert_obj_safe!(AlchemicalClone, AlchemicalCopy);
+static_assertions::assert_obj_safe!(CloneProxy, CopyProxy);
+
+/// An object-safe `From` trait (`Self` from `T`), for converting some `T` into a dynamically-known
+/// type for which you only have its [`TypeTable`].
+///
+/// Usually, you will want [`IntoProxy`] instead; `FromProxy` specializes in allowing you to convert
+/// a statically known type, into a dynamically known type. Usually you have a statically known
+/// "destination" type and a dynamically known "source" type, which is what [`IntoProxy`] deals
+/// with.
+pub trait FromProxy<T> {
+    /// Convert a `T` into `Self`.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be a valid pointer, and if it contains an already valid `Self`, then that value
+    /// will not be dropped; just overwritten. `ptr` must also be a valid pointer to a `T`, and if
+    /// `T` is not `Copy`, then the value at `ptr` should be considered moved after this operation.
+    unsafe fn convert_from_ptr(self: *mut Self, ptr: *const T);
+}
+
+impl<T: From<U>, U> FromProxy<U> for T {
+    unsafe fn convert_from_ptr(self: *mut Self, ptr: *const U) {
+        core::ptr::write(self, T::from(core::ptr::read(ptr.cast::<U>())));
+    }
+}
+
+/// An object-safe `Into` trait (`Self` into `T`), for converting some dynamic `Self` type into a
+/// statically-known type.
+///
+/// For conversions from a statically-known type to a dynamically-known type, use [`FromProxy`].
+pub trait IntoProxy<T> {
+    /// Convert a `Self` into `T`.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be a valid pointer, and if it contains an already valid `T`, then that value will
+    /// not be dropped; just overwritten. `self` must also be a valid pointer, and if `Self` is not
+    /// `Copy`, then the value at `ptr` should be considered moved after this operation.
+    unsafe fn convert_into_ptr(self: *const Self, ptr: *mut T);
+}
+
+impl<T: Into<U>, U> IntoProxy<U> for T {
+    unsafe fn convert_into_ptr(self: *const Self, ptr: *mut U) {
+        core::ptr::write(ptr.cast::<U>(), T::into(core::ptr::read(self)));
+    }
+}
+
+static_assertions::assert_obj_safe!(FromProxy<()>);
 
 /// An auto-implemented marker trait indicating that a type is a subtype of/is convertible to some
 /// type `U`. In most cases, this means that `Self` implements some `Trait` such that `U` is `dyn
@@ -218,7 +267,7 @@ pub trait Alchemy: Any + Pointee<Metadata = DynMetadata<Self>> {}
 impl<T> Alchemy for T where T: ?Sized + Any + Pointee<Metadata = DynMetadata<T>> {}
 
 static_assertions::assert_impl_all!(dyn Any: Alchemy);
-static_assertions::assert_impl_all!((): AlchemicalClone);
+static_assertions::assert_impl_all!((): CloneProxy);
 
 /// A table of information about a type, effectively acting as a superpowered [`TypeId`].
 pub struct TypeTable {
@@ -233,7 +282,7 @@ pub struct TypeTable {
 
     // Private because of interior mutability, so we want to only expose iteration (and insertion)
     // from the outside.
-    vtables: MonotonicList<DynVtable>,
+    vtables: RwLock<HashMap<TypeId, &'static DynVtable>>,
 
     // Always-there vtables, not stored as part of the monotonic list
     pub(crate) alchemical_any: DynVtable,
@@ -254,7 +303,7 @@ impl TypeTable {
             layout: Layout::new::<T>(),
             drop: drop_ptr::<T>,
             type_name: core::any::type_name::<T>(),
-            vtables: MonotonicList::new(),
+            vtables: RwLock::new(HashMap::new()),
             alchemical_any: DynVtable::new::<T, dyn AlchemicalAny>(core::ptr::null()),
             alchemical_clone: AtomSetOnce::empty(),
             alchemical_copy: AtomSetOnce::empty(),
@@ -280,12 +329,12 @@ impl TypeTable {
             })
     }
 
-    /// Check whether the type implements [`Clone`] (through [`AlchemicalClone`]).
+    /// Check whether the type implements [`Clone`] (through [`CloneProxy`]).
     pub fn is_clone(&self) -> bool {
         !self.alchemical_clone.is_none(Ordering::Relaxed)
     }
 
-    /// Check whether the type implements [`Copy`] (through [`AlchemicalCopy`]).
+    /// Check whether the type implements [`Copy`] (through [`CopyProxy`]).
     pub fn is_copy(&self) -> bool {
         !self.alchemical_copy.is_none(Ordering::Relaxed)
     }
@@ -305,9 +354,9 @@ impl TypeTable {
         let id = TypeId::of::<U>();
         if id == TypeId::of::<dyn AlchemicalAny>() {
             return Some(&self.alchemical_any);
-        } else if id == TypeId::of::<dyn AlchemicalClone>() {
+        } else if id == TypeId::of::<dyn CloneProxy>() {
             return self.alchemical_clone.get(Ordering::Relaxed);
-        } else if id == TypeId::of::<dyn AlchemicalCopy>() {
+        } else if id == TypeId::of::<dyn CopyProxy>() {
             return self.alchemical_copy.get(Ordering::Relaxed);
         } else if id == TypeId::of::<dyn Send>() {
             return self.send.get(Ordering::Relaxed);
@@ -315,9 +364,7 @@ impl TypeTable {
             return self.sync.get(Ordering::Relaxed);
         }
 
-        self.vtables
-            .iter()
-            .find(|dv| dv.dyn_type_id == TypeId::of::<U>())
+        self.vtables.read().get(&id).copied()
     }
 
     /// Get the [`DynVtable`] corresponding to an object-safe trait `U`'s implementation for some
@@ -338,27 +385,20 @@ impl TypeTable {
             Some(table) => table,
             None => {
                 let id = TypeId::of::<U>();
-                let vtable = DynVtable::new::<T, U>(ptr);
-                if id == TypeId::of::<dyn AlchemicalClone>() {
-                    let eternal = Box::leak(Box::new(vtable));
-                    self.alchemical_clone
-                        .set_if_none(eternal, Ordering::Relaxed);
-                    eternal
-                } else if id == TypeId::of::<dyn AlchemicalCopy>() {
-                    let eternal = Box::leak(Box::new(vtable));
-                    self.alchemical_copy.set_if_none(eternal, Ordering::Relaxed);
-                    eternal
+                let vtable = Box::leak(Box::new(DynVtable::new::<T, U>(ptr)));
+                if id == TypeId::of::<dyn CloneProxy>() {
+                    self.alchemical_clone.set_if_none(vtable, Ordering::Relaxed);
+                } else if id == TypeId::of::<dyn CopyProxy>() {
+                    self.alchemical_copy.set_if_none(vtable, Ordering::Relaxed);
                 } else if id == TypeId::of::<dyn Send>() {
-                    let eternal = Box::leak(Box::new(vtable));
-                    self.send.set_if_none(eternal, Ordering::Relaxed);
-                    eternal
+                    self.send.set_if_none(vtable, Ordering::Relaxed);
                 } else if id == TypeId::of::<dyn Sync>() {
-                    let eternal = Box::leak(Box::new(vtable));
-                    self.sync.set_if_none(eternal, Ordering::Relaxed);
-                    eternal
+                    self.sync.set_if_none(vtable, Ordering::Relaxed);
                 } else {
-                    self.vtables.push(vtable)
+                    self.vtables.write().insert(id, vtable);
                 }
+
+                vtable
             }
         }
     }
@@ -379,10 +419,10 @@ impl TypeTable {
     /// Mark that this table's type (`T`) is [`Clone`].
     ///
     /// Panics if `T` is not the type of this table.
-    pub fn mark_clone<T: Clone + 'static>(&self) -> &Self {
+    pub fn add_clone<T: Clone + 'static>(&self) -> &Self {
         assert_eq!(TypeId::of::<T>(), self.id);
         self.alchemical_clone.set_if_none(
-            Box::leak(Box::new(DynVtable::new::<T, dyn AlchemicalClone>(
+            Box::leak(Box::new(DynVtable::new::<T, dyn CloneProxy>(
                 core::ptr::null(),
             ))),
             Ordering::Relaxed,
@@ -393,10 +433,10 @@ impl TypeTable {
     /// Mark that this table's type (`T`) is [`Copy`].
     ///
     /// Panics if `T` is not the type of this table.
-    pub fn mark_copy<T: Copy + 'static>(&self) -> &Self {
+    pub fn add_copy<T: Copy + 'static>(&self) -> &Self {
         assert_eq!(TypeId::of::<T>(), self.id);
         self.alchemical_copy.set_if_none(
-            Box::leak(Box::new(DynVtable::new::<T, dyn AlchemicalCopy>(
+            Box::leak(Box::new(DynVtable::new::<T, dyn CopyProxy>(
                 core::ptr::null(),
             ))),
             Ordering::Relaxed,
@@ -507,20 +547,20 @@ impl<T: ?Sized + 'static> Type<T> {
     }
 
     /// Register `T` as [`Clone`].
-    pub fn mark_clone(self) -> Self
+    pub fn add_clone(self) -> Self
     where
         T: Clone,
     {
-        self.0.mark_clone::<T>();
+        self.0.add_clone::<T>();
         self
     }
 
     /// Register `T` as [`Copy`].
-    pub fn mark_copy(self) -> Self
+    pub fn add_copy(self) -> Self
     where
         T: Copy,
     {
-        self.0.mark_copy::<T>();
+        self.0.add_copy::<T>();
         self
     }
 
@@ -549,6 +589,42 @@ impl<T: ?Sized + 'static> Type<T> {
     /// Get the [`&'static TypeTable`](TypeTable) underlying this `Type<T>`.
     pub fn as_untyped(self) -> &'static TypeTable {
         self.0
+    }
+}
+
+impl<T: 'static> Type<T> {
+    /// Mark `T` as `From<U>`.
+    pub fn add_from<U: 'static>(self) -> Self
+    where
+        T: From<U>,
+    {
+        self.add::<dyn FromProxy<U>>()
+    }
+
+    /// Mark `T` as `Into<U>`.
+    pub fn add_into<U: 'static>(self) -> Self
+    where
+        T: Into<U>,
+    {
+        self.add::<dyn IntoProxy<U>>()
+    }
+
+    /// Mark `T` as `Into<U>` and mark `U` as `From<T>`.
+    pub fn add_conversion_into<U: 'static>(self) -> Self
+    where
+        U: From<T>,
+    {
+        of::<U>().add_from::<T>();
+        self.add_into::<U>()
+    }
+
+    /// Mark `T` as `From<U>` and mark `U` as `Into<T>`.
+    pub fn add_conversion_from<U: 'static>(self) -> Self
+    where
+        T: From<U>,
+    {
+        of::<U>().add_into::<T>();
+        self.add_from::<U>()
     }
 }
 
@@ -825,12 +901,11 @@ impl dyn AlchemicalAny {
     /// and the original type is not moved (because it implements [`Copy`].)
     pub fn try_copy(&self) -> Option<Box<dyn AlchemicalAny>> {
         let at = self.type_table();
-        let as_alchemical_copy = at.get::<dyn AlchemicalCopy>()?;
+        let as_alchemical_copy = at.get::<dyn CopyProxy>()?;
         unsafe {
             let ptr = alloc::alloc::alloc(at.layout);
-            (*as_alchemical_copy.to_dyn_object_ptr::<dyn AlchemicalCopy>(
-                (self as *const dyn AlchemicalAny).cast(),
-            ))
+            (*as_alchemical_copy
+                .to_dyn_object_ptr::<dyn CopyProxy>((self as *const dyn AlchemicalAny).cast()))
             .copy_into_ptr(ptr);
             let recast_ptr = at
                 .alchemical_any
@@ -843,12 +918,11 @@ impl dyn AlchemicalAny {
     /// and the original type is not moved (because it implements [`Clone`].)
     pub fn try_clone(&self) -> Option<Box<dyn AlchemicalAny>> {
         let at = self.type_table();
-        let as_alchemical_clone = at.get::<dyn AlchemicalClone>()?;
+        let as_alchemical_clone = at.get::<dyn CloneProxy>()?;
         unsafe {
             let ptr = alloc::alloc::alloc(at.layout);
-            (*as_alchemical_clone.to_dyn_object_ptr::<dyn AlchemicalClone>(
-                (self as *const dyn AlchemicalAny).cast(),
-            ))
+            (*as_alchemical_clone
+                .to_dyn_object_ptr::<dyn CloneProxy>((self as *const dyn AlchemicalAny).cast()))
             .clone_into_ptr(ptr);
             let recast_ptr = at
                 .alchemical_any
@@ -866,9 +940,9 @@ impl dyn AlchemicalAny {
 /// already initialized and will be treated as uninitialized.)
 pub unsafe fn clone_or_move(src: *mut dyn AlchemicalAny, dst: *mut u8) -> bool {
     let table = <dyn AlchemicalAny>::type_table(&*src);
-    if let Some(clone_vt) = table.get::<dyn AlchemicalClone>() {
+    if let Some(clone_vt) = table.get::<dyn CloneProxy>() {
         clone_vt
-            .to_dyn_object_ptr::<dyn AlchemicalClone>(src as *mut ())
+            .to_dyn_object_ptr::<dyn CloneProxy>(src as *mut ())
             .clone_into_ptr(dst as *mut u8);
         false
     } else {
@@ -889,14 +963,14 @@ pub unsafe fn copy_clone_or_move_to(
 ) -> bool {
     let table = <dyn AlchemicalAny>::type_table(&*src);
     assert!(core::ptr::eq(table, <dyn AlchemicalAny>::type_table(&*dst)));
-    if let Some(copy_vt) = table.get::<dyn AlchemicalCopy>() {
+    if let Some(copy_vt) = table.get::<dyn CopyProxy>() {
         copy_vt
-            .to_dyn_object_ptr::<dyn AlchemicalCopy>(src as *mut ())
+            .to_dyn_object_ptr::<dyn CopyProxy>(src as *mut ())
             .copy_into_ptr(dst as *mut u8);
         false
-    } else if let Some(clone_vt) = table.get::<dyn AlchemicalClone>() {
+    } else if let Some(clone_vt) = table.get::<dyn CloneProxy>() {
         clone_vt
-            .to_dyn_object_ptr::<dyn AlchemicalClone>(src as *mut ())
+            .to_dyn_object_ptr::<dyn CloneProxy>(src as *mut ())
             .clone_into_ptr(dst as *mut u8);
         false
     } else {
@@ -911,11 +985,11 @@ mod tests {
 
     #[test]
     fn alchemical_clone() {
-        // `mark_clone` is shorthand for `.register_sized::<i32, dyn AlchemicalClone>` (where
-        // `AlchemicalClone` is an object-safe but very unsafe trait implementing `Clone`-ing into a
+        // `mark_clone` is shorthand for `.register_sized::<i32, dyn CloneProxy>` (where
+        // `CloneProxy` is an object-safe but very unsafe trait implementing `Clone`-ing into a
         // pointer) and where `register_sized` is shorthand for `.register::<i32, dyn
-        // AlchemicalClone>(core::ptr::null())`
-        Type::<i32>::of().mark_clone();
+        // CloneProxy>(core::ptr::null())`
+        Type::<i32>::of().add_clone();
 
         let boxed: Box<dyn AlchemicalAny> = Box::new(5i32);
         let other: Box<dyn AlchemicalAny> = boxed.try_clone().unwrap();
@@ -928,11 +1002,11 @@ mod tests {
 
     #[test]
     fn alchemical_copy() {
-        // `mark_clone` is shorthand for `.register_sized::<i32, dyn AlchemicalClone>` (where
-        // `AlchemicalClone` is an object-safe but very unsafe trait implementing `Clone`-ing into a
+        // `mark_clone` is shorthand for `.register_sized::<i32, dyn CloneProxy>` (where
+        // `CloneProxy` is an object-safe but very unsafe trait implementing `Clone`-ing into a
         // pointer) and where `register_sized` is shorthand for `.register::<i32, dyn
-        // AlchemicalClone>(core::ptr::null())`
-        Type::<i32>::of().mark_copy();
+        // CloneProxy>(core::ptr::null())`
+        Type::<i32>::of().add_copy();
 
         let boxed: Box<dyn AlchemicalAny> = Box::new(5i32);
         let other: Box<dyn AlchemicalAny> = boxed.try_copy().unwrap();

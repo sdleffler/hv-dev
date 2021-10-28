@@ -10,7 +10,7 @@ use crate::{
 
 impl UserData for hecs::ColumnBatchType {
     fn on_metatable_init(table: Type<Self>) {
-        table.mark_clone().add::<dyn Send>().add::<dyn Sync>();
+        table.add_clone().add::<dyn Send>().add::<dyn Sync>();
     }
 
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
@@ -410,4 +410,21 @@ impl UserData for hecs::World {
     fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, ()| Ok(hecs::World::new()));
     }
+}
+
+pub fn types(lua: &Lua) -> Result<Table> {
+    macro_rules! e {
+        ($ty:ty as $name:ident) => {
+            (stringify!($name), lua.create_userdata_type::<$ty>()?)
+        };
+    }
+
+    let es = vec![
+        e!(hecs::World as World),
+        e!(hecs::DynamicQuery as Query),
+        e!(hecs::DynamicItem as Item),
+        e!(hecs::ColumnBatchType as ColumnBatchType),
+    ];
+
+    lua.create_table_from(es)
 }

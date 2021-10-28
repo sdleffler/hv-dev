@@ -1,8 +1,8 @@
 use hv_alchemy::{Type, TypeTable};
 
 use crate::{
-    Error, FromLua, LightUserData, Lua, Result, ToLua, UserData, UserDataFields, UserDataMethods,
-    Value,
+    types::MaybeSend, AnyUserData, Error, FromLua, LightUserData, Lua, Result, ToLua, UserData,
+    UserDataFields, UserDataMethods, Value,
 };
 
 impl<'lua> ToLua<'lua> for &'static TypeTable {
@@ -24,12 +24,9 @@ impl<'lua> FromLua<'lua> for &'static TypeTable {
     }
 }
 
-impl<T: 'static + UserData> UserData for Type<T> {
+impl<T: 'static + UserData + MaybeSend> UserData for Type<T> {
     fn on_metatable_init(t: Type<Self>) {
-        t.mark_clone()
-            .mark_copy()
-            .add::<dyn Send>()
-            .add::<dyn Sync>();
+        t.add_clone().add_copy().add::<dyn Send>().add::<dyn Sync>();
         T::on_type_metatable_init(hv_alchemy::of())
     }
 
@@ -38,6 +35,8 @@ impl<T: 'static + UserData> UserData for Type<T> {
     }
 
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_function("from", |_, ud: AnyUserData| ud.convert_into::<T>());
+
         T::add_type_methods(methods);
     }
 }

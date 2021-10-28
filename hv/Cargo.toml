@@ -13,13 +13,14 @@ vendored = ["lua/vendored"]
 module = ["lua/module"]
 
 [dependencies]
-anyhow = "1.0.44"
 alchemy = { path = "crates/hv-alchemy", package = "hv-alchemy" }
+anyhow = "1.0.44"
 ecs = { path = "../hecs", package = "hecs" }
 ecs-derive = { path = "crates/hv-ecs-derive", package = "hv-ecs-derive" }
-yaks = { path = "../yaks" }
 fs = { path = "crates/hv-filesystem", package = "hv-filesystem" }
 lua = { path = "crates/hv-lua", package = "hv-lua", features = ["hv-reexport"] }
-sync = { path = "crates/hv-sync", package = "hv-sync" }
+math = { path = "crates/hv-math", package = "hv-math" }
 petgraph = "0.6.0"
+sync = { path = "crates/hv-sync", package = "hv-sync" }
 thiserror = "1.0.30"
+yaks = { path = "../yaks" }
