@@ -1,0 +1,11 @@
+[package]
+name = "hv-input"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+glfw = { version = "0.42.0", optional = true }
+hashbrown = "0.11.2"
+hv-math = { path = "../hv-math" }
+serde = "1.0.130"
+strum = { version = "0.22.0", features = ["derive"] }

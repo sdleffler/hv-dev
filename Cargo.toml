@@ -6,6 +6,7 @@ members = [
     "hv/crates/hv-boxed",
     "hv/crates/hv-ecs-derive",
     "hv/crates/hv-filesystem",
+    "hv/crates/hv-input",
     "hv/crates/hv-lua-derive",
     "hv/crates/hv-lua",
     "hv/crates/hv-lua/examples/module",
