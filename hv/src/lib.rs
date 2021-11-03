@@ -12,6 +12,7 @@ pub mod lua {
     pub use lua::*;
 }
 
+pub extern crate input;
 pub extern crate math;
 pub extern crate sync;
 

@@ -42,6 +42,12 @@ use serde::*;
 #[cfg(feature = "glfw")]
 mod glfw;
 
+pub trait Mappable: Eq + Hash + Clone {}
+impl<T: Eq + Hash + Clone> Mappable for T {}
+
+pub trait LuaMappable: Mappable + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua> {}
+impl<T: Mappable + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua>> LuaMappable for T {}
+
 /// Supported key codes.
 #[allow(missing_docs)]
 #[derive(
@@ -288,7 +294,7 @@ pub enum GamepadAxis {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AxisDirection {
     Positive,
     Negative,
@@ -307,11 +313,17 @@ impl AxisDirection {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ScrollAxis {
+    Horizontal,
+    Vertical,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum InputEffect<Axes, Buttons>
 where
-    Axes: Eq + Hash + Clone,
-    Buttons: Eq + Hash + Clone,
+    Axes: Mappable,
+    Buttons: Mappable,
 {
     /// An input effect on an axis, with an associated direction.
     Axis(Axes, AxisDirection),
@@ -322,8 +334,8 @@ where
 
 impl<Axes, Buttons> InputEffect<Axes, Buttons>
 where
-    Axes: Eq + Hash + Clone,
-    Buttons: Eq + Hash + Clone,
+    Axes: Mappable,
+    Buttons: Mappable,
 {
     pub fn to_event_with_button_state(self, state: bool) -> InputEvent<Axes, Buttons> {
         match self {
@@ -336,8 +348,8 @@ where
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum InputEvent<Axes, Buttons>
 where
-    Axes: Eq + Hash + Clone,
-    Buttons: Eq + Hash + Clone,
+    Axes: Mappable,
+    Buttons: Mappable,
 {
     /// Indicates the state of an axis.
     Axis(Axes, f32),
@@ -354,6 +366,7 @@ enum InputType {
     GamepadButton(GamepadButton),
     GamepadAxis(GamepadAxis),
     MouseButton(MouseButton),
+    MouseScroll(ScrollAxis),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -408,8 +421,8 @@ struct ButtonState {
 
 pub struct InputBinding<Axes, Buttons>
 where
-    Axes: Eq + Hash + Clone,
-    Buttons: Eq + Hash + Clone,
+    Axes: Mappable,
+    Buttons: Mappable,
 {
     bindings: HashMap<InputType, InputEffect<Axes, Buttons>>,
 }
@@ -499,10 +512,15 @@ where
     }
 
     /// Adds a gamepad axis binding connecting the given gamepad axis to the given logical axis.
-    pub fn bind_gamepad_axis_to_axis(mut self, gamepad_axis: GamepadAxis, axis: Axes) -> Self {
+    pub fn bind_gamepad_axis_to_axis(
+        mut self,
+        gamepad_axis: GamepadAxis,
+        axis: Axes,
+        direction: AxisDirection,
+    ) -> Self {
         self.bindings.insert(
             InputType::GamepadAxis(gamepad_axis),
-            InputEffect::Axis(axis, AxisDirection::Positive),
+            InputEffect::Axis(axis, direction),
         );
         self
     }
@@ -512,6 +530,21 @@ where
         self.bindings.insert(
             InputType::MouseButton(mouse_button),
             InputEffect::Button(button, AxisDirection::Positive),
+        );
+        self
+    }
+
+    /// Adds a mouse scroll wheel binding connecting the given mouse scroll wheel axis to the given
+    /// logical axis.
+    pub fn bind_scroll_to_axis(
+        mut self,
+        scroll_axis: ScrollAxis,
+        axis: Axes,
+        direction: AxisDirection,
+    ) -> Self {
+        self.bindings.insert(
+            InputType::MouseScroll(scroll_axis),
+            InputEffect::Axis(axis, direction),
         );
         self
     }
@@ -610,8 +643,8 @@ where
 
 impl<Axes, Buttons> Default for InputState<Axes, Buttons>
 where
-    Axes: Eq + Hash + Clone,
-    Buttons: Eq + Hash + Clone,
+    Axes: Mappable,
+    Buttons: Mappable,
 {
     fn default() -> Self {
         Self::new()
@@ -620,8 +653,8 @@ where
 
 impl<Axes, Buttons> InputState<Axes, Buttons>
 where
-    Axes: Eq + Hash + Clone,
-    Buttons: Eq + Hash + Clone,
+    Axes: Mappable,
+    Buttons: Mappable,
 {
     /// Create a fresh [`InputState`].
     pub fn new() -> Self {
@@ -794,15 +827,15 @@ where
 
 impl<Axes, Buttons> UserData for InputEvent<Axes, Buttons>
 where
-    Axes: Eq + Hash + Clone + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua> + 'static,
-    Buttons: Eq + Hash + Clone + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua> + 'static,
+    Axes: LuaMappable + 'static,
+    Buttons: LuaMappable + 'static,
 {
 }
 
 impl<Axes, Buttons> UserData for InputState<Axes, Buttons>
 where
-    Axes: Eq + Hash + Clone + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua> + 'static,
-    Buttons: Eq + Hash + Clone + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua> + 'static,
+    Axes: LuaMappable + 'static,
+    Buttons: LuaMappable + 'static,
 {
     #[allow(clippy::unit_arg)]
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
