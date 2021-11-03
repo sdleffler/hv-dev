@@ -28,3 +28,4 @@ sync = { path = "crates/hv-sync", package = "hv-sync" }
 thiserror = "1.0.30"
 yaks = { path = "../yaks" }
 input = { path = "crates/hv-input", package = "hv-input" }
+timer = { path = "crates/hv-timer", package = "hv-timer" }

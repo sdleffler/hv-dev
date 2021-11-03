@@ -340,7 +340,11 @@ where
     pub fn to_event_with_button_state(self, state: bool) -> InputEvent<Axes, Buttons> {
         match self {
             InputEffect::Axis(axis, direction) => InputEvent::Axis(axis, direction.pressed(state)),
-            InputEffect::Button(button, _) => InputEvent::Button(button, state),
+            InputEffect::Button(button, _) => InputEvent::Button {
+                button,
+                state,
+                repeat: false,
+            },
         }
     }
 }
@@ -354,7 +358,11 @@ where
     /// Indicates the state of an axis.
     Axis(Axes, f32),
     /// Indicates the state of a given button.
-    Button(Buttons, bool),
+    Button {
+        button: Buttons,
+        state: bool,
+        repeat: bool,
+    },
     /// Indicates the state of the cursor.
     Cursor(Point2<f32>),
 }
@@ -367,6 +375,20 @@ enum InputType {
     GamepadAxis(GamepadAxis),
     MouseButton(MouseButton),
     MouseScroll(ScrollAxis),
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
+pub enum GenericAxis {
+    Gamepad(GamepadAxis),
+    Mouse(ScrollAxis),
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
+pub enum GenericButton {
+    KeyCode(Key),
+    ScanCode(Key),
+    Gamepad(GamepadButton),
+    Mouse(MouseButton),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -417,6 +439,7 @@ impl Default for AxisState {
 struct ButtonState {
     pressed: bool,
     pressed_last_frame: bool,
+    repeat: bool,
 }
 
 pub struct InputBinding<Axes, Buttons>
@@ -618,10 +641,11 @@ where
             InputEffect::Axis(axis, direction) => {
                 Some(InputEvent::Axis(axis.clone(), direction.sign() * position))
             }
-            InputEffect::Button(button, direction) => Some(InputEvent::Button(
-                button.clone(),
-                (direction.sign() * position).is_sign_positive(),
-            )),
+            InputEffect::Button(button, direction) => Some(InputEvent::Button {
+                button: button.clone(),
+                state: (direction.sign() * position).is_sign_positive(),
+                repeat: false,
+            }),
         }
     }
 }
@@ -706,13 +730,21 @@ where
     }
 
     /// This method should get called by your key_down_event handler.
-    pub fn update_button_down(&mut self, button: Buttons) {
-        self.update_event(InputEvent::Button(button, true));
+    pub fn update_button_down(&mut self, button: Buttons, repeat: bool) {
+        self.update_event(InputEvent::Button {
+            button,
+            state: true,
+            repeat,
+        });
     }
 
     /// This method should get called by your key_up_event handler.
     pub fn update_button_up(&mut self, button: Buttons) {
-        self.update_event(InputEvent::Button(button, false));
+        self.update_event(InputEvent::Button {
+            button,
+            state: false,
+            repeat: false,
+        });
     }
 
     /// This method should get called by your gamepad_axis_changed_event handler, or by your
@@ -741,9 +773,14 @@ where
                 let axis_status = self.axes.entry(axis).or_insert_with(f);
                 axis_status.direction = position;
             }
-            InputEvent::Button(button, state) => {
+            InputEvent::Button {
+                button,
+                state,
+                repeat,
+            } => {
                 let button_status = self.buttons.entry(button).or_default();
                 button_status.pressed = state;
+                button_status.repeat = repeat;
             }
             InputEvent::Cursor(position) => self.mouse.position = position,
         }
@@ -817,6 +854,7 @@ where
         for (_button, button_status) in self.buttons.iter_mut() {
             button_status.pressed = false;
             button_status.pressed_last_frame = false;
+            button_status.repeat = false;
         }
 
         self.mouse.position = Point2::origin();

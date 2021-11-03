@@ -1,4 +1,4 @@
-use crate::{GamepadAxis, GamepadButton, Key, MouseButton};
+use crate::{GamepadAxis, GamepadButton, Key, KeyMods, MouseButton};
 
 impl From<glfw::Key> for Key {
     fn from(glfw_key: glfw::Key) -> Self {
@@ -125,6 +125,19 @@ impl From<glfw::Key> for Key {
             glfw::Key::RightSuper => Key::RightSuper,
             glfw::Key::Menu => Key::Menu,
             glfw::Key::Unknown => Key::Unknown,
+        }
+    }
+}
+
+impl From<glfw::Modifiers> for KeyMods {
+    fn from(mods: glfw::Modifiers) -> Self {
+        KeyMods {
+            shift: mods.contains(glfw::Modifiers::Shift),
+            alt: mods.contains(glfw::Modifiers::Alt),
+            ctrl: mods.contains(glfw::Modifiers::Control),
+            cmd: mods.contains(glfw::Modifiers::Super),
+            caps_lock: mods.contains(glfw::Modifiers::CapsLock),
+            num_lock: mods.contains(glfw::Modifiers::NumLock),
         }
     }
 }

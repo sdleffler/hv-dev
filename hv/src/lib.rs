@@ -17,6 +17,7 @@ pub mod lua {
 pub extern crate input;
 pub extern crate math;
 pub extern crate sync;
+pub extern crate timer;
 
 pub mod plugin;
 
