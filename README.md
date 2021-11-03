@@ -31,8 +31,10 @@ with non-coding artists and less-technical team members who find working with a 
 like Lua easier to deal with than a language with a high learning curve and domain knowledge
 requirement (Rust.)
 
+```
 Also, I'm an idiot, so I like making game frameworks/engines.
 - sleff
+```
 
 ### `hv` - Features
 
@@ -188,3 +190,20 @@ unborrows the world, etc.
 So while there's still some unavoidable boilerplate, it's a lot less of a mess and allows for
 writing Lua interaction code as if you're directly interacting with a given type rather than with
 your own custom wrapper boilerplate.
+
+## License
+
+Licensed under either of
+
+ * Apache License, Version 2.0
+   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license
+   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.

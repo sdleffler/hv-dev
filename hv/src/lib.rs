@@ -1,3 +1,5 @@
+// Copyright 2021 Shea 'Decibel' Leffler and Heavy Sol
+
 pub extern crate alchemy;
 pub extern crate anyhow as error;
 
