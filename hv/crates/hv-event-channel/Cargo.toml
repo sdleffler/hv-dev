@@ -1,0 +1,10 @@
+[package]
+name = "hv-event-channel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hv-alchemy = { path = "../hv-alchemy" }
+hv-lua = { path = "../hv-lua" }
+hv-sync = { path = "../hv-sync" }
+shrev = "1.1.1"

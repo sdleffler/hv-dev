@@ -5,6 +5,7 @@ members = [
     "hv/crates/hv-alchemy",
     "hv/crates/hv-boxed",
     "hv/crates/hv-ecs-derive",
+    "hv/crates/hv-event-channel",
     "hv/crates/hv-filesystem",
     "hv/crates/hv-input",
     "hv/crates/hv-lua-derive",
@@ -15,6 +16,5 @@ members = [
     "hv/crates/hv-sync",
     "hv/crates/hv-vfs",
     "hv",
-    "projects/scratch",
     "yaks",
 ]

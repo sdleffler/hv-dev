@@ -3,6 +3,10 @@ pub extern crate anyhow as error;
 
 pub mod ecs;
 
+pub mod event_channel {
+    pub use event_channel::*;
+}
+
 pub mod lua {
     pub use lua::hv::*;
     pub use lua::*;
@@ -21,4 +25,5 @@ pub mod prelude {
         hv::{LuaUserDataTypeExt, LuaUserDataTypeTypeExt},
         prelude::*,
     };
+    pub use crate::math::*;
 }

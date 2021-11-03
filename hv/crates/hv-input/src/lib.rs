@@ -34,6 +34,8 @@
 use std::hash::Hash;
 
 use hashbrown::HashMap;
+use hv_alchemy::Type;
+use hv_lua::{FromLua, ToLua, UserData, UserDataMethods};
 use hv_math::{Point2, Vector2};
 use serde::*;
 
@@ -42,7 +44,18 @@ mod glfw;
 
 /// Supported key codes.
 #[allow(missing_docs)]
-#[derive(Debug, Copy, Clone, PartialEq, Hash, Eq, strum::EnumString, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Hash,
+    Eq,
+    strum::EnumString,
+    strum::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[repr(u32)]
 pub enum Key {
@@ -179,7 +192,20 @@ pub struct KeyMods {
     pub num_lock: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    strum::EnumString,
+    strum::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 #[repr(i32)]
 pub enum MouseButton {
     Button1,
@@ -193,7 +219,20 @@ pub enum MouseButton {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    strum::EnumString,
+    strum::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 #[allow(missing_docs)]
 pub enum GamepadButton {
     /// The south button of the typical quadruplet.
@@ -222,7 +261,20 @@ pub enum GamepadButton {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    strum::EnumString,
+    strum::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 #[allow(missing_docs)]
 pub enum GamepadAxis {
     LeftStickX,
@@ -737,5 +789,43 @@ where
         self.mouse.position = Point2::origin();
         self.mouse.last_position = Point2::origin();
         self.mouse.delta = Vector2::zeros();
+    }
+}
+
+impl<Axes, Buttons> UserData for InputEvent<Axes, Buttons>
+where
+    Axes: Eq + Hash + Clone + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua> + 'static,
+    Buttons: Eq + Hash + Clone + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua> + 'static,
+{
+}
+
+impl<Axes, Buttons> UserData for InputState<Axes, Buttons>
+where
+    Axes: Eq + Hash + Clone + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua> + 'static,
+    Buttons: Eq + Hash + Clone + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua> + 'static,
+{
+    #[allow(clippy::unit_arg)]
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("update_event", |_, this, ev| Ok(this.update_event(ev)));
+        methods.add_method_mut("update", |_, this, dt| Ok(this.update(dt)));
+        methods.add_method("get_axis", |_, this, axis| Ok(this.get_axis(axis)));
+        methods.add_method("get_axis_raw", |_, this, axis| Ok(this.get_axis_raw(axis)));
+        methods.add_method("get_button_down", |_, this, b| Ok(this.get_button_down(b)));
+        methods.add_method("get_button_up", |_, this, b| Ok(this.get_button_up(b)));
+        methods.add_method("get_button_pressed", |_, t, b| Ok(t.get_button_pressed(b)));
+        methods.add_method(
+            "get_button_released",
+            |_, t, b| Ok(t.get_button_released(b)),
+        );
+        methods.add_method("mouse_position", |_, t, ()| Ok(t.mouse_position()));
+        methods.add_method("mouse_delta", |_, t, ()| Ok(t.mouse_delta()));
+        methods.add_method_mut("reset_input_state", |_, t, ()| Ok(t.reset_input_state()));
+    }
+
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M)
+    where
+        Self: 'static + Send,
+    {
+        methods.add_function("new", |_, ()| Ok(Self::new()));
     }
 }
