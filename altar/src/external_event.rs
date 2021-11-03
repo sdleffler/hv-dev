@@ -3,6 +3,7 @@ use hv::{
     prelude::{Point2, Vector2},
 };
 
+/// Possible events external to the framework.
 #[derive(Debug, Clone, Copy)]
 pub enum ExternalEvent<Axes, Buttons>
 where

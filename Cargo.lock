@@ -731,7 +731,7 @@ checksum = "6456b8a6c8f33fee7d958fcd1b60d55b11940a79e63ae87013e6d22e26034440"
 
 [[package]]
 name = "hv"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "hecs",
