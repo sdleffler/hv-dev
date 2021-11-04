@@ -29,7 +29,7 @@ impl MainLoopContext for GL33Context {
 pub fn run(
     title: &str,
     window_kind: WindowKind,
-    mut resources: Resources,
+    resources: &mut Resources,
     event_loop: &mut impl EventLoop<GL33Context, Event = GenericEvent>,
 ) -> Result<()> {
     let GlfwSurface {
@@ -38,7 +38,7 @@ pub fn run(
     } = GlfwSurface::new_gl33(title, WindowOpt::default().set_dim(window_kind.into()))?;
     let mut events_buf: Vec<GenericEvent> = Vec::new();
 
-    event_loop.init(&mut resources, &mut context)?;
+    event_loop.init(resources, &mut context)?;
 
     'main: loop {
         context.window.glfw.poll_events();
@@ -110,7 +110,7 @@ pub fn run(
             events_buf.push(generic_event);
         }
 
-        let flow = event_loop.tick(&mut resources, &mut context, &mut events_buf)?;
+        let flow = event_loop.tick(resources, &mut context, &mut events_buf)?;
         events_buf.clear();
 
         context.window.swap_buffers();

@@ -86,7 +86,12 @@ impl<E> EventQueue<E> {
     }
 }
 
-/// An event loop which passes events through an instance of
+/// An event loop which passes events through an instance of [`EventQueue`] stored in the passed
+/// [`Resources`], and which performs timing calculations to separate update and render steps and
+/// calls those steps on a provided [`SceneStack`].
+///
+/// The [`EventLoop`] implementation for this type will return [`ControlFlow::Break`] when the
+/// scenestack is empty.
 pub struct TimedSceneStackLoop<C, E> {
     target_fps: u32,
     scene_stack: SceneStack<C>,
@@ -95,6 +100,8 @@ pub struct TimedSceneStackLoop<C, E> {
 }
 
 impl<C, E> TimedSceneStackLoop<C, E> {
+    /// Create a new timed scene-stack based event loop with the given FPS target and a scene stack
+    /// to start from.
     pub fn new(target_fps: u32, scene_stack: SceneStack<C>) -> Self {
         Self {
             target_fps,

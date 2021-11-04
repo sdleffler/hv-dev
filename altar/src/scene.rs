@@ -166,6 +166,16 @@ impl<C: 'static> SceneStack<C> {
         Self::default()
     }
 
+    pub fn start(scene: Box<dyn Scene<C>>) -> Self {
+        Self {
+            scenes: vec![scene],
+        }
+    }
+
+    pub fn push(&mut self, scene: Box<dyn Scene<C>>) {
+        self.scenes.push(scene);
+    }
+
     pub fn is_empty(&self) -> bool {
         self.scenes.is_empty()
     }
