@@ -170,11 +170,29 @@ lazy_static! {
 pub trait CloneProxy {
     #[doc(hidden)]
     unsafe fn clone_into_ptr(&self, ptr: *mut u8);
+
+    /// Get a function usable to clone `Self` without dereferencing the `self` pointer or statically
+    /// enforcing `Clone`, and without referencing the actual types involved (so that it is
+    /// object-safe.)
+    ///
+    /// # Safety
+    ///
+    /// *This is safe to call on a null pointer, as it must never dereference `self` and acts
+    /// strictly as a vtable lookup.*
+    ///
+    /// This should later be cast to a function pointer of the type `fn(&Self) ->
+    /// Self`, and is unsafe to use otherwise.
+    #[doc(hidden)]
+    unsafe fn clone_fn(self: *const Self) -> fn();
 }
 
 impl<T: Clone> CloneProxy for T {
     unsafe fn clone_into_ptr(&self, ptr: *mut u8) {
         (&mut *ptr.cast::<T>()).clone_from(self);
+    }
+
+    unsafe fn clone_fn(self: *const T) -> fn() {
+        core::mem::transmute(<T as Clone>::clone as fn(&T) -> T)
     }
 }
 
@@ -519,7 +537,6 @@ impl<T: ?Sized + 'static> Type<T> {
     /// registry.
     pub fn get<U>(self) -> Option<&'static DynVtable>
     where
-        T: Alchemical<U>,
         U: ?Sized + Alchemy,
     {
         self.0.get::<U>()
@@ -625,6 +642,21 @@ impl<T: 'static> Type<T> {
     {
         of::<U>().add_into::<T>();
         self.add_from::<U>()
+    }
+
+    /// Without statically requiring that `T: Clone`, get the function pointer corresponding to `<T
+    /// as Clone>::clone`.
+    pub fn get_clone(self) -> Option<fn(&T) -> T> {
+        let vtable = self.get::<dyn CloneProxy>()?;
+        let clone_fn = unsafe {
+            let null_obj_ptr = vtable.to_dyn_object_ptr::<dyn CloneProxy>(core::ptr::null());
+            // This is safe to call on a null pointer, as it never dereferences the pointer!
+            // Effectively a vtable lookup.
+            let untyped_clone_fn: fn() = CloneProxy::clone_fn(null_obj_ptr);
+            core::mem::transmute::<_, fn(&T) -> T>(untyped_clone_fn)
+        };
+
+        Some(clone_fn)
     }
 }
 

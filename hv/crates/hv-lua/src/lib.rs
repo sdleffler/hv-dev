@@ -99,6 +99,7 @@ mod userdata;
 mod util;
 mod value;
 
+pub mod external;
 pub mod hv;
 pub mod prelude;
 

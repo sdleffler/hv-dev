@@ -11,8 +11,9 @@ default = ["glfw-windowing"]
 
 [dependencies]
 glfw = { version = "0.41", optional = true }
-hv = { path = "../hv" }
+hv = { path = "../hv", features = ["parry3d"] }
 luminance = "0.44.1"
 luminance-glfw = { version = "0.16.0", optional = true }
 luminance-windowing = { version = "0.10.0", optional = true }
+parry3d = "0.7.1"
 resources = "1.1.0"

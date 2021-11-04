@@ -2,7 +2,7 @@ use hv_alchemy::Type;
 
 use crate::{
     hv::ecs::{ComponentType, DynamicBundleProxy},
-    Lua, RegistryKey, Result, Table, UserData,
+    Lua, RegistryKey, Result, Table, ToLua, UserData,
 };
 
 #[cfg(feature = "hecs")]
@@ -60,7 +60,7 @@ pub fn types(lua: &Lua) -> Result<Table> {
     use crate::Value::*;
     lua.create_table_from(vec![
         ("ecs", Table(self::ecs::types(lua)?)),
-        ("math", Table(self::math::types(lua)?)),
+        ("math", self::math::Module.to_lua(lua)?),
         (
             "RegistryKey",
             UserData(lua.create_userdata_type::<RegistryKey>()?),

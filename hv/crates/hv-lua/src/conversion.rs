@@ -473,6 +473,25 @@ macro_rules! lua_convert_array {
                     ))
                 }
             }
+
+            impl<'lua, T> FromLua<'lua> for [T; $N] where T: FromLua<'lua> {
+                fn from_lua(value: Value<'lua>, _lua: &'lua Lua) -> Result<Self> {
+                    if let Value::Table(table) = value {
+                        let vec = table.sequence_values().collect::<Result<Vec<T>>>()?;
+                        Self::try_from(vec).map_err(|_| Error::FromLuaConversionError {
+                            from: "table",
+                            to: concat!("array of length ", $N),
+                            message: Some(format!("expected table of length {}", $N)),
+                        })
+                    } else {
+                        Err(Error::FromLuaConversionError {
+                            from: value.type_name(),
+                            to: concat!("array of length ", $N),
+                            message: Some(format!("expected table of length {}", $N)),
+                        })
+                    }
+                }
+            }
         )+
     }
 }

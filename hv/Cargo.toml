@@ -13,6 +13,7 @@ vendored = ["lua/vendored"]
 module = ["lua/module"]
 
 glfw = ["input/glfw"]
+parry3d = ["lua/parry3d"]
 
 [dependencies]
 alchemy = { path = "crates/hv-alchemy", package = "hv-alchemy" }
@@ -21,7 +22,7 @@ ecs = { path = "../hecs", package = "hecs" }
 ecs-derive = { path = "crates/hv-ecs-derive", package = "hv-ecs-derive" }
 event-channel = { path = "crates/hv-event-channel", package = "hv-event-channel" }
 fs = { path = "crates/hv-filesystem", package = "hv-filesystem" }
-lua = { path = "crates/hv-lua", package = "hv-lua", features = ["hv-reexport"] }
+lua = { path = "crates/hv-lua", package = "hv-lua", features = ["hv-reexport", "nalgebra"] }
 math = { path = "crates/hv-math", package = "hv-math" }
 petgraph = "0.6.0"
 sync = { path = "crates/hv-sync", package = "hv-sync" }

@@ -3,6 +3,7 @@
 pub mod components;
 pub mod event_loop;
 pub mod graphics;
+pub mod physics;
 pub mod scene;
 pub mod types;
 
