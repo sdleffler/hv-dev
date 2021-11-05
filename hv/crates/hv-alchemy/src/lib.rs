@@ -335,9 +335,14 @@ impl TypeTable {
     /// Get the alchemy table for some type `T`. This function will always return the same
     /// `&'static` for the same type `T`.
     pub fn of<T: 'static>() -> &'static Self {
+        let type_id = TypeId::of::<T>();
+        if let Some(table) = ALCHEMY_TABLE_REGISTRY.read().get(&type_id).copied() {
+            return table;
+        }
+
         ALCHEMY_TABLE_REGISTRY
             .write()
-            .entry(TypeId::of::<T>())
+            .entry(type_id)
             .or_insert_with(|| {
                 let eternal = Self::new::<T>();
                 VALID_ALCHEMY_TABLES
@@ -874,8 +879,8 @@ impl<T: Any> AlchemicalAny for T {
 impl dyn AlchemicalAny {
     /// Try to cast this `&dyn AlchemicalAny` to some other trait object `U`.
     pub fn dyncast_ref<U: Alchemy + ?Sized>(&self) -> Option<&U> {
-        let at = Self::type_table(self);
-        let downcast_alchemy = at.get::<U>()?;
+        let type_table = Self::type_table(self);
+        let downcast_alchemy = type_table.get::<U>()?;
         unsafe {
             Some(
                 &*downcast_alchemy
@@ -886,8 +891,8 @@ impl dyn AlchemicalAny {
 
     /// Try to cast this `&mut dyn AlchemicalAny` to some other trait object `U`.
     pub fn dyncast_mut<U: Alchemy + ?Sized>(&mut self) -> Option<&mut U> {
-        let at = Self::type_table(self);
-        let downcast_alchemy = at.get::<U>()?;
+        let type_table = Self::type_table(self);
+        let downcast_alchemy = type_table.get::<U>()?;
         unsafe {
             Some(
                 &mut *downcast_alchemy
@@ -898,8 +903,8 @@ impl dyn AlchemicalAny {
 
     /// Try to cast this `Box<dyn AlchemicalAny>` to some other trait object `U`.
     pub fn dyncast<U: Alchemy + ?Sized>(self: Box<Self>) -> Option<Box<U>> {
-        let at = Self::type_table(&self);
-        let downcast_alchemy = at.get::<U>()?;
+        let type_table = Self::type_table(&self);
+        let downcast_alchemy = type_table.get::<U>()?;
         unsafe {
             let ptr = Box::into_raw(self);
             Some(Box::from_raw(
