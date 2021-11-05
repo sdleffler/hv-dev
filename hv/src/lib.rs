@@ -9,6 +9,8 @@ pub mod event_channel {
     pub use event_channel::*;
 }
 
+pub extern crate fs;
+
 pub mod lua {
     pub use lua::hv::*;
     pub use lua::*;

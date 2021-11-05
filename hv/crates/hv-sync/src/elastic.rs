@@ -1,5 +1,9 @@
 use core::marker::PhantomData;
 
+use hv_guarded_borrow::{
+    NonBlockingGuardedBorrow, NonBlockingGuardedBorrowMut, NonBlockingGuardedMutBorrowMut,
+};
+
 use crate::cell::{ArcCell, AtomicRef, AtomicRefMut};
 
 pub trait Stretchable<'a>: 'a {
@@ -176,6 +180,14 @@ pub struct Elastic<T: Stretched> {
     slot: ArcCell<Option<T>>,
 }
 
+impl<T: Stretched> Clone for Elastic<T> {
+    fn clone(&self) -> Self {
+        Self {
+            slot: self.slot.clone(),
+        }
+    }
+}
+
 impl<T: Stretched> Default for Elastic<T> {
     fn default() -> Self {
         Self::new()
@@ -203,7 +215,7 @@ impl<T: Stretched> Elastic<T> {
 
     #[track_caller]
     pub fn loan<'a>(&self, t: T::Parameterized<'a>) -> ElasticGuard<'a, T::Parameterized<'a>> {
-        let mut slot = self.slot.borrow_mut();
+        let mut slot = self.slot.as_inner().borrow_mut();
         assert!(slot.is_none(), "stretchcell already in use!");
         let stretched = unsafe { T::lengthen(t) };
         *slot = Some(stretched);
@@ -212,5 +224,69 @@ impl<T: Stretched> Elastic<T> {
             slot: self.slot.clone(),
             _phantom: PhantomData,
         }
+    }
+}
+
+impl<T: Stretched, U: ?Sized> NonBlockingGuardedBorrow<U> for Elastic<T>
+where
+    for<'a> T::Parameterized<'a>: core::borrow::Borrow<U>,
+{
+    type Guard<'a>
+    where
+        U: 'a,
+    = AtomicRef<'a, U>;
+    type BorrowError<'a>
+    where
+        U: 'a,
+    = ();
+
+    fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
+        self.borrow()
+            .ok_or(())
+            .map(|guard| AtomicRef::map(guard, |t| core::borrow::Borrow::borrow(t)))
+    }
+}
+
+impl<T: Stretched, U: ?Sized> NonBlockingGuardedBorrowMut<U> for Elastic<T>
+where
+    for<'a> T::Parameterized<'a>: core::borrow::BorrowMut<U>,
+{
+    type GuardMut<'a>
+    where
+        U: 'a,
+    = AtomicRefMut<'a, U>;
+    type BorrowMutError<'a>
+    where
+        U: 'a,
+    = ();
+
+    fn try_nonblocking_guarded_borrow_mut(
+        &self,
+    ) -> Result<Self::GuardMut<'_>, Self::BorrowMutError<'_>> {
+        self.borrow_mut()
+            .ok_or(())
+            .map(|guard| AtomicRefMut::map(guard, |t| core::borrow::BorrowMut::borrow_mut(t)))
+    }
+}
+
+impl<T: Stretched, U: ?Sized> NonBlockingGuardedMutBorrowMut<U> for Elastic<T>
+where
+    for<'a> T::Parameterized<'a>: core::borrow::BorrowMut<U>,
+{
+    type MutGuardMut<'a>
+    where
+        U: 'a,
+    = AtomicRefMut<'a, U>;
+    type MutBorrowMutError<'a>
+    where
+        U: 'a,
+    = ();
+
+    fn try_nonblocking_guarded_mut_borrow_mut(
+        &mut self,
+    ) -> Result<Self::MutGuardMut<'_>, Self::MutBorrowMutError<'_>> {
+        self.borrow_mut()
+            .ok_or(())
+            .map(|guard| AtomicRefMut::map(guard, |t| core::borrow::BorrowMut::borrow_mut(t)))
     }
 }

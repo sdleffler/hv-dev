@@ -7,6 +7,7 @@ members = [
     "hv/crates/hv-ecs-derive",
     "hv/crates/hv-event-channel",
     "hv/crates/hv-filesystem",
+    "hv/crates/hv-guarded-borrow",
     "hv/crates/hv-input",
     "hv/crates/hv-lua-derive",
     "hv/crates/hv-lua",

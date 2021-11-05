@@ -1,0 +1,11 @@
+[package]
+name = "hv-guarded-borrow"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+std = []
+default = []
+
+[dependencies]
+hecs = { path = "../../../hecs", optional = true }

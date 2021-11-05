@@ -1,8 +1,14 @@
-use std::cell::{Ref, RefCell, RefMut};
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::string::String as StdString;
 use std::{any::TypeId, mem::MaybeUninit};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    marker::PhantomData,
+};
+use std::{fmt, sync::Arc};
+use std::{
+    hash::{Hash, Hasher},
+    sync::RwLock,
+};
+use std::{string::String as StdString, sync::Mutex};
 
 #[cfg(feature = "async")]
 use std::future::Future;
@@ -14,8 +20,8 @@ use {
 };
 
 use hv_alchemy::{AlchemicalAny, AlchemicalPtr, Alchemy, IntoProxy, Type, TypeTable};
+use hv_guarded_borrow::{NonBlockingGuardedBorrow, NonBlockingGuardedMutBorrowMut};
 
-use crate::function::Function;
 use crate::lua::Lua;
 use crate::table::{Table, TablePairs};
 use crate::types::{Callback, LuaRef, MaybeSend};
@@ -26,6 +32,7 @@ use crate::{
     types::DestructedUserdataMT,
 };
 use crate::{ffi, RegistryKey};
+use crate::{function::Function, types::MaybeSync};
 
 #[cfg(any(feature = "lua52", feature = "lua51", feature = "luajit"))]
 use crate::value::Value;
@@ -616,7 +623,11 @@ pub trait UserData: Sized {
 
     /// Hook to perform static initialization when the metatable for the [`TypedTypeTable<Self>`]
     /// userdata is created. Called before `add_type_fields` and `add_type_methods`.
-    fn on_type_metatable_init(_table: Type<Type<Self>>) {}
+    fn on_type_metatable_init(_table: Type<Type<Self>>)
+    where
+        Self: 'static + MaybeSend,
+    {
+    }
 }
 
 // Wraps UserData in a way to always implement `serde::Serialize` trait.
@@ -1289,5 +1300,319 @@ impl UserData for RegistryKey {
     {
         methods.add_function("new", |lua, value: Value| lua.create_registry_value(value));
         methods.add_function("expire", |lua, ()| Ok(lua.expire_registry_values()));
+    }
+}
+
+pub struct UserDataMethodsProxy<'a, 'lua, T, U, M>
+where
+    T: UserData + NonBlockingGuardedBorrow<U> + NonBlockingGuardedMutBorrowMut<U>,
+    U: UserData,
+    M: UserDataMethods<'lua, T>,
+{
+    inner: &'a mut M,
+    _phantom: PhantomData<fn(&'lua (), T, U)>,
+}
+
+impl<'a, 'lua, T, U, D> UserDataMethods<'lua, U> for UserDataMethodsProxy<'a, 'lua, T, U, D>
+where
+    T: UserData + NonBlockingGuardedBorrow<U> + NonBlockingGuardedMutBorrowMut<U>,
+    U: UserData,
+    D: UserDataMethods<'lua, T>,
+{
+    fn add_method<S, A, R, M>(&mut self, name: &S, method: M)
+    where
+        S: AsRef<[u8]> + ?Sized,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        M: 'static + MaybeSend + Fn(&'lua Lua, &U, A) -> Result<R>,
+    {
+        self.inner.add_method(name, move |lua, this, args| {
+            let guard = this
+                .try_nonblocking_guarded_borrow()
+                .map_err(|_| Error::UserDataBorrowError)?;
+            method(lua, &*guard, args)
+        });
+    }
+
+    fn add_method_mut<S, A, R, M>(&mut self, name: &S, mut method: M)
+    where
+        S: AsRef<[u8]> + ?Sized,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        M: 'static + MaybeSend + FnMut(&'lua Lua, &mut U, A) -> Result<R>,
+    {
+        self.inner.add_method_mut(name, move |lua, this, args| {
+            let mut guard = this
+                .try_nonblocking_guarded_mut_borrow_mut()
+                .map_err(|_| Error::UserDataBorrowMutError)?;
+            method(lua, &mut *guard, args)
+        });
+    }
+
+    fn add_function<S, A, R, F>(&mut self, name: &S, function: F)
+    where
+        S: AsRef<[u8]> + ?Sized,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + MaybeSend + Fn(&'lua Lua, A) -> Result<R>,
+    {
+        self.inner.add_function(name, function);
+    }
+
+    fn add_function_mut<S, A, R, F>(&mut self, name: &S, function: F)
+    where
+        S: AsRef<[u8]> + ?Sized,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + MaybeSend + FnMut(&'lua Lua, A) -> Result<R>,
+    {
+        self.inner.add_function_mut(name, function);
+    }
+
+    fn add_meta_method<S, A, R, M>(&mut self, meta: S, method: M)
+    where
+        S: Into<MetaMethod>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        M: 'static + MaybeSend + Fn(&'lua Lua, &U, A) -> Result<R>,
+    {
+        self.inner.add_meta_method(meta, move |lua, this, args| {
+            let guard = this
+                .try_nonblocking_guarded_borrow()
+                .map_err(|_| Error::UserDataBorrowError)?;
+            method(lua, &*guard, args)
+        });
+    }
+
+    fn add_meta_method_mut<S, A, R, M>(&mut self, meta: S, mut method: M)
+    where
+        S: Into<MetaMethod>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        M: 'static + MaybeSend + FnMut(&'lua Lua, &mut U, A) -> Result<R>,
+    {
+        self.inner
+            .add_meta_method_mut(meta, move |lua, this, args| {
+                let mut guard = this
+                    .try_nonblocking_guarded_mut_borrow_mut()
+                    .map_err(|_| Error::UserDataBorrowMutError)?;
+                method(lua, &mut *guard, args)
+            });
+    }
+
+    fn add_meta_function<S, A, R, F>(&mut self, meta: S, function: F)
+    where
+        S: Into<MetaMethod>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + MaybeSend + Fn(&'lua Lua, A) -> Result<R>,
+    {
+        self.inner.add_meta_function(meta, function);
+    }
+
+    fn add_meta_function_mut<S, A, R, F>(&mut self, meta: S, function: F)
+    where
+        S: Into<MetaMethod>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + MaybeSend + FnMut(&'lua Lua, A) -> Result<R>,
+    {
+        self.inner.add_meta_function_mut(meta, function);
+    }
+
+    fn add_callback(&mut self, name: Vec<u8>, callback: Callback<'lua, 'static>) {
+        self.inner.add_callback(name, callback);
+    }
+
+    fn add_meta_callback(&mut self, meta: MetaMethod, callback: Callback<'lua, 'static>) {
+        self.inner.add_meta_callback(meta, callback);
+    }
+
+    #[cfg(feature = "async")]
+    fn add_async_method<S, A, R, M, MR>(&mut self, name: &S, method: M)
+    where
+        U: Clone,
+        S: AsRef<[u8]> + ?Sized,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        M: 'static + MaybeSend + Fn(&'lua Lua, U, A) -> MR,
+        MR: 'lua + Future<Output = Result<R>>,
+    {
+        self.inner.add_async_method(name, move |lua, this, args| {
+            let guard = this
+                .try_guarded_borrow()
+                .map_err(|_| Error::UserDataBorrowError)?;
+            method(lua, (*guard).clone(), args)
+        });
+    }
+
+    #[cfg(feature = "async")]
+    fn add_async_function<S, A, R, F, FR>(&mut self, name: &S, function: F)
+    where
+        S: AsRef<[u8]> + ?Sized,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + MaybeSend + Fn(&'lua Lua, A) -> FR,
+        FR: 'lua + Future<Output = Result<R>>,
+    {
+        self.inner.add_async_function(name, function);
+    }
+
+    #[cfg(feature = "async")]
+    fn add_async_callback(&mut self, name: Vec<u8>, callback: AsyncCallback<'lua, 'static>) {
+        self.inner.add_async_callback(name, callback);
+    }
+}
+
+impl<'a, 'lua, T, U, M> UserDataMethodsProxy<'a, 'lua, T, U, M>
+where
+    T: UserData + NonBlockingGuardedBorrow<U> + NonBlockingGuardedMutBorrowMut<U>,
+    U: UserData,
+    M: UserDataMethods<'lua, T>,
+{
+    pub fn new(methods: &'a mut M) -> Self {
+        Self {
+            inner: methods,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+pub struct UserDataFieldsProxy<'a, 'lua, T, U, M>
+where
+    T: UserData + NonBlockingGuardedBorrow<U> + NonBlockingGuardedMutBorrowMut<U>,
+    U: UserData,
+    M: UserDataFields<'lua, T>,
+{
+    inner: &'a mut M,
+    _phantom: PhantomData<fn(&'lua (), T, U)>,
+}
+
+impl<'a, 'lua, T, U, D> UserDataFields<'lua, U> for UserDataFieldsProxy<'a, 'lua, T, U, D>
+where
+    T: UserData + NonBlockingGuardedBorrow<U> + NonBlockingGuardedMutBorrowMut<U>,
+    U: UserData,
+    D: UserDataFields<'lua, T>,
+{
+    fn add_field_method_get<S, R, M>(&mut self, name: &S, method: M)
+    where
+        S: AsRef<[u8]> + ?Sized,
+        R: ToLua<'lua>,
+        M: 'static + MaybeSend + Fn(&'lua Lua, &U) -> Result<R>,
+    {
+        self.inner.add_field_method_get(name, move |lua, u| {
+            let guard = u
+                .try_nonblocking_guarded_borrow()
+                .map_err(|_| Error::UserDataBorrowError)?;
+            method(lua, &*guard)
+        });
+    }
+
+    fn add_field_method_set<S, A, M>(&mut self, name: &S, mut method: M)
+    where
+        S: AsRef<[u8]> + ?Sized,
+        A: FromLua<'lua>,
+        M: 'static + MaybeSend + FnMut(&'lua Lua, &mut U, A) -> Result<()>,
+    {
+        self.inner.add_field_method_set(name, move |lua, u, arg| {
+            let mut guard = u
+                .try_nonblocking_guarded_mut_borrow_mut()
+                .map_err(|_| Error::UserDataBorrowMutError)?;
+            method(lua, &mut *guard, arg)
+        });
+    }
+
+    fn add_field_function_get<S, R, F>(&mut self, name: &S, function: F)
+    where
+        S: AsRef<[u8]> + ?Sized,
+        R: ToLua<'lua>,
+        F: 'static + MaybeSend + Fn(&'lua Lua, AnyUserData<'lua>) -> Result<R>,
+    {
+        self.inner.add_field_function_get(name, function);
+    }
+
+    fn add_field_function_set<S, A, F>(&mut self, name: &S, function: F)
+    where
+        S: AsRef<[u8]> + ?Sized,
+        A: FromLua<'lua>,
+        F: 'static + MaybeSend + FnMut(&'lua Lua, AnyUserData<'lua>, A) -> Result<()>,
+    {
+        self.inner.add_field_function_set(name, function);
+    }
+
+    fn add_meta_field_with<S, R, F>(&mut self, meta: S, f: F)
+    where
+        S: Into<MetaMethod>,
+        F: 'static + MaybeSend + Fn(&'lua Lua) -> Result<R>,
+        R: ToLua<'lua>,
+    {
+        self.inner.add_meta_field_with(meta, f);
+    }
+
+    fn add_field_getter(&mut self, name: Vec<u8>, callback: Callback<'lua, 'static>) {
+        self.inner.add_field_getter(name, callback);
+    }
+
+    fn add_field_setter(&mut self, name: Vec<u8>, callback: Callback<'lua, 'static>) {
+        self.inner.add_field_setter(name, callback);
+    }
+}
+
+impl<'a, 'lua, T, U, M> UserDataFieldsProxy<'a, 'lua, T, U, M>
+where
+    T: UserData + NonBlockingGuardedBorrow<U> + NonBlockingGuardedMutBorrowMut<U>,
+    U: UserData,
+    M: UserDataFields<'lua, T>,
+{
+    pub fn new(fields: &'a mut M) -> Self {
+        Self {
+            inner: fields,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+#[cfg(not(feature = "send"))]
+impl<T: UserData> UserData for Rc<RefCell<T>> {
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        T::add_methods(&mut UserDataMethodsProxy::new(methods));
+    }
+
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        T::add_fields(&mut UserDataFieldsProxy::new(fields))
+    }
+}
+
+impl<T: 'static + UserData + MaybeSend> UserData for Arc<Mutex<T>> {
+    fn on_metatable_init(table: Type<Self>) {
+        table.add_clone();
+
+        #[cfg(feature = "send")]
+        table.add::<dyn Send>().add::<dyn Sync>();
+    }
+
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        T::add_methods(&mut UserDataMethodsProxy::new(methods));
+    }
+
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        T::add_fields(&mut UserDataFieldsProxy::new(fields))
+    }
+}
+
+impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for Arc<RwLock<T>> {
+    fn on_metatable_init(table: Type<Self>) {
+        table.add_clone();
+
+        #[cfg(feature = "send")]
+        table.add::<dyn Send>().add::<dyn Sync>();
+    }
+
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        T::add_methods(&mut UserDataMethodsProxy::new(methods));
+    }
+
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        T::add_fields(&mut UserDataFieldsProxy::new(fields))
     }
 }

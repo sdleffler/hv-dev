@@ -5,6 +5,7 @@ pub mod event_loop;
 pub mod graphics;
 pub mod physics;
 pub mod scene;
+pub mod script;
 pub mod types;
 
 #[cfg(feature = "glfw")]

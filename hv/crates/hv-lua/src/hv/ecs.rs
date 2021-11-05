@@ -4,8 +4,9 @@ use hv_alchemy::{AlchemicalAny, Type};
 use hv_sync::elastic::Elastic;
 
 use crate::{
+    userdata::{UserDataFieldsProxy, UserDataMethodsProxy},
     AnyUserData, Error, ExternalResult, FromLua, Function, LightUserData, Lua, MultiValue, Result,
-    Table, ToLua, ToLuaMulti, UserData, UserDataMethods, Value,
+    Table, ToLua, ToLuaMulti, UserData, UserDataFields, UserDataMethods, Value,
 };
 
 impl UserData for hecs::ColumnBatchType {
@@ -333,6 +334,20 @@ impl UserData for hecs::DynamicItem {
             ty.dyn_borrow::<dyn ComponentType>()?
                 .dynamic_item_take(lua, this)
         });
+    }
+}
+
+impl<T: 'static + UserData + Send + Sync> UserData for hecs::DynamicComponent<T> {
+    fn on_metatable_init(table: Type<Self>) {
+        table.add::<dyn Send>().add::<dyn Sync>();
+    }
+
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        T::add_methods(&mut UserDataMethodsProxy::new(methods));
+    }
+
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        T::add_fields(&mut UserDataFieldsProxy::new(fields))
     }
 }
 

@@ -6,7 +6,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::os::raw::{c_char, c_int, c_void};
 use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe, Location};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::{mem, ptr, str};
 
 use crate::error::{Error, Result};
@@ -48,7 +48,6 @@ use {
 };
 
 use hv_alchemy::TypeTable;
-use hv_sync::cell::{ArcRef, ArcRefMut, AtomicRefCell};
 
 /// Top level Lua struct which holds the Lua state itself.
 pub struct Lua {
@@ -2891,41 +2890,6 @@ impl<'lua, T: 'static + UserData> StaticUserDataMethods<'lua, T> {
                             let ud = lua.get_userdata_ref::<T>()?;
                             method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
                         }
-                        #[cfg(not(feature = "send"))]
-                        Some(id) if id == TypeId::of::<Rc<RefCell<T>>>() => {
-                            let ud = lua.get_userdata_ref::<Rc<RefCell<T>>>()?;
-                            let ud = ud.try_borrow().map_err(|_| Error::UserDataBorrowError)?;
-                            method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        Some(id) if id == TypeId::of::<Arc<AtomicRefCell<T>>>() => {
-                            let ud = lua.get_userdata_ref::<Arc<AtomicRefCell<T>>>()?;
-                            let ud = ud.try_borrow().map_err(|_| Error::UserDataBorrowError)?;
-                            method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        Some(id) if id == TypeId::of::<Arc<Mutex<T>>>() => {
-                            let ud = lua.get_userdata_ref::<Arc<Mutex<T>>>()?;
-                            let ud = ud.try_lock().map_err(|_| Error::UserDataBorrowError)?;
-                            method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        Some(id) if id == TypeId::of::<Arc<RwLock<T>>>() => {
-                            let ud = lua.get_userdata_ref::<Arc<RwLock<T>>>()?;
-                            let ud = ud.try_read().map_err(|_| Error::UserDataBorrowError)?;
-                            method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        #[cfg(feature = "hecs")]
-                        Some(id) if id == TypeId::of::<hecs::DynamicComponent<T>>() => {
-                            let ud = lua.get_userdata_ref::<hecs::DynamicComponent<T>>()?;
-                            let ud = ud.borrow();
-                            method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        Some(id) if id == TypeId::of::<ArcRef<T>>() => {
-                            let ud = lua.get_userdata_ref::<ArcRef<T>>()?;
-                            method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        Some(id) if id == TypeId::of::<ArcRefMut<T>>() => {
-                            let ud = lua.get_userdata_ref::<ArcRefMut<T>>()?;
-                            method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
                         _ => Err(Error::UserDataTypeMismatch),
                     }
                 }
@@ -2960,44 +2924,6 @@ impl<'lua, T: 'static + UserData> StaticUserDataMethods<'lua, T> {
                     match type_id {
                         Some(id) if id == TypeId::of::<T>() => {
                             let mut ud = lua.get_userdata_mut::<T>()?;
-                            method(lua, &mut ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        #[cfg(not(feature = "send"))]
-                        Some(id) if id == TypeId::of::<Rc<RefCell<T>>>() => {
-                            let ud = lua.get_userdata_mut::<Rc<RefCell<T>>>()?;
-                            let mut ud = ud
-                                .try_borrow_mut()
-                                .map_err(|_| Error::UserDataBorrowMutError)?;
-                            method(lua, &mut ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        Some(id) if id == TypeId::of::<Arc<AtomicRefCell<T>>>() => {
-                            let ud = lua.get_userdata_mut::<Arc<AtomicRefCell<T>>>()?;
-                            let mut ud = ud
-                                .try_borrow_mut()
-                                .map_err(|_| Error::UserDataBorrowMutError)?;
-                            method(lua, &mut ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        Some(id) if id == TypeId::of::<Arc<Mutex<T>>>() => {
-                            let ud = lua.get_userdata_mut::<Arc<Mutex<T>>>()?;
-                            let mut ud =
-                                ud.try_lock().map_err(|_| Error::UserDataBorrowMutError)?;
-                            method(lua, &mut ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        Some(id) if id == TypeId::of::<Arc<RwLock<T>>>() => {
-                            let ud = lua.get_userdata_mut::<Arc<RwLock<T>>>()?;
-                            let mut ud =
-                                ud.try_write().map_err(|_| Error::UserDataBorrowMutError)?;
-                            method(lua, &mut ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        #[cfg(feature = "hecs")]
-                        Some(id) if id == TypeId::of::<hecs::DynamicComponent<T>>() => {
-                            let mut ud = lua.get_userdata_mut::<hecs::DynamicComponent<T>>()?;
-                            let mut ud =
-                                ud.try_borrow_mut().ok_or(Error::UserDataBorrowMutError)?;
-                            method(lua, &mut ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                        }
-                        Some(id) if id == TypeId::of::<ArcRefMut<T>>() => {
-                            let mut ud = lua.get_userdata_mut::<ArcRefMut<T>>()?;
                             method(lua, &mut ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
                         }
                         _ => Err(Error::UserDataTypeMismatch),
@@ -3035,41 +2961,6 @@ impl<'lua, T: 'static + UserData> StaticUserDataMethods<'lua, T> {
                             Some(id) if id == TypeId::of::<T>() => {
                                 let ud = lua.get_userdata_ref::<T>()?;
                                 Ok(method(lua, ud.clone(), A::from_lua_multi(args, lua)?))
-                            }
-                            #[cfg(not(feature = "send"))]
-                            Some(id) if id == TypeId::of::<Rc<RefCell<T>>>() => {
-                                let ud = lua.get_userdata_ref::<Rc<RefCell<T>>>()?;
-                                let ud = ud.try_borrow().map_err(|_| Error::UserDataBorrowError)?;
-                                Ok(method(lua, ud.clone(), A::from_lua_multi(args, lua)?))
-                            }
-                            Some(id) if id == TypeId::of::<Arc<AtomicRefCell<T>>>() => {
-                                let ud = lua.get_userdata_ref::<Arc<AtomicRefCell<T>>>()?;
-                                let ud = ud.try_borrow().map_err(|_| Error::UserDataBorrowError)?;
-                                Ok(method(lua, ud.clone(), A::from_lua_multi(args, lua)?))
-                            }
-                            Some(id) if id == TypeId::of::<Arc<Mutex<T>>>() => {
-                                let ud = lua.get_userdata_ref::<Arc<Mutex<T>>>()?;
-                                let ud = ud.try_lock().map_err(|_| Error::UserDataBorrowError)?;
-                                Ok(method(lua, ud.clone(), A::from_lua_multi(args, lua)?))
-                            }
-                            Some(id) if id == TypeId::of::<Arc<RwLock<T>>>() => {
-                                let ud = lua.get_userdata_ref::<Arc<RwLock<T>>>()?;
-                                let ud = ud.try_read().map_err(|_| Error::UserDataBorrowError)?;
-                                Ok(method(lua, ud.clone(), A::from_lua_multi(args, lua)?))
-                            }
-                            #[cfg(feature = "hecs")]
-                            Some(id) if id == TypeId::of::<hecs::DynamicComponent<T>>() => {
-                                let ud = lua.get_userdata_ref::<hecs::DynamicComponent<T>>()?;
-                                let ud = ud.try_borrow().ok_or(Error::UserDataBorrowError)?;
-                                method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                            }
-                            Some(id) if id == TypeId::of::<ArcRef<T>>() => {
-                                let ud = lua.get_userdata_ref::<ArcRef<T>>()?;
-                                method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
-                            }
-                            Some(id) if id == TypeId::of::<ArcRefMut<T>>() => {
-                                let ud = lua.get_userdata_ref::<ArcRefMut<T>>()?;
-                                method(lua, &ud, A::from_lua_multi(args, lua)?)?.to_lua_multi(lua)
                             }
                             _ => Err(Error::UserDataTypeMismatch),
                         }
@@ -3243,44 +3134,44 @@ impl<'lua, T: 'static + UserData> UserDataFields<'lua, T> for StaticUserDataFiel
     }
 }
 
-macro_rules! lua_userdata_impl {
-    ($type:ty) => {
-        impl<T: 'static + UserData> UserData for $type {
-            fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
-                let mut orig_fields = StaticUserDataFields::default();
-                T::add_fields(&mut orig_fields);
-                for (name, callback) in orig_fields.field_getters {
-                    fields.add_field_getter(name, callback);
-                }
-                for (name, callback) in orig_fields.field_setters {
-                    fields.add_field_setter(name, callback);
-                }
-            }
+// macro_rules! lua_userdata_impl {
+//     ($type:ty) => {
+//         impl<T: 'static + UserData> UserData for $type {
+//             fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+//                 let mut orig_fields = StaticUserDataFields::default();
+//                 T::add_fields(&mut orig_fields);
+//                 for (name, callback) in orig_fields.field_getters {
+//                     fields.add_field_getter(name, callback);
+//                 }
+//                 for (name, callback) in orig_fields.field_setters {
+//                     fields.add_field_setter(name, callback);
+//                 }
+//             }
 
-            fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-                let mut orig_methods = StaticUserDataMethods::default();
-                T::add_methods(&mut orig_methods);
-                for (name, callback) in orig_methods.methods {
-                    methods.add_callback(name, callback);
-                }
-                #[cfg(feature = "async")]
-                for (name, callback) in orig_methods.async_methods {
-                    methods.add_async_callback(name, callback);
-                }
-                for (meta, callback) in orig_methods.meta_methods {
-                    methods.add_meta_callback(meta, callback);
-                }
-            }
-        }
-    };
-}
+//             fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+//                 let mut orig_methods = StaticUserDataMethods::default();
+//                 T::add_methods(&mut orig_methods);
+//                 for (name, callback) in orig_methods.methods {
+//                     methods.add_callback(name, callback);
+//                 }
+//                 #[cfg(feature = "async")]
+//                 for (name, callback) in orig_methods.async_methods {
+//                     methods.add_async_callback(name, callback);
+//                 }
+//                 for (meta, callback) in orig_methods.meta_methods {
+//                     methods.add_meta_callback(meta, callback);
+//                 }
+//             }
+//         }
+//     };
+// }
 
-#[cfg(not(feature = "send"))]
-lua_userdata_impl!(Rc<RefCell<T>>);
-lua_userdata_impl!(Arc<AtomicRefCell<T>>);
-lua_userdata_impl!(Arc<Mutex<T>>);
-lua_userdata_impl!(Arc<RwLock<T>>);
-#[cfg(feature = "hecs")]
-lua_userdata_impl!(hecs::DynamicComponent<T>);
-lua_userdata_impl!(ArcRef<T>);
-lua_userdata_impl!(ArcRefMut<T>);
+// #[cfg(not(feature = "send"))]
+// lua_userdata_impl!(Rc<RefCell<T>>);
+// lua_userdata_impl!(Arc<AtomicRefCell<T>>);
+// lua_userdata_impl!(Arc<Mutex<T>>);
+// lua_userdata_impl!(Arc<RwLock<T>>);
+// #[cfg(feature = "hecs")]
+// lua_userdata_impl!(hecs::DynamicComponent<T>);
+// lua_userdata_impl!(ArcRef<T>);
+// lua_userdata_impl!(ArcRefMut<T>);

@@ -9,3 +9,4 @@ default = []
 
 [dependencies]
 hecs = { path = "../../../hecs" }
+hv-guarded-borrow = { path = "../hv-guarded-borrow" }

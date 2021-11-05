@@ -764,6 +764,7 @@ dependencies = [
  "hv-ecs-derive",
  "hv-event-channel",
  "hv-filesystem",
+ "hv-guarded-borrow",
  "hv-input",
  "hv-lua",
  "hv-math",
@@ -821,6 +822,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hv-guarded-borrow"
+version = "0.1.0"
+dependencies = [
+ "hecs",
+]
+
+[[package]]
 name = "hv-input"
 version = "0.1.0"
 dependencies = [
@@ -849,6 +857,7 @@ dependencies = [
  "hecs",
  "hv",
  "hv-alchemy",
+ "hv-guarded-borrow",
  "hv-lua-derive",
  "hv-math",
  "hv-sync",
@@ -897,6 +906,7 @@ name = "hv-sync"
 version = "0.1.0"
 dependencies = [
  "hecs",
+ "hv-guarded-borrow",
 ]
 
 [[package]]

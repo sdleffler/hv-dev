@@ -48,13 +48,16 @@
 #![deny(missing_docs)]
 
 use alloc::sync::Arc;
-use core::cell::UnsafeCell;
 use core::cmp;
 use core::fmt;
 use core::fmt::{Debug, Display};
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic;
 use core::sync::atomic::AtomicUsize;
+use core::{cell::UnsafeCell, convert::Infallible};
+use hv_guarded_borrow::{
+    NonBlockingGuardedBorrow, NonBlockingGuardedBorrowMut, NonBlockingGuardedMutBorrowMut,
+};
 
 #[cfg(feature = "track-leases")]
 use crate::lease::{Lease, LeaseTracker};
@@ -744,23 +747,22 @@ impl<T: ?Sized, C: ?Sized> Deref for ArcRef<T, C> {
     }
 }
 
-impl<T: ?Sized, C: ?Sized> ArcRef<T, C> {
-    /// Copies an `ArcRef`.
-    #[inline]
-    #[allow(clippy::should_implement_trait)]
-    pub fn clone(orig: &Self) -> Self {
+impl<T: ?Sized, C: ?Sized> Clone for ArcRef<T, C> {
+    fn clone(&self) -> Self {
         ArcRef {
-            value: orig.value,
+            value: self.value,
             guard: ArcRefGuard {
-                cell: orig.guard.cell.clone(),
-                borrow: AtomicBorrowRef::try_new(&orig.guard.cell.borrows).unwrap(),
+                cell: self.guard.cell.clone(),
+                borrow: AtomicBorrowRef::try_new(&self.guard.cell.borrows).unwrap(),
             },
 
             #[cfg(feature = "track-leases")]
-            lease: orig.lease.tracker().lease_at_caller(Some("immutable")),
+            lease: self.lease.tracker().lease_at_caller(Some("immutable")),
         }
     }
+}
 
+impl<T: ?Sized, C: ?Sized> ArcRef<T, C> {
     /// Make a new `ArcRef` for a component of the borrowed data.
     #[inline]
     pub fn map<U: ?Sized, F>(orig: ArcRef<T, C>, f: F) -> ArcRef<U, C>
@@ -884,5 +886,167 @@ impl<T: ?Sized + Debug> Debug for ArcCell<T> {
 impl<T: ?Sized + Debug> Debug for AtomicRefCell<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "AtomicRefCell {{ ... }}")
+    }
+}
+
+impl<T: ?Sized> NonBlockingGuardedBorrow<T> for AtomicRefCell<T> {
+    type Guard<'a>
+    where
+        T: 'a,
+    = AtomicRef<'a, T>;
+    type BorrowError<'a>
+    where
+        T: 'a,
+    = BorrowError;
+
+    fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
+        self.try_borrow()
+    }
+}
+
+impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for AtomicRefCell<T> {
+    type GuardMut<'a>
+    where
+        T: 'a,
+    = AtomicRefMut<'a, T>;
+    type BorrowMutError<'a>
+    where
+        T: 'a,
+    = BorrowMutError;
+
+    fn try_nonblocking_guarded_borrow_mut(
+        &self,
+    ) -> Result<Self::GuardMut<'_>, Self::BorrowMutError<'_>> {
+        self.try_borrow_mut()
+    }
+}
+
+impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for AtomicRefCell<T> {
+    type MutGuardMut<'a>
+    where
+        T: 'a,
+    = &'a mut T;
+    type MutBorrowMutError<'a>
+    where
+        T: 'a,
+    = Infallible;
+
+    fn try_nonblocking_guarded_mut_borrow_mut(
+        &mut self,
+    ) -> Result<Self::MutGuardMut<'_>, Self::MutBorrowMutError<'_>> {
+        Ok(self.get_mut())
+    }
+}
+
+impl<T: ?Sized> NonBlockingGuardedBorrow<T> for ArcCell<T> {
+    type Guard<'a>
+    where
+        T: 'a,
+    = AtomicRef<'a, T>;
+    type BorrowError<'a>
+    where
+        T: 'a,
+    = BorrowError;
+
+    fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
+        self.as_inner().try_borrow()
+    }
+}
+
+impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for ArcCell<T> {
+    type GuardMut<'a>
+    where
+        T: 'a,
+    = AtomicRefMut<'a, T>;
+    type BorrowMutError<'a>
+    where
+        T: 'a,
+    = BorrowMutError;
+
+    fn try_nonblocking_guarded_borrow_mut(
+        &self,
+    ) -> Result<Self::GuardMut<'_>, Self::BorrowMutError<'_>> {
+        self.as_inner().try_borrow_mut()
+    }
+}
+
+impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcCell<T> {
+    type MutGuardMut<'a>
+    where
+        T: 'a,
+    = AtomicRefMut<'a, T>;
+    type MutBorrowMutError<'a>
+    where
+        T: 'a,
+    = BorrowMutError;
+
+    fn try_nonblocking_guarded_mut_borrow_mut(
+        &mut self,
+    ) -> Result<Self::MutGuardMut<'_>, Self::MutBorrowMutError<'_>> {
+        self.as_inner().try_borrow_mut()
+    }
+}
+
+impl<T: ?Sized> NonBlockingGuardedBorrow<T> for ArcRef<T> {
+    type Guard<'a>
+    where
+        T: 'a,
+    = &'a T;
+    type BorrowError<'a>
+    where
+        T: 'a,
+    = Infallible;
+
+    fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
+        Ok(self)
+    }
+}
+
+impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRef<T> {
+    type MutGuardMut<'a>
+    where
+        T: 'a,
+    = &'a mut T;
+    type MutBorrowMutError<'a>
+    where
+        T: 'a,
+    = &'static str;
+
+    fn try_nonblocking_guarded_mut_borrow_mut(
+        &mut self,
+    ) -> Result<Self::MutGuardMut<'_>, Self::MutBorrowMutError<'_>> {
+        Err("cannot mutably borrow an `ArcRef`")
+    }
+}
+
+impl<T: ?Sized> NonBlockingGuardedBorrow<T> for ArcRefMut<T> {
+    type Guard<'a>
+    where
+        T: 'a,
+    = &'a T;
+    type BorrowError<'a>
+    where
+        T: 'a,
+    = Infallible;
+
+    fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
+        Ok(self)
+    }
+}
+
+impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRefMut<T> {
+    type MutGuardMut<'a>
+    where
+        T: 'a,
+    = &'a mut T;
+    type MutBorrowMutError<'a>
+    where
+        T: 'a,
+    = Infallible;
+
+    fn try_nonblocking_guarded_mut_borrow_mut(
+        &mut self,
+    ) -> Result<Self::MutGuardMut<'_>, Self::MutBorrowMutError<'_>> {
+        Ok(self)
     }
 }
