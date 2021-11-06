@@ -1,13 +1,49 @@
 use std::{any::TypeId, cell::Ref, mem::MaybeUninit};
 
 use hv_alchemy::{AlchemicalAny, Type};
-use hv_sync::elastic::Elastic;
+use hv_sync::{elastic::Elastic, hv::ecs::StretchedBatchWriter};
 
 use crate::{
     userdata::{UserDataFieldsProxy, UserDataMethodsProxy},
     AnyUserData, Error, ExternalResult, FromLua, Function, LightUserData, Lua, MultiValue, Result,
     Table, ToLua, ToLuaMulti, UserData, UserDataFields, UserDataMethods, Value,
 };
+
+impl<'lua> FromLua<'lua> for hecs::EntityBuilder {
+    fn from_lua(lua_value: Value<'lua>, _lua: &'lua Lua) -> Result<Self> {
+        let mut builder = hecs::EntityBuilder::new();
+        match lua_value {
+            Value::Table(table) => {
+                builder.clear();
+                for component in table.sequence_values::<AnyUserData>() {
+                    let component = component?;
+                    if let Ok(bundle) = component
+                        .clone()
+                        .dyn_clone_or_take::<dyn DynamicBundleProxy>()
+                    {
+                        builder.add_bundle(bundle);
+                    } else if let Ok(single) = LuaSingleBundle::from_lua_userdata(&component) {
+                        builder.add_bundle(single);
+                    } else {
+                        return Err(Error::external(
+                            "expected a table of bundles and components",
+                        ));
+                    }
+                }
+            }
+            Value::UserData(ud) => {
+                builder.add_bundle(ud.dyn_clone_or_take::<dyn DynamicBundleProxy>()?);
+            }
+            _ => {
+                return Err(Error::external(
+                    "expected either a bundle or a table of bundles and components",
+                ))
+            }
+        }
+
+        Ok(builder)
+    }
+}
 
 impl UserData for hecs::ColumnBatchType {
     fn on_metatable_init(table: Type<Self>) {
@@ -52,7 +88,7 @@ impl UserData for hecs::ColumnBatchBuilder {
 
 impl UserData for hecs::ColumnBatch {}
 
-impl<T: 'static + UserData> UserData for Elastic<hecs::BatchWriter<'static, T>> {
+impl<T: 'static + UserData> UserData for Elastic<StretchedBatchWriter<T>> {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("push", |_, this, ud: AnyUserData| {
             this.borrow_mut()
@@ -284,7 +320,7 @@ impl<T: hecs::Component + UserData> ComponentType for Type<T> {
         lua: &'lua Lua,
         column_batch_builder: &'a mut hecs::ColumnBatchBuilder,
     ) -> Result<(Box<dyn Send + 'a>, AnyUserData<'lua>)> {
-        let elastic = <Elastic<hecs::BatchWriter<'static, T>>>::new();
+        let elastic = <Elastic<StretchedBatchWriter<T>>>::new();
         let guard = elastic.loan(
             column_batch_builder
                 .writer::<T>()

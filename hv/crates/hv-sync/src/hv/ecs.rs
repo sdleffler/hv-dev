@@ -1,11 +1,19 @@
+use core::marker::PhantomData;
+
 use crate::elastic::{Stretchable, Stretched};
 
-impl<'a, T: 'static> Stretchable<'a> for hecs::BatchWriter<'a, T> {
-    type Stretched = hecs::BatchWriter<'static, T>;
-}
+#[repr(transparent)]
+pub struct StretchedBatchWriter<T>(
+    [u8; core::mem::size_of::<hecs::BatchWriter<u8>>()],
+    PhantomData<T>,
+);
 
-unsafe impl<T> Stretched for hecs::BatchWriter<'static, T> {
+unsafe impl<T: 'static> Stretched for StretchedBatchWriter<T> {
     type Parameterized<'a> = hecs::BatchWriter<'a, T>;
 
     impl_stretched_methods!();
+}
+
+impl<'a, T: 'static> Stretchable<'a> for hecs::BatchWriter<'a, T> {
+    type Stretched = StretchedBatchWriter<T>;
 }

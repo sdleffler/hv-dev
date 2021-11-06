@@ -77,7 +77,7 @@
 // warnings at all.
 #![doc(test(attr(deny(warnings))))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(cell_filter_map)]
+#![feature(cell_filter_map, generic_associated_types)]
 
 #[macro_use]
 mod macros;

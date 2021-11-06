@@ -987,7 +987,7 @@ impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcCell<T> {
     }
 }
 
-impl<T: ?Sized> NonBlockingGuardedBorrow<T> for ArcRef<T> {
+impl<T: ?Sized, C: ?Sized> NonBlockingGuardedBorrow<T> for ArcRef<T, C> {
     type Guard<'a>
     where
         T: 'a,
@@ -1002,7 +1002,7 @@ impl<T: ?Sized> NonBlockingGuardedBorrow<T> for ArcRef<T> {
     }
 }
 
-impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRef<T> {
+impl<T: ?Sized, C: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRef<T, C> {
     type MutGuardMut<'a>
     where
         T: 'a,
@@ -1019,7 +1019,7 @@ impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRef<T> {
     }
 }
 
-impl<T: ?Sized> NonBlockingGuardedBorrow<T> for ArcRefMut<T> {
+impl<T: ?Sized, C: ?Sized> NonBlockingGuardedBorrow<T> for ArcRefMut<T, C> {
     type Guard<'a>
     where
         T: 'a,
@@ -1034,7 +1034,7 @@ impl<T: ?Sized> NonBlockingGuardedBorrow<T> for ArcRefMut<T> {
     }
 }
 
-impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRefMut<T> {
+impl<T: ?Sized, C: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRefMut<T, C> {
     type MutGuardMut<'a>
     where
         T: 'a,

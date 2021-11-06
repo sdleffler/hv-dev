@@ -17,6 +17,6 @@ pub mod monotonic_list;
 #[cfg(feature = "track-leases")]
 pub mod lease;
 
-mod hv {
-    mod ecs;
+pub mod hv {
+    pub mod ecs;
 }

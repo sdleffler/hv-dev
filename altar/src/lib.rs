@@ -1,5 +1,9 @@
+#![feature(allocator_api)]
 #![feature(control_flow_enum)]
+#![feature(generic_associated_types)]
+#![feature(vec_into_raw_parts)]
 
+pub mod command_buffer;
 pub mod components;
 pub mod event_loop;
 pub mod graphics;

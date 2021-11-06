@@ -31,3 +31,4 @@ thiserror = "1.0.30"
 yaks = { path = "../yaks" }
 input = { path = "crates/hv-input", package = "hv-input" }
 timer = { path = "crates/hv-timer", package = "hv-timer" }
+stampede = { path = "crates/hv-stampede", package = "hv-stampede" }

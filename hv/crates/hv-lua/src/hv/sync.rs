@@ -40,7 +40,11 @@ impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for ArcCell<T> {
     }
 }
 
-impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for ArcRef<T> {
+impl<T, C> UserData for ArcRef<T, C>
+where
+    T: 'static + UserData + MaybeSend + MaybeSync,
+    C: 'static + ?Sized + MaybeSend + MaybeSync,
+{
     fn on_metatable_init(table: Type<Self>) {
         table.add_clone();
 
@@ -57,7 +61,11 @@ impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for ArcRef<T> {
     }
 }
 
-impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for ArcRefMut<T> {
+impl<T, C> UserData for ArcRefMut<T, C>
+where
+    T: 'static + UserData + MaybeSend + MaybeSync,
+    C: 'static + ?Sized + MaybeSend + MaybeSync,
+{
     fn on_metatable_init(table: Type<Self>) {
         #[cfg(feature = "send")]
         table.add::<dyn Send>().add::<dyn Sync>();
@@ -72,7 +80,7 @@ impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for ArcRefMut<T> {
     }
 }
 
-impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for Elastic<&'static mut T> {
+impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for Elastic<*mut T> {
     fn on_metatable_init(table: Type<Self>) {
         #[cfg(feature = "send")]
         table.add::<dyn Send>().add::<dyn Sync>();
