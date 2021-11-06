@@ -4,7 +4,6 @@
 #![feature(vec_into_raw_parts)]
 
 pub mod command_buffer;
-pub mod components;
 pub mod event_loop;
 pub mod graphics;
 pub mod physics;

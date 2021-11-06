@@ -20,3 +20,28 @@ pub mod lease;
 pub mod hv {
     pub mod ecs;
 }
+
+/// A wrapper type which only allows `&mut` access to the inner value, therefore making it
+/// unconditionally `Sync`.
+pub struct NoSharedAccess<T>(T);
+
+unsafe impl<T: Send> Send for NoSharedAccess<T> {}
+unsafe impl<T> Sync for NoSharedAccess<T> {}
+
+impl<T> NoSharedAccess<T> {
+    pub fn new(value: T) -> Self {
+        Self(value)
+    }
+
+    pub fn get(&mut self) -> &T {
+        &self.0
+    }
+
+    pub fn get_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}

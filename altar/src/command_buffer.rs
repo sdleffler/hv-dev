@@ -2,7 +2,11 @@ use hv::{
     bump::{Owned, *},
     ecs::{DynamicBundle, Entity, EntityBuilder, World},
     prelude::*,
-    sync::elastic::{Elastic, ElasticGuard, Stretchable, Stretched},
+    sync::{
+        cell::AtomicRef,
+        elastic::{Elastic, ElasticGuard, Stretchable, Stretched},
+        NoSharedAccess,
+    },
 };
 use resources::Resources;
 
@@ -17,6 +21,8 @@ const CHUNK_SIZE: usize = 1024;
 pub struct CommandBuffer {
     inner: Elastic<StretchedCommandBufferInner>,
 }
+
+static_assertions::assert_impl_all!(CommandBuffer: LuaUserData, Send, Sync);
 
 impl CommandBuffer {
     pub fn push(
@@ -76,6 +82,18 @@ impl LuaUserData for CommandBuffer {
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("push", |lua, this, function: LuaFunction| {
+            let key = lua.create_registry_value(function)?;
+            this.push(move |_, resources| {
+                let mut nsa_lua = resources.get_mut::<NoSharedAccess<Lua>>().to_lua_err()?;
+                let lua = nsa_lua.get_mut();
+                let f: LuaFunction = lua.registry_value(&key)?;
+                let _: () = f.call(())?;
+                Ok(())
+            });
+            Ok(())
+        });
+
         methods.add_method_mut("spawn", |_, this, mut bundle: EntityBuilder| {
             this.push(move |world, _| {
                 world.spawn(bundle.build());
@@ -255,5 +273,59 @@ impl<'a> Drop for CommandPoolScope<'a> {
                 .lock()
                 .push((ptr.cast(), len, cap));
         }
+    }
+}
+
+#[repr(transparent)]
+pub struct StretchedCommandPoolScope([u8; std::mem::size_of::<CommandPoolScope>()]);
+
+unsafe impl Stretched for StretchedCommandPoolScope {
+    type Parameterized<'a> = CommandPoolScope<'a>;
+
+    hv::sync::impl_stretched_methods!(std);
+}
+
+impl<'a> Stretchable<'a> for CommandPoolScope<'a> {
+    type Stretched = StretchedCommandPoolScope;
+}
+
+/// A lifetime-less resource type intended to be placed into a [`Resources`] struct, which can be
+/// loaned a [`CommandPoolScope`] to enable it to be properly borrowed.
+#[derive(Clone, Default)]
+pub struct CommandPoolResource {
+    inner: Elastic<StretchedCommandPoolScope>,
+}
+
+static_assertions::assert_impl_all!(CommandPoolResource: LuaUserData, Send, Sync);
+
+pub struct CommandPoolGuard<'g>(ElasticGuard<'g, CommandPoolScope<'g>>);
+
+impl CommandPoolResource {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn loan<'g>(&self, scope: CommandPoolScope<'g>) -> CommandPoolGuard<'g> {
+        CommandPoolGuard(self.inner.loan(scope))
+    }
+
+    pub fn borrow(&self) -> AtomicRef<CommandPoolScope> {
+        self.inner
+            .borrow()
+            .expect("command pool resource should never be mutably borrowed")
+    }
+
+    pub fn get_buffer(&self) -> CommandBuffer {
+        self.borrow().get()
+    }
+}
+
+impl LuaUserData for CommandPoolResource {
+    fn on_metatable_init(table: Type<Self>) {
+        table.add_clone().add::<dyn Send>().add::<dyn Sync>();
+    }
+
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method("get_buffer", |_, this, ()| Ok(this.get_buffer()));
     }
 }

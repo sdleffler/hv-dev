@@ -65,6 +65,8 @@ pub struct Filesystem {
     vfs: vfs::OverlayFS,
 }
 
+static_assertions::assert_impl_all!(Filesystem: Send, Sync);
+
 /// Represents a file, either in the filesystem, or in the resources zip file,
 /// or whatever.
 #[non_exhaustive]
@@ -72,6 +74,8 @@ pub enum File {
     /// A wrapper for a VFile trait object.
     VfsFile(Box<dyn vfs::VFile>),
 }
+
+static_assertions::assert_impl_all!(File: Send, Sync);
 
 impl fmt::Debug for File {
     // Make this more useful?
