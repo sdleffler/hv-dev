@@ -206,6 +206,9 @@ pub struct Elastic<T: Stretched> {
     slot: ArcCell<Option<T>>,
 }
 
+unsafe impl<T: 'static + Send + Sync> Send for Elastic<*const T> {}
+unsafe impl<T: 'static + Send + Sync> Sync for Elastic<*const T> {}
+
 unsafe impl<T: 'static + Send + Sync> Send for Elastic<*mut T> {}
 unsafe impl<T: 'static + Send + Sync> Sync for Elastic<*mut T> {}
 
@@ -274,8 +277,17 @@ impl<T: Stretched> Elastic<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct ElasticRef<T: Stretched> {
     inner: ArcRef<T, Option<T>>,
+}
+
+impl<T: Stretched> Clone for ElasticRef<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl<T: Stretched> ElasticRef<T> {
@@ -287,6 +299,7 @@ impl<T: Stretched> ElasticRef<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct ElasticRefMut<T: Stretched> {
     inner: ArcRefMut<T, Option<T>>,
 }

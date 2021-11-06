@@ -865,13 +865,13 @@ impl<T: ?Sized, C: ?Sized> DerefMut for ArcRefMut<T, C> {
     }
 }
 
-impl<T: ?Sized + Debug> Debug for ArcRef<T> {
+impl<T: ?Sized + Debug, C: ?Sized> Debug for ArcRef<T, C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.value.fmt(f)
     }
 }
 
-impl<T: ?Sized + Debug> Debug for ArcRefMut<T> {
+impl<T: ?Sized + Debug, C: ?Sized> Debug for ArcRefMut<T, C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.value.fmt(f)
     }
