@@ -33,7 +33,7 @@ where
     Resources: ResourceTuple,
 {
     pub fn run(&mut self, world: &World, wrapped: Resources::Wrapped) {
-        rayon::scope_fifo(|scope| {
+        rayon::in_place_scope_fifo(|scope| {
             self.prepare(world);
             // All systems have been ran if there are no queued or currently running systems.
             while !(self.systems_to_run_now.is_empty() && self.systems_running.is_empty()) {
@@ -85,12 +85,14 @@ where
     {
         for (id, _) in &self.systems_to_run_now {
             // Check if a queued system can run concurrently with
-            // other systems already running.
-            if self.can_start_now(*id) {
+            // other systems already running. For this first pass, start only systems which can run
+            // concurrently.
+            let system = &self.systems.get(id).expect(INVALID_ID).closure;
+            if system.is_sync() && self.can_start_now(*id) {
                 // Add it to the currently running systems set.
                 self.systems_running.insert(*id);
                 // Pointers and data to send over to a worker thread.
-                let system = self.systems.get_mut(id).expect(INVALID_ID).closure.clone();
+                let system = system.clone().unwrap_sync();
                 let sender = self.sender.clone();
                 let id = *id;
                 scope.spawn_fifo(move |_| {
@@ -109,6 +111,35 @@ where
                 });
             }
         }
+
+        // Try to knock out a local system while we're at it.
+        for (id, _) in &self.systems_to_run_now {
+            // Check if it can run concurrently w/ currently running systems, and filter to only
+            // local systems.
+            let system = &self.systems.get(id).expect(INVALID_ID).closure;
+            if !system.is_sync() && self.can_start_now(*id) {
+                // Add it to the currently running systems set.
+                self.systems_running.insert(*id);
+                // Pointers and data to send over to a worker thread.
+                let system = system.clone().unwrap_local();
+                let sender = self.sender.clone();
+                let id = *id;
+
+                let system = &mut *system
+                    .try_borrow_mut()
+                    .expect("systems should only be ran once per execution");
+                system(
+                    SystemContext {
+                        system_id: Some(id),
+                        world,
+                    },
+                    wrapped,
+                );
+                // Notify dispatching thread (this thread) than this system has finished running.
+                sender.send(id).expect(DISCONNECTED);
+            }
+        }
+
         {
             // Remove newly running systems from systems-to-run-now set.
             // TODO replace with `.drain_filter()` once stable
@@ -208,13 +239,13 @@ mod tests {
 
     fn local_pool_scope_fifo<'scope, F>(closure: F)
     where
-        F: for<'s> FnOnce(&'s ScopeFifo<'scope>) + 'scope + Send,
+        F: for<'s> FnOnce(&'s ScopeFifo<'scope>) + 'scope,
     {
         ThreadPoolBuilder::new()
             .num_threads(2)
             .build()
             .unwrap()
-            .scope_fifo(closure)
+            .in_place_scope_fifo(closure)
     }
 
     #[test]

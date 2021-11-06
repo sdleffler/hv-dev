@@ -1,12 +1,17 @@
 use hecs::World;
 use parking_lot::Mutex;
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet},
+    rc::Rc,
     sync::Arc,
 };
 
 use super::SystemClosure;
-use crate::{ArchetypeSet, BorrowSet, ExecutorBuilder, ResourceTuple, SystemId};
+use crate::{
+    executor::{builder::BoxedSystemClosure, LocalSystemClosure},
+    ArchetypeSet, BorrowSet, ExecutorBuilder, ResourceTuple, SystemId,
+};
 
 mod dispatching;
 mod scheduling;
@@ -17,12 +22,32 @@ use scheduling::{DependantsLength, Scheduler};
 static DISCONNECTED: &str = "channel should not be disconnected at this point";
 static INVALID_ID: &str = "system IDs should always be valid";
 
+pub enum SharedSystemClosure<'closure, Resources>
+where
+    Resources: ResourceTuple,
+{
+    Sync(Arc<Mutex<SystemClosure<'closure, Resources::Wrapped>>>),
+    Local(Rc<RefCell<LocalSystemClosure<'closure, Resources::Wrapped>>>),
+}
+
+impl<'closure, Resources> Clone for SharedSystemClosure<'closure, Resources>
+where
+    Resources: ResourceTuple,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Self::Sync(closure) => Self::Sync(closure.clone()),
+            Self::Local(closure) => Self::Local(closure.clone()),
+        }
+    }
+}
+
 /// System closure and scheduling metadata container.
 pub struct System<'closure, Resources>
 where
     Resources: ResourceTuple,
 {
-    pub closure: Arc<Mutex<SystemClosure<'closure, Resources::Wrapped>>>,
+    pub closure: SharedSystemClosure<'closure, Resources>,
     pub resource_set: BorrowSet,
     pub component_set: BorrowSet,
     pub archetype_set: ArchetypeSet,
@@ -30,6 +55,32 @@ where
     pub dependants: Vec<SystemId>,
     pub dependencies: usize,
     pub unsatisfied_dependencies: usize,
+}
+
+impl<'closure, Resources> SharedSystemClosure<'closure, Resources>
+where
+    Resources: ResourceTuple,
+{
+    fn is_sync(&self) -> bool {
+        match self {
+            Self::Sync(..) => true,
+            Self::Local(..) => false,
+        }
+    }
+
+    fn unwrap_sync(self) -> Arc<Mutex<SystemClosure<'closure, Resources::Wrapped>>> {
+        match self {
+            Self::Sync(closure) => closure,
+            Self::Local(..) => unreachable!(),
+        }
+    }
+
+    fn unwrap_local(self) -> Rc<RefCell<LocalSystemClosure<'closure, Resources::Wrapped>>> {
+        match self {
+            Self::Sync(..) => unreachable!(),
+            Self::Local(closure) => closure,
+        }
+    }
 }
 
 /// Variants of parallel executor, chosen based on properties of systems in the builder.
@@ -40,7 +91,7 @@ where
     // TODO consider more granularity:
     // scheduler, disjoint scheduler, dispatcher (has to be disjoint either way)
     /// Used when all systems are proven to be statically disjoint
-    /// and have no dependencies.
+    /// and have no dependencies (and are all Send/Sync).
     Dispatching(Dispatcher<'closures, Resources>),
     /// Used when systems cannot be proven to be statically disjoint,
     /// or have dependencies.
@@ -70,11 +121,21 @@ where
                 if dependencies == 0 {
                     systems_without_dependencies.push(id);
                 }
+
+                let closure = match system.closure {
+                    BoxedSystemClosure::Sync(closure) => {
+                        SharedSystemClosure::Sync(Arc::new(Mutex::new(closure)))
+                    }
+                    BoxedSystemClosure::Local(closure) => {
+                        SharedSystemClosure::Local(Rc::new(RefCell::new(closure)))
+                    }
+                };
+
                 all_dependencies.push((id, system.dependencies));
                 (
                     id,
                     System {
-                        closure: Arc::new(Mutex::new(system.closure)),
+                        closure,
                         resource_set: system.resource_set,
                         component_set: system.component_type_set.condense(&all_component_types),
                         archetype_set: ArchetypeSet::default(),
@@ -89,24 +150,25 @@ where
         // If all systems are independent, it might be possible to use dispatching heuristic.
         if systems.len() == systems_without_dependencies.len() {
             let mut tested_ids = Vec::new();
-            let mut all_disjoint = true;
+            let mut all_disjoint_and_sync = true;
             'outer: for (id, system) in &systems {
                 tested_ids.push(*id);
                 for (id, other) in &systems {
                     if !tested_ids.contains(id)
                         && (!system.resource_set.is_compatible(&other.resource_set)
-                            || !system.component_set.is_compatible(&other.component_set))
+                            || !system.component_set.is_compatible(&other.component_set)
+                            || !system.closure.is_sync())
                     {
-                        all_disjoint = false;
+                        all_disjoint_and_sync = false;
                         break 'outer;
                     }
                 }
             }
-            if all_disjoint {
+            if all_disjoint_and_sync {
                 return ExecutorParallel::Dispatching(Dispatcher {
                     systems: systems
                         .drain()
-                        .map(|(id, system)| (id, system.closure))
+                        .map(|(id, system)| (id, system.closure.unwrap_sync()))
                         .collect(),
                 });
             }

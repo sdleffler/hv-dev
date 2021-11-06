@@ -4,10 +4,21 @@ use std::{collections::HashMap, fmt::Debug, hash::Hash};
 use hecs::World;
 
 use super::SystemClosure;
-use crate::{Executor, Fetch, QueryBundle, ResourceTuple, SystemContext, SystemId};
+use crate::{
+    executor::LocalSystemClosure, Executor, Fetch, QueryBundle, ResourceTuple, SystemContext,
+    SystemId,
+};
 
 #[cfg(feature = "parallel")]
 use crate::{ArchetypeSet, BorrowSet, BorrowTypeSet, TypeSet};
+
+pub enum BoxedSystemClosure<'closure, Resources>
+where
+    Resources: ResourceTuple + 'closure,
+{
+    Sync(Box<SystemClosure<'closure, Resources::Wrapped>>),
+    Local(Box<LocalSystemClosure<'closure, Resources::Wrapped>>),
+}
 
 /// Container for parsed systems and their metadata;
 /// destructured in concrete executors' build functions.
@@ -15,7 +26,7 @@ pub struct System<'closure, Resources>
 where
     Resources: ResourceTuple + 'closure,
 {
-    pub closure: Box<SystemClosure<'closure, Resources::Wrapped>>,
+    pub closure: BoxedSystemClosure<'closure, Resources>,
     pub dependencies: Vec<SystemId>,
     #[cfg(feature = "parallel")]
     pub resource_set: BorrowSet,
@@ -73,7 +84,7 @@ where
                 Queries::set_archetype_bits(world, archetype_set)
             });
             System {
-                closure,
+                closure: BoxedSystemClosure::Sync(closure),
                 dependencies: vec![],
                 resource_set,
                 component_type_set,
@@ -82,7 +93,53 @@ where
         }
         #[cfg(not(feature = "parallel"))]
         System {
-            closure,
+            closure: BoxedSystemClosure::Local(closure),
+            dependencies: vec![],
+        }
+    }
+
+    fn box_local_system<'a, Closure, ResourceRefs, Queries, Markers>(
+        mut closure: Closure,
+    ) -> System<'closures, Resources>
+    where
+        Resources::Wrapped: 'a,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + 'closures,
+        ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
+        Queries: QueryBundle,
+    {
+        let closure = Box::new(
+            move |context: SystemContext<'a>, resources: &'a Resources::Wrapped| {
+                let fetched = ResourceRefs::fetch(resources);
+                closure(context, fetched, Queries::markers());
+                unsafe { ResourceRefs::release(resources) };
+            },
+        );
+        let closure = unsafe {
+            std::mem::transmute::<
+                Box<dyn FnMut(_, &'a _) + 'closures>,
+                Box<dyn FnMut(SystemContext, &Resources::Wrapped) + 'closures>,
+            >(closure)
+        };
+        #[cfg(feature = "parallel")]
+        {
+            let mut resource_set = BorrowSet::with_capacity(Resources::LENGTH);
+            ResourceRefs::set_resource_bits(&mut resource_set);
+            let mut component_type_set = BorrowTypeSet::new();
+            Queries::insert_component_types(&mut component_type_set);
+            let archetype_writer = Box::new(|world: &World, archetype_set: &mut ArchetypeSet| {
+                Queries::set_archetype_bits(world, archetype_set)
+            });
+            System {
+                closure: BoxedSystemClosure::Local(closure),
+                dependencies: vec![],
+                resource_set,
+                component_type_set,
+                archetype_writer,
+            }
+        }
+        #[cfg(not(feature = "parallel"))]
+        System {
+            closure: BoxedSystemClosure::Local(closure),
             dependencies: vec![],
         }
     }
@@ -158,6 +215,30 @@ where
     {
         let id = SystemId(self.systems.len());
         let system = Self::box_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
+        #[cfg(feature = "parallel")]
+        {
+            self.all_component_types
+                .extend(&system.component_type_set.immutable);
+            self.all_component_types
+                .extend(&system.component_type_set.mutable);
+        }
+        self.systems.insert(id, system);
+        self
+    }
+
+    /// Like `system` but allows for a non `Send + Sync` closure.
+    pub fn local_system<'a, Closure, ResourceRefs, Queries, Markers>(
+        mut self,
+        closure: Closure,
+    ) -> Self
+    where
+        Resources::Wrapped: 'a,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + 'closures,
+        ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
+        Queries: QueryBundle,
+    {
+        let id = SystemId(self.systems.len());
+        let system = Self::box_local_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
         #[cfg(feature = "parallel")]
         {
             self.all_component_types
@@ -283,6 +364,44 @@ where
         }
     }
 
+    /// Thread-local version of [`system_with_handle`].
+    pub fn local_system_with_handle<'a, Closure, ResourceRefs, Queries, Markers, NewHandle>(
+        mut self,
+        closure: Closure,
+        handle: NewHandle,
+    ) -> ExecutorBuilder<'closures, Resources, NewHandle>
+    where
+        Resources::Wrapped: 'a,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + 'closures,
+        ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
+        Queries: QueryBundle,
+        NewHandle: HandleConversion<Handle> + Debug,
+    {
+        let mut handles = NewHandle::convert_hash_map(self.handles);
+        assert!(
+            !handles.contains_key(&handle),
+            "system {:?} already exists",
+            handle
+        );
+        let id = SystemId(self.systems.len());
+        let system = Self::box_local_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
+        #[cfg(feature = "parallel")]
+        {
+            self.all_component_types
+                .extend(&system.component_type_set.immutable);
+            self.all_component_types
+                .extend(&system.component_type_set.mutable);
+        }
+        self.systems.insert(id, system);
+        handles.insert(handle, id);
+        ExecutorBuilder {
+            systems: self.systems,
+            handles,
+            #[cfg(feature = "parallel")]
+            all_component_types: self.all_component_types,
+        }
+    }
+
     /// Creates a new system from a closure or a function, and inserts it into
     /// the builder with given dependencies; see [`::system()`](#method.system).
     ///
@@ -311,6 +430,43 @@ where
     {
         let id = SystemId(self.systems.len());
         let mut system = Self::box_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
+        #[cfg(feature = "parallel")]
+        {
+            self.all_component_types
+                .extend(&system.component_type_set.immutable);
+            self.all_component_types
+                .extend(&system.component_type_set.mutable);
+        }
+        system
+            .dependencies
+            .extend(dependencies.iter().map(|dep_handle| {
+                *self.handles.get(dep_handle).unwrap_or_else(|| {
+                    panic!(
+                    "could not resolve dependencies of a handle-less system: no system {:?} found",
+                    dep_handle
+                )
+                })
+            }));
+        self.systems.insert(id, system);
+        self
+    }
+
+    /// Thread-local version of [`system_with_deps`].
+    pub fn local_system_with_deps<'a, Closure, ResourceRefs, Queries, Markers>(
+        mut self,
+        closure: Closure,
+        dependencies: Vec<Handle>,
+    ) -> Self
+    where
+        Resources::Wrapped: 'a,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + 'closures,
+        ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
+        Queries: QueryBundle,
+        Handle: Eq + Hash + Debug,
+    {
+        let id = SystemId(self.systems.len());
+        let mut system =
+            Self::box_local_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
         #[cfg(feature = "parallel")]
         {
             self.all_component_types
@@ -373,6 +529,55 @@ where
         );
         let id = SystemId(self.systems.len());
         let mut system = Self::box_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
+        #[cfg(feature = "parallel")]
+        {
+            self.all_component_types
+                .extend(&system.component_type_set.immutable);
+            self.all_component_types
+                .extend(&system.component_type_set.mutable);
+        }
+        system
+            .dependencies
+            .extend(dependencies.iter().map(|dep_handle| {
+                *self.handles.get(dep_handle).unwrap_or_else(|| {
+                    panic!(
+                        "could not resolve dependencies of system {:?}: no system {:?} found",
+                        handle, dep_handle
+                    )
+                })
+            }));
+        self.systems.insert(id, system);
+        self.handles.insert(handle, id);
+        self
+    }
+
+    /// Thread-local version of [`system_with_handle_and_deps`].
+    pub fn local_system_with_handle_and_deps<'a, Closure, ResourceRefs, Queries, Markers>(
+        mut self,
+        closure: Closure,
+        handle: Handle,
+        dependencies: Vec<Handle>,
+    ) -> Self
+    where
+        Resources::Wrapped: 'a,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + 'closures,
+        ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
+        Queries: QueryBundle,
+        Handle: Eq + Hash + Debug,
+    {
+        assert!(
+            !self.handles.contains_key(&handle),
+            "system {:?} already exists",
+            handle
+        );
+        assert!(
+            !dependencies.contains(&handle),
+            "system {:?} depends on itself",
+            handle
+        );
+        let id = SystemId(self.systems.len());
+        let mut system =
+            Self::box_local_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
         #[cfg(feature = "parallel")]
         {
             self.all_component_types

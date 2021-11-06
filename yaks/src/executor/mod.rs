@@ -24,6 +24,7 @@ use crate::TypeSet;
 use parallel::ExecutorParallel;
 
 type SystemClosure<'closure, Cells> = dyn FnMut(SystemContext, &Cells) + Send + Sync + 'closure;
+type LocalSystemClosure<'closure, Cells> = dyn FnMut(SystemContext, &Cells) + 'closure;
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct SystemId(pub(crate) usize);
