@@ -1,0 +1,18 @@
+[package]
+name = "tiled"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+hv = { path = "../hv" }
+log = "0.4.14"
+slab = "0.4.4"
+base64 = "0.13.0"
+flate2 = "1.0.22"
+bitfield = "0.13.2"
+shrev = "1.1.1"
+
+[dev-dependencies]
+simple_logger = "1.13.0"

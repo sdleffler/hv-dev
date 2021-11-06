@@ -2,6 +2,7 @@
 members = [
     "altar",
     "hecs",
+    "tiled",
     "hv/crates/hv-alchemy",
     "hv/crates/hv-boxed",
     "hv/crates/hv-ecs-derive",
