@@ -26,16 +26,30 @@ use contains::Contains;
 pub use atomic_borrow::AtomicBorrow;
 pub use fetch::Fetch;
 use hecs::World;
-pub use ref_extractor::RefExtractor;
-use resources::{Ref, RefMut, Resource, Resources};
+pub use ref_extractor::{MultiRefExtractor, RefExtractor};
+use resources::{Ref, RefMut, Resource, Resources, SyncResources};
 pub use tuple::ResourceTuple;
 pub use wrap::ResourceWrap;
 
-use crate::{query_bundle::QueryBundle, Executor, System, SystemContext};
+use crate::{query_bundle::QueryBundle, System, SystemContext};
 
 impl RefExtractor<&Resources> for () {
-    fn extract_and_run(executor: &mut Executor<Self>, world: &World, _: &Resources) {
-        executor.run(world, ());
+    fn extract_and_run(
+        _executor: &mut Self::BorrowTuple,
+        _: &Resources,
+        f: impl FnOnce(Self::Wrapped),
+    ) {
+        f(());
+    }
+}
+
+impl<'a> RefExtractor<SyncResources<'a>> for () {
+    fn extract_and_run(
+        _executor: &mut Self::BorrowTuple,
+        _: SyncResources<'a>,
+        f: impl FnOnce(Self::Wrapped),
+    ) {
+        f(());
     }
 }
 
@@ -43,32 +57,69 @@ impl<R0> RefExtractor<&Resources> for (R0,)
 where
     R0: Resource,
 {
-    fn extract_and_run(executor: &mut Executor<Self>, world: &World, resources: &Resources) {
+    fn extract_and_run(
+        borrow_tuple: &mut Self::BorrowTuple,
+        resources: &Resources,
+        f: impl FnOnce(Self::Wrapped),
+    ) {
         let mut refs = resources
             .fetch::<&mut R0>()
             .unwrap_or_else(|error| panic!("{}", error));
-        let derefs = (&mut *refs,);
-        executor.run(world, derefs);
+        Self::extract_and_run(borrow_tuple, (&mut *refs,), f);
+    }
+}
+
+impl<'a, R0> RefExtractor<SyncResources<'a>> for (R0,)
+where
+    R0: Resource + Sync,
+{
+    fn extract_and_run(
+        borrow_tuple: &mut Self::BorrowTuple,
+        resources: SyncResources<'a>,
+        f: impl FnOnce(Self::Wrapped),
+    ) {
+        let mut refs = resources
+            .fetch::<&mut R0>()
+            .unwrap_or_else(|error| panic!("{}", error));
+        Self::extract_and_run(borrow_tuple, (&mut *refs,), f);
     }
 }
 
 macro_rules! impl_ref_extractor {
     ($($letter:ident),*) => {
-        impl<'a, $($letter),*> RefExtractor<&Resources> for ($($letter,)*)
+        impl<$($letter),*> RefExtractor<&Resources> for ($($letter,)*)
         where
             $($letter: Resource,)*
         {
             #[allow(non_snake_case)]
             fn extract_and_run(
-                executor: &mut Executor<Self>,
-                world: &World,
+                borrow_tuple: &mut Self::BorrowTuple,
                 resources: &Resources,
+                f: impl FnOnce(Self::Wrapped),
             ) {
                 let ($(mut $letter,)*) = resources
                     .fetch::<($(&mut $letter, )*)>()
                     .unwrap_or_else(|error| panic!("{}", error));
                 let derefs = ($(&mut *$letter,)*);
-                executor.run(world, derefs);
+                Self::extract_and_run(borrow_tuple, derefs, f)
+            }
+        }
+
+        impl<'a, $($letter),*> RefExtractor<SyncResources<'a>> for ($($letter,)*)
+        where
+            $($letter: Resource + Sync,)*
+        {
+            #[allow(non_snake_case)]
+            fn extract_and_run(
+                borrow_tuple: &mut Self::BorrowTuple,
+                resources: SyncResources<'a>,
+                f: impl FnOnce(Self::Wrapped),
+            ) {
+                let ($(mut $letter,)*) = resources
+                    .fetch::<($(&mut $letter, )*)>()
+                    .unwrap_or_else(|error| panic!("{}", error));
+                let derefs = ($(&mut *$letter,)*);
+                Self::extract_and_run(borrow_tuple, derefs, f)
             }
         }
     }

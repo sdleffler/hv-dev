@@ -1,7 +1,10 @@
 use hecs::World;
 use std::collections::HashMap;
 
-use crate::{RefExtractor, ResourceTuple, SystemContext};
+use crate::{
+    resource::{MultiRefExtractor, RefExtractor},
+    ResourceTuple, SystemContext,
+};
 
 mod builder;
 
@@ -24,7 +27,8 @@ use crate::TypeSet;
 use parallel::ExecutorParallel;
 
 type SystemClosure<'closure, Cells> = dyn FnMut(SystemContext, &Cells) + Send + Sync + 'closure;
-type LocalSystemClosure<'closure, Cells> = dyn FnMut(SystemContext, &Cells) + 'closure;
+type LocalSystemClosure<'closure, Cells, LocalCells> =
+    dyn FnMut(SystemContext, &Cells, &LocalCells) + 'closure;
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct SystemId(pub(crate) usize);
@@ -63,24 +67,31 @@ pub struct SystemId(pub(crate) usize);
 ///
 /// See [`::run()`](#method.run), crate examples, and documentation for other items in the library
 /// for more details and specific demos.
-pub struct Executor<'closures, Resources>
+pub struct Executor<'closures, Resources, LocalResources = ()>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
     pub(crate) borrows: Resources::BorrowTuple,
+    pub(crate) local_borrows: LocalResources::BorrowTuple,
     #[cfg(feature = "parallel")]
-    pub(crate) inner: ExecutorParallel<'closures, Resources>,
+    pub(crate) inner: ExecutorParallel<'closures, Resources, LocalResources>,
     #[cfg(not(feature = "parallel"))]
-    pub(crate) inner: ExecutorSequential<'closures, Resources>,
+    pub(crate) inner: ExecutorSequential<'closures, Resources, LocalResources>,
 }
 
-impl<'closures, Resources> Executor<'closures, Resources>
+impl<'closures, Resources, LocalResources> Executor<'closures, Resources, LocalResources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
     /// Creates a new [`ExecutorBuilder`](struct.ExecutorBuilder.html).
-    pub fn builder() -> ExecutorBuilder<'closures, Resources> {
-        ExecutorBuilder::<'closures, Resources, DummyHandle> {
+    pub fn builder() -> ExecutorBuilder<'closures, Resources, LocalResources> {
+        ExecutorBuilder::<'closures, Resources, LocalResources, DummyHandle> {
             systems: HashMap::new(),
             handles: HashMap::with_capacity(0),
             #[cfg(feature = "parallel")]
@@ -88,9 +99,12 @@ where
         }
     }
 
-    pub(crate) fn build<Handle>(builder: ExecutorBuilder<'closures, Resources, Handle>) -> Self {
+    pub(crate) fn build<Handle>(
+        builder: ExecutorBuilder<'closures, Resources, LocalResources, Handle>,
+    ) -> Self {
         Self {
             borrows: Resources::instantiate_borrows(),
+            local_borrows: LocalResources::instantiate_borrows(),
             #[cfg(feature = "parallel")]
             inner: ExecutorParallel::build(builder),
             #[cfg(not(feature = "parallel"))]
@@ -196,10 +210,26 @@ where
     /// - a different [`hecs::World`](../hecs/struct.World.html) is supplied than
     /// in a previous call, without first calling
     /// [`::force_archetype_recalculation()`](#method.force_archetype_recalculation).
+    pub fn run_with_local<RefSource>(&mut self, world: &World, resources: RefSource)
+    where
+        RefSource: MultiRefExtractor<Resources, LocalResources>,
+    {
+        resources.extract_and_drive_executor(self, world);
+    }
+}
+
+impl<'closures, Resources> Executor<'closures, Resources, ()>
+where
+    Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+{
+    /// Shortcut for [`run_with_local`] when there are no local resources.
     pub fn run<RefSource>(&mut self, world: &World, resources: RefSource)
     where
         Resources: RefExtractor<RefSource>,
     {
-        Resources::extract_and_run(self, world, resources);
+        let Self { inner, borrows, .. } = self;
+        Resources::extract_and_run(borrows, resources, |wrapped| inner.run(world, wrapped, ()));
     }
 }

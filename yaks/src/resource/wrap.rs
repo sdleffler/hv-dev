@@ -2,8 +2,8 @@ use super::{AtomicBorrow, ResourceCell};
 
 /// Specifies how a tuple of references is wrapped into a tuple of cells.
 pub trait ResourceWrap {
-    type Wrapped: Send + Sync;
-    type BorrowTuple: Send + Sync;
+    type Wrapped: Send;
+    type BorrowTuple: Send;
 
     fn wrap(&mut self, borrows: &mut Self::BorrowTuple) -> Self::Wrapped;
 }
@@ -17,7 +17,7 @@ impl ResourceWrap for () {
 
 impl<R0> ResourceWrap for &'_ mut R0
 where
-    R0: Send + Sync,
+    R0: Send,
 {
     type Wrapped = (ResourceCell<R0>,);
     type BorrowTuple = (AtomicBorrow,);
@@ -29,7 +29,7 @@ where
 
 impl<R0> ResourceWrap for (&'_ mut R0,)
 where
-    R0: Send + Sync,
+    R0: Send,
 {
     type Wrapped = (ResourceCell<R0>,);
     type BorrowTuple = (AtomicBorrow,);
@@ -53,7 +53,7 @@ macro_rules! impl_resource_wrap {
         paste::item! {
             impl<$($letter),*> ResourceWrap for ($(&'_ mut $letter,)*)
             where
-                $($letter: Send + Sync,)*
+                $($letter: Send,)*
             {
                 type Wrapped = ($(ResourceCell<$letter>,)*);
                 type BorrowTuple = ($(swap_to_atomic_borrow!($letter),)*);

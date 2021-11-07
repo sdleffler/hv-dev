@@ -20,5 +20,6 @@ members = [
     "hv/crates/hv-timer",
     "hv/crates/hv-vfs",
     "hv",
+    "resources",
     "yaks",
 ]

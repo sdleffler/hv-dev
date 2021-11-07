@@ -12,21 +12,27 @@ use crate::{
 #[cfg(feature = "parallel")]
 use crate::{ArchetypeSet, BorrowSet, BorrowTypeSet, TypeSet};
 
-pub enum BoxedSystemClosure<'closure, Resources>
+pub enum BoxedSystemClosure<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple + 'closure,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple + 'closure,
 {
     Sync(Box<SystemClosure<'closure, Resources::Wrapped>>),
-    Local(Box<LocalSystemClosure<'closure, Resources::Wrapped>>),
+    Local(Box<LocalSystemClosure<'closure, Resources::Wrapped, LocalResources::Wrapped>>),
 }
 
 /// Container for parsed systems and their metadata;
 /// destructured in concrete executors' build functions.
-pub struct System<'closure, Resources>
+pub struct System<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple + 'closure,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple + 'closure,
 {
-    pub closure: BoxedSystemClosure<'closure, Resources>,
+    pub closure: BoxedSystemClosure<'closure, Resources, LocalResources>,
     pub dependencies: Vec<SystemId>,
     #[cfg(feature = "parallel")]
     pub resource_set: BorrowSet,
@@ -37,24 +43,31 @@ where
 }
 
 /// A builder for [`Executor`](struct.Executor.html) (and the only way of creating one).
-pub struct ExecutorBuilder<'closures, Resources, Handle = DummyHandle>
+pub struct ExecutorBuilder<'closures, Resources, LocalResources, Handle = DummyHandle>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
-    pub(crate) systems: HashMap<SystemId, System<'closures, Resources>>,
+    pub(crate) systems: HashMap<SystemId, System<'closures, Resources, LocalResources>>,
     pub(crate) handles: HashMap<Handle, SystemId>,
     #[cfg(feature = "parallel")]
     pub(crate) all_component_types: TypeSet,
 }
 
-impl<'closures, Resources, Handle> ExecutorBuilder<'closures, Resources, Handle>
+impl<'closures, Resources, LocalResources, Handle>
+    ExecutorBuilder<'closures, Resources, LocalResources, Handle>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
     Handle: Eq + Hash,
 {
     fn box_system<'a, Closure, ResourceRefs, Queries, Markers>(
         mut closure: Closure,
-    ) -> System<'closures, Resources>
+    ) -> System<'closures, Resources, LocalResources>
     where
         Resources::Wrapped: 'a,
         Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + Send + Sync + 'closures,
@@ -93,31 +106,47 @@ where
         }
         #[cfg(not(feature = "parallel"))]
         System {
-            closure: BoxedSystemClosure::Local(closure),
+            closure: BoxedSystemClosure::Sync(closure),
             dependencies: vec![],
         }
     }
 
-    fn box_local_system<'a, Closure, ResourceRefs, Queries, Markers>(
+    fn box_local_system<
+        'a,
+        Closure,
+        ResourceRefs,
+        LocalResourceRefs,
+        Queries,
+        Markers,
+        LocalMarkers,
+    >(
         mut closure: Closure,
-    ) -> System<'closures, Resources>
+    ) -> System<'closures, Resources, LocalResources>
     where
         Resources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + 'closures,
+        LocalResources::Wrapped: 'a,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, Queries) + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
+        LocalResourceRefs: Fetch<'a, LocalResources::Wrapped, LocalMarkers> + 'a,
         Queries: QueryBundle,
     {
         let closure = Box::new(
-            move |context: SystemContext<'a>, resources: &'a Resources::Wrapped| {
+            move |context: SystemContext<'a>,
+                  resources: &'a Resources::Wrapped,
+                  local_resources: &'a LocalResources::Wrapped| {
                 let fetched = ResourceRefs::fetch(resources);
-                closure(context, fetched, Queries::markers());
+                let local_fetched = LocalResourceRefs::fetch(local_resources);
+                closure(context, fetched, local_fetched, Queries::markers());
                 unsafe { ResourceRefs::release(resources) };
             },
         );
         let closure = unsafe {
             std::mem::transmute::<
-                Box<dyn FnMut(_, &'a _) + 'closures>,
-                Box<dyn FnMut(SystemContext, &Resources::Wrapped) + 'closures>,
+                Box<dyn FnMut(_, &'a _, &'a _) + 'closures>,
+                Box<
+                    dyn FnMut(SystemContext, &Resources::Wrapped, &LocalResources::Wrapped)
+                        + 'closures,
+                >,
             >(closure)
         };
         #[cfg(feature = "parallel")]
@@ -226,19 +255,38 @@ where
         self
     }
 
-    /// Like `system` but allows for a non `Send + Sync` closure.
-    pub fn local_system<'a, Closure, ResourceRefs, Queries, Markers>(
+    /// Like `system` but allows for a non `Send + Sync` closure and a second set of non `Sync`
+    /// resources.
+    pub fn local_system<
+        'a,
+        Closure,
+        ResourceRefs,
+        LocalResourceRefs,
+        Queries,
+        Markers,
+        LocalMarkers,
+    >(
         mut self,
         closure: Closure,
     ) -> Self
     where
         Resources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + 'closures,
+        LocalResources::Wrapped: 'a,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, Queries) + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
+        LocalResourceRefs: Fetch<'a, LocalResources::Wrapped, LocalMarkers> + 'a,
         Queries: QueryBundle,
     {
         let id = SystemId(self.systems.len());
-        let system = Self::box_local_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
+        let system = Self::box_local_system::<
+            'a,
+            Closure,
+            ResourceRefs,
+            LocalResourceRefs,
+            Queries,
+            Markers,
+            LocalMarkers,
+        >(closure);
         #[cfg(feature = "parallel")]
         {
             self.all_component_types
@@ -331,7 +379,7 @@ where
         mut self,
         closure: Closure,
         handle: NewHandle,
-    ) -> ExecutorBuilder<'closures, Resources, NewHandle>
+    ) -> ExecutorBuilder<'closures, Resources, LocalResources, NewHandle>
     where
         Resources::Wrapped: 'a,
         Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + Send + Sync + 'closures,
@@ -365,15 +413,26 @@ where
     }
 
     /// Thread-local version of [`system_with_handle`].
-    pub fn local_system_with_handle<'a, Closure, ResourceRefs, Queries, Markers, NewHandle>(
+    pub fn local_system_with_handle<
+        'a,
+        Closure,
+        ResourceRefs,
+        LocalResourceRefs,
+        Queries,
+        Markers,
+        LocalMarkers,
+        NewHandle,
+    >(
         mut self,
         closure: Closure,
         handle: NewHandle,
-    ) -> ExecutorBuilder<'closures, Resources, NewHandle>
+    ) -> ExecutorBuilder<'closures, Resources, LocalResources, NewHandle>
     where
         Resources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + 'closures,
+        LocalResources::Wrapped: 'a,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, Queries) + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
+        LocalResourceRefs: Fetch<'a, LocalResources::Wrapped, LocalMarkers> + 'a,
         Queries: QueryBundle,
         NewHandle: HandleConversion<Handle> + Debug,
     {
@@ -384,7 +443,15 @@ where
             handle
         );
         let id = SystemId(self.systems.len());
-        let system = Self::box_local_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
+        let system = Self::box_local_system::<
+            'a,
+            Closure,
+            ResourceRefs,
+            LocalResourceRefs,
+            Queries,
+            Markers,
+            LocalMarkers,
+        >(closure);
         #[cfg(feature = "parallel")]
         {
             self.all_component_types
@@ -452,21 +519,38 @@ where
     }
 
     /// Thread-local version of [`system_with_deps`].
-    pub fn local_system_with_deps<'a, Closure, ResourceRefs, Queries, Markers>(
+    pub fn local_system_with_deps<
+        'a,
+        Closure,
+        ResourceRefs,
+        LocalResourceRefs,
+        Queries,
+        Markers,
+        LocalMarkers,
+    >(
         mut self,
         closure: Closure,
         dependencies: Vec<Handle>,
     ) -> Self
     where
         Resources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + 'closures,
+        LocalResources::Wrapped: 'a,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, Queries) + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
+        LocalResourceRefs: Fetch<'a, LocalResources::Wrapped, LocalMarkers> + 'a,
         Queries: QueryBundle,
         Handle: Eq + Hash + Debug,
     {
         let id = SystemId(self.systems.len());
-        let mut system =
-            Self::box_local_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
+        let mut system = Self::box_local_system::<
+            'a,
+            Closure,
+            ResourceRefs,
+            LocalResourceRefs,
+            Queries,
+            Markers,
+            LocalMarkers,
+        >(closure);
         #[cfg(feature = "parallel")]
         {
             self.all_component_types
@@ -552,7 +636,15 @@ where
     }
 
     /// Thread-local version of [`system_with_handle_and_deps`].
-    pub fn local_system_with_handle_and_deps<'a, Closure, ResourceRefs, Queries, Markers>(
+    pub fn local_system_with_handle_and_deps<
+        'a,
+        Closure,
+        ResourceRefs,
+        LocalResourceRefs,
+        Queries,
+        Markers,
+        LocalMarkers,
+    >(
         mut self,
         closure: Closure,
         handle: Handle,
@@ -560,8 +652,10 @@ where
     ) -> Self
     where
         Resources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + 'closures,
+        LocalResources::Wrapped: 'a,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, Queries) + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
+        LocalResourceRefs: Fetch<'a, LocalResources::Wrapped, LocalMarkers> + 'a,
         Queries: QueryBundle,
         Handle: Eq + Hash + Debug,
     {
@@ -576,8 +670,15 @@ where
             handle
         );
         let id = SystemId(self.systems.len());
-        let mut system =
-            Self::box_local_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
+        let mut system = Self::box_local_system::<
+            'a,
+            Closure,
+            ResourceRefs,
+            LocalResourceRefs,
+            Queries,
+            Markers,
+            LocalMarkers,
+        >(closure);
         #[cfg(feature = "parallel")]
         {
             self.all_component_types
@@ -601,7 +702,7 @@ where
     }
 
     /// Consumes the builder and returns the finalized executor.
-    pub fn build(self) -> Executor<'closures, Resources> {
+    pub fn build(self) -> Executor<'closures, Resources, LocalResources> {
         Executor::build(self)
     }
 }

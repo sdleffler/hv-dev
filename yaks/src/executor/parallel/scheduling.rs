@@ -13,11 +13,14 @@ pub struct DependantsLength(pub usize);
 
 /// Parallel executor variant, used when systems cannot be proven to be statically disjoint,
 /// or have dependencies.
-pub struct Scheduler<'closures, Resources>
+pub struct Scheduler<'closures, Resources, LocalResources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
-    pub systems: HashMap<SystemId, System<'closures, Resources>>,
+    pub systems: HashMap<SystemId, System<'closures, Resources, LocalResources>>,
     pub archetypes_generation: Option<ArchetypesGeneration>,
     pub systems_without_dependencies: Vec<(SystemId, DependantsLength)>,
     pub systems_to_run_now: Vec<(SystemId, DependantsLength)>,
@@ -28,16 +31,24 @@ where
     pub receiver: Receiver<SystemId>,
 }
 
-impl<'closures, Resources> Scheduler<'closures, Resources>
+impl<'closures, Resources, LocalResources> Scheduler<'closures, Resources, LocalResources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
-    pub fn run(&mut self, world: &World, wrapped: Resources::Wrapped) {
+    pub fn run(
+        &mut self,
+        world: &World,
+        wrapped: Resources::Wrapped,
+        local_wrapped: LocalResources::Wrapped,
+    ) {
         rayon::in_place_scope_fifo(|scope| {
             self.prepare(world);
             // All systems have been ran if there are no queued or currently running systems.
             while !(self.systems_to_run_now.is_empty() && self.systems_running.is_empty()) {
-                self.start_all_currently_runnable(scope, world, &wrapped);
+                self.start_all_currently_runnable(scope, world, &wrapped, &local_wrapped);
                 self.wait_for_and_process_finished();
             }
         });
@@ -78,6 +89,7 @@ where
         scope: &ScopeFifo<'run>,
         world: &'run World,
         wrapped: &'run Resources::Wrapped,
+        local_wrapped: &'run LocalResources::Wrapped,
     ) where
         'closures: 'run,
         Resources::BorrowTuple: Send,
@@ -134,6 +146,7 @@ where
                         world,
                     },
                     wrapped,
+                    local_wrapped,
                 );
                 // Notify dispatching thread (this thread) than this system has finished running.
                 sender.send(id).expect(DISCONNECTED);
@@ -251,7 +264,7 @@ mod tests {
     #[test]
     fn dependencies_single() {
         let world = World::new();
-        let mut executor = ExecutorParallel::<()>::build(
+        let mut executor = ExecutorParallel::<(), ()>::build(
             Executor::builder()
                 .system_with_handle(dummy_system, 0)
                 .system_with_handle_and_deps(dummy_system, 1, vec![0]),
@@ -260,12 +273,12 @@ mod tests {
         let wrapped = ();
         local_pool_scope_fifo(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
@@ -276,7 +289,7 @@ mod tests {
     #[test]
     fn dependencies_several() {
         let world = World::new();
-        let mut executor = ExecutorParallel::<()>::build(
+        let mut executor = ExecutorParallel::<(), ()>::build(
             Executor::<()>::builder()
                 .system_with_handle(dummy_system, 0)
                 .system_with_handle(dummy_system, 1)
@@ -287,14 +300,14 @@ mod tests {
         let wrapped = ();
         local_pool_scope_fifo(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 3);
             executor.wait_for_one_finished();
             executor.wait_for_one_finished();
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
@@ -305,7 +318,7 @@ mod tests {
     #[test]
     fn dependencies_chain() {
         let world = World::new();
-        let mut executor = ExecutorParallel::<()>::build(
+        let mut executor = ExecutorParallel::<(), ()>::build(
             Executor::<()>::builder()
                 .system_with_handle(dummy_system, 0)
                 .system_with_handle_and_deps(dummy_system, 1, vec![0])
@@ -316,22 +329,22 @@ mod tests {
         let wrapped = ();
         local_pool_scope_fifo(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
@@ -342,7 +355,7 @@ mod tests {
     #[test]
     fn dependencies_fully_constrained() {
         let world = World::new();
-        let mut executor = ExecutorParallel::<()>::build(
+        let mut executor = ExecutorParallel::<(), ()>::build(
             Executor::<()>::builder()
                 .system_with_handle(dummy_system, 0)
                 .system_with_handle_and_deps(dummy_system, 1, vec![0])
@@ -353,22 +366,22 @@ mod tests {
         let wrapped = ();
         local_pool_scope_fifo(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
@@ -379,7 +392,7 @@ mod tests {
     #[test]
     fn resources_incompatible_mutable_immutable() {
         let world = World::new();
-        let mut executor = ExecutorParallel::<(A,)>::build(
+        let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
                 .system(|_, _: &A, _: ()| {})
                 .system(|_, a: &mut A, _: ()| a.0 += 1),
@@ -391,12 +404,12 @@ mod tests {
         let wrapped = a.wrap(&mut borrows);
         local_pool_scope_fifo(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
@@ -408,7 +421,7 @@ mod tests {
     #[test]
     fn resources_incompatible_mutable_mutable() {
         let world = World::new();
-        let mut executor = ExecutorParallel::<(A,)>::build(
+        let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
                 .system(|_, a: &mut A, _: ()| a.0 += 1)
                 .system(|_, a: &mut A, _: ()| a.0 += 1),
@@ -420,12 +433,12 @@ mod tests {
         let wrapped = a.wrap(&mut borrows);
         local_pool_scope_fifo(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
@@ -438,7 +451,7 @@ mod tests {
     fn queries_incompatible_mutable_immutable() {
         let mut world = World::new();
         world.spawn_batch((0..10).map(|_| (B(0),)));
-        let mut executor = ExecutorParallel::<(A,)>::build(
+        let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
                 .system(|ctx, _: (), q: QueryMarker<&B>| for (_, _) in ctx.query(q).iter() {})
                 .system(|ctx, a: &A, q: QueryMarker<&mut B>| {
@@ -454,12 +467,12 @@ mod tests {
         let wrapped = a.wrap(&mut borrows);
         local_pool_scope_fifo(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
@@ -474,7 +487,7 @@ mod tests {
     fn queries_incompatible_mutable_mutable() {
         let mut world = World::new();
         world.spawn_batch((0..10).map(|_| (B(0),)));
-        let mut executor = ExecutorParallel::<(A,)>::build(
+        let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
                 .system(|ctx, a: &A, q: QueryMarker<&mut B>| {
                     for (_, b) in ctx.query(q).iter() {
@@ -494,12 +507,12 @@ mod tests {
         let wrapped = a.wrap(&mut borrows);
         local_pool_scope_fifo(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
@@ -515,7 +528,7 @@ mod tests {
         let mut world = World::new();
         world.spawn_batch((0..10).map(|_| (A(0), B(0))));
         world.spawn_batch((0..10).map(|_| (B(0), C(0))));
-        let mut executor = ExecutorParallel::<(A,)>::build(
+        let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
                 .system(|ctx, a: &A, q: QueryMarker<(&A, &mut B)>| {
                     for (_, (_, b)) in ctx.query(q).iter() {
@@ -535,7 +548,7 @@ mod tests {
         let wrapped = a.wrap(&mut borrows);
         local_pool_scope_fifo(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 2);
             executor.wait_for_one_finished();
             executor.wait_for_and_process_finished();
@@ -555,12 +568,12 @@ mod tests {
         let wrapped = a.wrap(&mut borrows);
         local_pool_scope_fifo(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
 
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             assert_eq!(executor.systems_running.len(), 1);
             executor.wait_for_and_process_finished();
             assert!(executor.systems_running.is_empty());
@@ -575,7 +588,7 @@ mod tests {
             .for_each(|entity| world.despawn(entity).unwrap());
         rayon::scope(|scope| {
             executor.prepare(&world);
-            executor.start_all_currently_runnable(scope, &world, &wrapped);
+            executor.start_all_currently_runnable(scope, &world, &wrapped, &());
             // TODO this fails. Suggest upstream changes?
             assert_eq!(executor.systems_running.len(), 2);
             executor.wait_for_one_finished();

@@ -22,17 +22,24 @@ use scheduling::{DependantsLength, Scheduler};
 static DISCONNECTED: &str = "channel should not be disconnected at this point";
 static INVALID_ID: &str = "system IDs should always be valid";
 
-pub enum SharedSystemClosure<'closure, Resources>
+pub enum SharedSystemClosure<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
     Sync(Arc<Mutex<SystemClosure<'closure, Resources::Wrapped>>>),
-    Local(Rc<RefCell<LocalSystemClosure<'closure, Resources::Wrapped>>>),
+    Local(Rc<RefCell<LocalSystemClosure<'closure, Resources::Wrapped, LocalResources::Wrapped>>>),
 }
 
-impl<'closure, Resources> Clone for SharedSystemClosure<'closure, Resources>
+impl<'closure, Resources, LocalResources> Clone
+    for SharedSystemClosure<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
     fn clone(&self) -> Self {
         match self {
@@ -43,11 +50,14 @@ where
 }
 
 /// System closure and scheduling metadata container.
-pub struct System<'closure, Resources>
+pub struct System<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
-    pub closure: SharedSystemClosure<'closure, Resources>,
+    pub closure: SharedSystemClosure<'closure, Resources, LocalResources>,
     pub resource_set: BorrowSet,
     pub component_set: BorrowSet,
     pub archetype_set: ArchetypeSet,
@@ -57,9 +67,12 @@ where
     pub unsatisfied_dependencies: usize,
 }
 
-impl<'closure, Resources> SharedSystemClosure<'closure, Resources>
+impl<'closure, Resources, LocalResources> SharedSystemClosure<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
     fn is_sync(&self) -> bool {
         match self {
@@ -75,7 +88,10 @@ where
         }
     }
 
-    fn unwrap_local(self) -> Rc<RefCell<LocalSystemClosure<'closure, Resources::Wrapped>>> {
+    fn unwrap_local(
+        self,
+    ) -> Rc<RefCell<LocalSystemClosure<'closure, Resources::Wrapped, LocalResources::Wrapped>>>
+    {
         match self {
             Self::Sync(..) => unreachable!(),
             Self::Local(closure) => closure,
@@ -84,9 +100,12 @@ where
 }
 
 /// Variants of parallel executor, chosen based on properties of systems in the builder.
-pub enum ExecutorParallel<'closures, Resources>
+pub enum ExecutorParallel<'closures, Resources, LocalResources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
     // TODO consider more granularity:
     // scheduler, disjoint scheduler, dispatcher (has to be disjoint either way)
@@ -95,14 +114,19 @@ where
     Dispatching(Dispatcher<'closures, Resources>),
     /// Used when systems cannot be proven to be statically disjoint,
     /// or have dependencies.
-    Scheduling(Scheduler<'closures, Resources>),
+    Scheduling(Scheduler<'closures, Resources, LocalResources>),
 }
 
-impl<'closures, Resources> ExecutorParallel<'closures, Resources>
+impl<'closures, Resources, LocalResources> ExecutorParallel<'closures, Resources, LocalResources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
+    LocalResources: ResourceTuple,
 {
-    pub fn build<Handle>(builder: ExecutorBuilder<'closures, Resources, Handle>) -> Self {
+    pub fn build<Handle>(
+        builder: ExecutorBuilder<'closures, Resources, LocalResources, Handle>,
+    ) -> Self {
         // This will cache dependencies for later conversion into dependants.
         let mut all_dependencies = Vec::new();
         let mut systems_without_dependencies = Vec::new();
@@ -113,7 +137,7 @@ where
         } = builder;
         // This guarantees iteration order; TODO probably not necessary?..
         let all_component_types = all_component_types.drain().collect::<Vec<_>>();
-        let mut systems: HashMap<SystemId, System<'closures, Resources>> = systems
+        let mut systems: HashMap<SystemId, System<'closures, Resources, LocalResources>> = systems
             .drain()
             .map(|(id, system)| {
                 let dependencies = system.dependencies.len();
@@ -218,10 +242,15 @@ where
         }
     }
 
-    pub fn run(&mut self, world: &World, wrapped: Resources::Wrapped) {
+    pub fn run(
+        &mut self,
+        world: &World,
+        wrapped: Resources::Wrapped,
+        local_wrapped: LocalResources::Wrapped,
+    ) {
         match self {
             ExecutorParallel::Dispatching(dispatcher) => dispatcher.run(world, wrapped),
-            ExecutorParallel::Scheduling(scheduler) => scheduler.run(world, wrapped),
+            ExecutorParallel::Scheduling(scheduler) => scheduler.run(world, wrapped, local_wrapped),
         }
     }
 
@@ -235,7 +264,7 @@ where
     }
 
     #[cfg(test)]
-    fn unwrap_to_scheduler(self) -> Scheduler<'closures, Resources> {
+    fn unwrap_to_scheduler(self) -> Scheduler<'closures, Resources, LocalResources> {
         use ExecutorParallel::*;
         match self {
             Dispatching(_) => panic!("produced executor is a dispatcher"),

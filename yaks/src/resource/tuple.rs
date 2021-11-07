@@ -2,8 +2,8 @@ use super::{AtomicBorrow, ResourceCell};
 
 /// Specifies how a tuple behaves when used as the generic parameter of an executor.
 pub trait ResourceTuple {
-    type Wrapped: Send + Sync;
-    type BorrowTuple: Send + Sync;
+    type Wrapped: Send;
+    type BorrowTuple: Send;
     const LENGTH: usize;
 
     fn instantiate_borrows() -> Self::BorrowTuple;
@@ -19,7 +19,7 @@ impl ResourceTuple for () {
 
 impl<R0> ResourceTuple for (R0,)
 where
-    R0: Send + Sync,
+    R0: Send,
 {
     type Wrapped = (ResourceCell<R0>,);
     type BorrowTuple = (AtomicBorrow,);
@@ -43,7 +43,7 @@ macro_rules! impl_resource_tuple {
     ($($letter:ident),*) => {
         impl<$($letter),*> ResourceTuple for ($($letter,)*)
         where
-            $($letter: Send + Sync,)*
+            $($letter: Send,)*
         {
             type Wrapped = ($(ResourceCell<$letter>,)*);
             type BorrowTuple = ($(swap_to_atomic_borrow!($letter),)*);

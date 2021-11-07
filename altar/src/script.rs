@@ -8,10 +8,7 @@ use hv::{
 };
 use tracing::{error, trace_span};
 
-use crate::{
-    command_buffer::CommandPoolResource,
-    types::{Dt, LuaResource},
-};
+use crate::{command_buffer::CommandPoolResource, types::Dt};
 
 #[derive(Debug)]
 pub struct Script {
@@ -33,17 +30,12 @@ static_assertions::assert_impl_all!(ScriptContext: Send, Sync);
 
 pub fn script_upkeep_system(
     context: SystemContext,
-    (lua_resource, script_context, fs, command_pool): (
-        &mut LuaResource,
-        &mut ScriptContext,
-        &mut Filesystem,
-        &CommandPoolResource,
-    ),
+    (script_context, fs, command_pool): (&mut ScriptContext, &mut Filesystem, &CommandPoolResource),
+    lua: &Lua,
     (unloaded_scripts,): (QueryMarker<Without<ScriptLoadError, Without<LuaRegistryKey, &Script>>>,),
 ) {
     let _span = trace_span!("script_upkeep_system").entered();
 
-    let lua = lua_resource.get();
     let _fs_guard = script_context.stretched_fs.loan(fs);
     let mut command_buffer = command_pool.get_buffer();
 
@@ -84,17 +76,12 @@ pub fn script_upkeep_system(
 
 pub fn script_update_system(
     context: SystemContext,
-    (lua_resource, script_context, fs, &Dt(dt)): (
-        &mut LuaResource,
-        &mut ScriptContext,
-        &mut Filesystem,
-        &Dt,
-    ),
+    (script_context, fs, &Dt(dt)): (&mut ScriptContext, &mut Filesystem, &Dt),
+    lua: &Lua,
     (with_registry_key,): (QueryMarker<(&Script, &LuaRegistryKey)>,),
 ) {
     let _span = trace_span!("script_update_system").entered();
 
-    let lua = lua_resource.get();
     let _fs_guard = script_context.stretched_fs.loan(fs);
 
     for (entity, (script, key)) in context.query(with_registry_key).iter() {

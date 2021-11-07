@@ -4,13 +4,15 @@ use rayon::prelude::*;
 use std::{collections::HashMap, sync::Arc};
 
 use super::SystemClosure;
-use crate::{ResourceTuple, SystemContext, SystemId};
+use crate::{resource::ResourceTuple, SystemContext, SystemId};
 
 /// Parallel executor variant, used when all systems are proven to be statically disjoint,
 /// and have no dependencies.
 pub struct Dispatcher<'closures, Resources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
 {
     pub systems: HashMap<SystemId, Arc<Mutex<SystemClosure<'closures, Resources::Wrapped>>>>,
 }
@@ -18,6 +20,8 @@ where
 impl<'closures, Resources> Dispatcher<'closures, Resources>
 where
     Resources: ResourceTuple,
+    Resources::Wrapped: Sync,
+    Resources::BorrowTuple: Sync,
 {
     pub fn run(&mut self, world: &World, wrapped: Resources::Wrapped) {
         // All systems are statically disjoint, so they can all be running together at all times.
@@ -51,7 +55,7 @@ mod tests {
 
     #[test]
     fn trivial() {
-        ExecutorParallel::<()>::build(
+        ExecutorParallel::<(), ()>::build(
             Executor::builder()
                 .system(|_, _: (), _: ()| {})
                 .system(|_, _: (), _: ()| {}),
@@ -61,7 +65,7 @@ mod tests {
 
     #[test]
     fn trivial_with_resources() {
-        ExecutorParallel::<(A, B, C)>::build(
+        ExecutorParallel::<(A, B, C), ()>::build(
             Executor::builder()
                 .system(|_, _: (), _: ()| {})
                 .system(|_, _: (), _: ()| {}),
@@ -75,7 +79,7 @@ mod tests {
         let mut a = A(0);
         let mut b = B(1);
         let mut c = C(2);
-        let mut executor = ExecutorParallel::<(A, B, C)>::build(
+        let mut executor = ExecutorParallel::<(A, B, C), ()>::build(
             Executor::builder()
                 .system(|_, (a, c): (&mut A, &C), _: ()| {
                     a.0 += c.0;
@@ -101,7 +105,7 @@ mod tests {
         let mut world = World::new();
         world.spawn_batch((0..10).map(|_| (A(0), B(0), C(0))));
         let mut a = A(1);
-        let mut executor = ExecutorParallel::<(A,)>::build(
+        let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
                 .system(|ctx, a: &A, q: QueryMarker<(&A, &mut B)>| {
                     for (_, (_, b)) in ctx.query(q).iter() {
