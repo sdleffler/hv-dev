@@ -3,7 +3,7 @@ use std::sync::Arc;
 use hv_alchemy::Type;
 use hv_sync::{
     cell::{ArcCell, ArcRef, ArcRefMut, AtomicRefCell},
-    elastic::Elastic,
+    elastic::{Elastic, StretchedMut},
 };
 
 use crate::{
@@ -80,7 +80,7 @@ where
     }
 }
 
-impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for Elastic<*mut T> {
+impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for Elastic<StretchedMut<T>> {
     fn on_metatable_init(table: Type<Self>) {
         #[cfg(feature = "send")]
         table.add::<dyn Send>().add::<dyn Sync>();

@@ -1,4 +1,4 @@
-use core::marker::PhantomData;
+use core::{marker::PhantomData, ptr::NonNull};
 
 use hv_guarded_borrow::{
     NonBlockingGuardedBorrow, NonBlockingGuardedBorrowMut, NonBlockingGuardedMutBorrowMut,
@@ -6,6 +6,9 @@ use hv_guarded_borrow::{
 
 use crate::cell::{ArcCell, ArcRef, ArcRefMut, AtomicRef, AtomicRefMut};
 
+/// Marker trait indicating that a type can be stretched (has a type for which there is an
+/// implementation of `Stretched`, and which properly "translates back" with its `Parameterized`
+/// associated type.)
 pub trait Stretchable<'a>: 'a {
     #[rustfmt::skip]
     type Stretched: Stretched<Parameterized<'a> = Self>;
@@ -45,6 +48,8 @@ pub trait Stretchable<'a>: 'a {
 ///
 /// That is all. Godspeed.
 pub unsafe trait Stretched: 'static + Sized {
+    /// The parameterized type, which must be bit-equivalent to the unparameterized `Self` type. It
+    /// must have the same size, same pointer size, same alignment, same *everything.*
     type Parameterized<'a>: Stretchable<'a, Stretched = Self>;
 
     /// Lengthen the lifetime of a [`Stretched::Parameterized`] to `'static`.
@@ -66,9 +71,9 @@ pub unsafe trait Stretched: 'static + Sized {
     /// Shortening a lifetime is normally totally safe, but this function might be usable in cases
     /// where the lifetime is actually invariant. In this case, it is extremely unsafe and care must
     /// be taken to ensure that the lifetime of the shortened data is the same as the lifetime of
-    /// the data before its lifetime was lengthened. Most of the time this function is simply
-    /// implemented as a wrapper around [`core::mem::transmute`]; this should give you a hint as to
-    /// just how wildly unsafe this can be if mishandled.
+    /// the data before its lifetime was lengthened. This function should be simply implemented as a
+    /// wrapper around [`core::mem::transmute`]; this should give you a hint as to just how wildly
+    /// unsafe this can be if mishandled.
     unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a>;
 
     /// Equivalent to [`Stretched::shorten`] but operates on a mutable reference to the stretched
@@ -76,7 +81,7 @@ pub unsafe trait Stretched: 'static + Sized {
     ///
     /// # Safety
     ///
-    /// Same as [`Stretched::shorten`].
+    /// Same as [`Stretched::shorten`]. Should be implemented simply as a wrapper around transmute.
     unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a>;
 
     /// Equivalent to [`Stretched::shorten`] but operates on an immutable reference to the stretched
@@ -84,7 +89,7 @@ pub unsafe trait Stretched: 'static + Sized {
     ///
     /// # Safety
     ///
-    /// Same as [`Stretched::shorten`].
+    /// Same as [`Stretched::shorten`]. Should be implemented simply as a wrapper around transmute.
     unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a>;
 }
 
@@ -126,54 +131,6 @@ macro_rules! impl_stretched_methods {
     };
 }
 
-unsafe impl<T: 'static> Stretched for *const T {
-    type Parameterized<'a> = &'a T;
-
-    unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self {
-        core::mem::transmute(this)
-    }
-
-    unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a> {
-        &*this
-    }
-
-    unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {
-        core::mem::transmute(this)
-    }
-
-    unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a> {
-        core::mem::transmute(this)
-    }
-}
-
-impl<'a, T: 'static> Stretchable<'a> for &'a T {
-    type Stretched = *const T;
-}
-
-unsafe impl<T: 'static> Stretched for *mut T {
-    type Parameterized<'a> = &'a mut T;
-
-    unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self {
-        core::mem::transmute(this)
-    }
-
-    unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a> {
-        &mut *this
-    }
-
-    unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {
-        core::mem::transmute(this)
-    }
-
-    unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a> {
-        core::mem::transmute(this)
-    }
-}
-
-impl<'a, T: 'static> Stretchable<'a> for &'a mut T {
-    type Stretched = *mut T;
-}
-
 pub struct ElasticGuard<'a, T: Stretchable<'a>> {
     slot: ArcCell<Option<T::Stretched>>,
     _phantom: PhantomData<fn(&'a ())>,
@@ -205,12 +162,6 @@ impl<'a, T: Stretchable<'a>> Drop for ElasticGuard<'a, T> {
 pub struct Elastic<T: Stretched> {
     slot: ArcCell<Option<T>>,
 }
-
-unsafe impl<T: 'static + Send + Sync> Send for Elastic<*const T> {}
-unsafe impl<T: 'static + Send + Sync> Sync for Elastic<*const T> {}
-
-unsafe impl<T: 'static + Send + Sync> Send for Elastic<*mut T> {}
-unsafe impl<T: 'static + Send + Sync> Sync for Elastic<*mut T> {}
 
 impl<T: Stretched> Clone for Elastic<T> {
     fn clone(&self) -> Self {
@@ -381,4 +332,133 @@ where
             .ok_or(())
             .map(|guard| AtomicRefMut::map(guard, |t| core::borrow::BorrowMut::borrow_mut(t)))
     }
+}
+
+#[repr(transparent)]
+pub struct StretchedRef<T: ?Sized>(*const T);
+
+unsafe impl<T: Sync> Send for StretchedRef<T> {}
+unsafe impl<T: Sync> Sync for StretchedRef<T> {}
+
+#[repr(transparent)]
+pub struct StretchedMut<T: ?Sized>(NonNull<T>);
+
+unsafe impl<T: Send> Send for StretchedMut<T> {}
+unsafe impl<T: Sync> Sync for StretchedMut<T> {}
+
+unsafe impl<T: Stretched> Stretched for StretchedRef<T> {
+    type Parameterized<'a> = &'a T::Parameterized<'a>;
+
+    unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self {
+        core::mem::transmute(this)
+    }
+
+    unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a> {
+        &*this.0.cast()
+    }
+
+    unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {
+        core::mem::transmute(this)
+    }
+
+    unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a> {
+        core::mem::transmute(this)
+    }
+}
+
+impl<'a, T: Stretchable<'a>> Stretchable<'a> for &'a T {
+    type Stretched = StretchedRef<T::Stretched>;
+}
+
+unsafe impl<T: 'static> Stretched for StretchedMut<T> {
+    type Parameterized<'a> = &'a mut T;
+
+    unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self {
+        core::mem::transmute(this)
+    }
+
+    unsafe fn shorten<'a>(mut this: Self) -> Self::Parameterized<'a> {
+        this.0.as_mut()
+    }
+
+    unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {
+        core::mem::transmute(this)
+    }
+
+    unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a> {
+        core::mem::transmute(this)
+    }
+}
+
+impl<'a, T: 'static> Stretchable<'a> for &'a mut T {
+    type Stretched = StretchedMut<T>;
+}
+
+macro_rules! impl_tuple {
+    ($($letter:ident),*) => {
+        unsafe impl<$($letter: Stretched,)*> Stretched for ($($letter,)*) {
+            type Parameterized<'a> = ($(<$letter as Stretched>::Parameterized<'a>,)*);
+
+            #[allow(non_snake_case, clippy::unused_unit)]
+            unsafe fn lengthen(this: ($(<$letter as Stretched>::Parameterized<'_>,)*)) -> Self {
+                let ($($letter,)*) = this;
+                ($($letter::lengthen($letter),)*)
+            }
+
+            #[allow(non_snake_case, clippy::unused_unit)]
+            unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a> {
+                let ($($letter,)*) = this;
+                ($($letter::shorten($letter),)*)
+            }
+
+            unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {
+                core::mem::transmute(this)
+            }
+
+            unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a> {
+                core::mem::transmute(this)
+            }
+        }
+
+        impl<'a, $($letter: Stretchable<'a>,)*> Stretchable<'a> for ($($letter,)*) {
+            type Stretched = ($(<$letter as Stretchable<'a>>::Stretched,)*);
+        }
+    };
+}
+
+macro_rules! russian_tuples {
+    ($m: ident, $ty: tt) => {
+        $m!{}
+        $m!{$ty}
+    };
+    ($m: ident, $ty: tt, $($tt: tt),*) => {
+        russian_tuples!{$m, $($tt),*}
+        $m!{$ty, $($tt),*}
+    };
+}
+
+russian_tuples!(impl_tuple, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+
+unsafe impl<T: Stretched> Stretched for Option<T> {
+    type Parameterized<'a> = Option<T::Parameterized<'a>>;
+
+    unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self {
+        this.map(|t| unsafe { T::lengthen(t) })
+    }
+
+    unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a> {
+        this.map(|t| unsafe { T::shorten(t) })
+    }
+
+    unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {
+        core::mem::transmute(this)
+    }
+
+    unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a> {
+        core::mem::transmute(this)
+    }
+}
+
+impl<'a, T: Stretchable<'a>> Stretchable<'a> for Option<T> {
+    type Stretched = Option<T::Stretched>;
 }

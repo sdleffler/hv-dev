@@ -4,7 +4,7 @@ use hv::{
     ecs::{QueryMarker, SystemContext, Without},
     fs::Filesystem,
     prelude::*,
-    sync::elastic::Elastic,
+    sync::elastic::{Elastic, StretchedMut},
 };
 use tracing::{error, trace_span};
 
@@ -23,7 +23,7 @@ pub struct ScriptLoadError {
 pub struct ScriptContext {
     // Environment table for scripts loaded in this context
     env: LuaRegistryKey,
-    stretched_fs: Elastic<*mut Filesystem>,
+    stretched_fs: Elastic<StretchedMut<Filesystem>>,
 }
 
 static_assertions::assert_impl_all!(ScriptContext: Send, Sync);

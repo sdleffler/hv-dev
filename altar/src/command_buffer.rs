@@ -105,8 +105,10 @@ impl LuaUserData for CommandBuffer {
     }
 }
 
-#[repr(transparent)]
+#[repr(C, align(8))]
 struct StretchedCommandBufferInner([u8; std::mem::size_of::<CommandBufferInner>()]);
+
+static_assertions::assert_eq_align!(CommandBufferInner, StretchedCommandBufferInner);
 
 struct CommandBufferInner<'a> {
     bump: UnsafeCell<PooledBump<'a>>,
@@ -276,8 +278,10 @@ impl<'a> Drop for CommandPoolScope<'a> {
     }
 }
 
-#[repr(transparent)]
+#[repr(C, align(8))]
 pub struct StretchedCommandPoolScope([u8; std::mem::size_of::<CommandPoolScope>()]);
+
+static_assertions::assert_eq_align!(StretchedCommandPoolScope, CommandPoolScope);
 
 unsafe impl Stretched for StretchedCommandPoolScope {
     type Parameterized<'a> = CommandPoolScope<'a>;
