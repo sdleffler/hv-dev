@@ -1,0 +1,28 @@
+[package]
+name = "resources"
+version = "1.1.0"
+description = "Safe store for one value of each type, with interior mutability."
+authors = ["Alexander Sepity <alexander.sepity@gmail.com>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Ratysz/resources"
+readme = "README.md"
+keywords = ["resources", "resource", "mutability", "container", "ecs"]
+categories = ["data-structures", "concurrency", "game-engines"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[badges]
+maintenance = { status = "passively-maintained" }
+
+[features]
+# Exposes `Resources::fetch()` that allows retrieving up to 16 resources with a one-liner.
+fetch = []
+default = ["fetch"]
+
+[dependencies]
+downcast-rs = "1.2.0"
+fxhash = "0.2.1"
+parking_lot = "0.11.0"
+slab = "0.4.5"
