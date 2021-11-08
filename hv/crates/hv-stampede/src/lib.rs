@@ -2,17 +2,77 @@
 #![no_std]
 
 use core::{
+    cell::UnsafeCell,
     mem::{ManuallyDrop, MaybeUninit},
     ops::{Deref, DerefMut},
     pin::Pin,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, fmt, vec::Vec};
 use spin::Mutex;
 
 extern crate alloc;
 
 pub use bumpalo::{boxed::Box as Owned, AllocOrInitError, Bump, ChunkIter, ChunkRawIter};
+
+#[derive(Debug, Default)]
+struct BarcInner<T: ?Sized> {
+    count: AtomicUsize,
+    value: UnsafeCell<T>,
+}
+
+impl<T> BarcInner<T> {
+    fn new(value: T) -> Self {
+        Self {
+            count: AtomicUsize::new(0),
+            value: UnsafeCell::new(value),
+        }
+    }
+}
+
+pub struct Barc<'a, T: ?Sized> {
+    inner: &'a BarcInner<T>,
+}
+
+impl<'a, T: fmt::Debug> fmt::Debug for Barc<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<'a, T: ?Sized> Clone for Barc<'a, T> {
+    fn clone(&self) -> Self {
+        self.inner.count.fetch_add(1, Ordering::Relaxed);
+        Self { inner: self.inner }
+    }
+}
+
+impl<'a, T> Barc<'a, T> {
+    pub fn new_in(value: T, bump: PooledBump<'a>) -> Self {
+        Self {
+            inner: bump.alloc(BarcInner::new(value)),
+        }
+    }
+}
+
+impl<'a, T: ?Sized> Deref for Barc<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*(self.inner.value.get() as *const T) }
+    }
+}
+
+impl<'a, T: ?Sized> Drop for Barc<'a, T> {
+    fn drop(&mut self) {
+        if self.inner.count.fetch_sub(1, Ordering::Relaxed) == 0 {
+            unsafe {
+                core::ptr::drop_in_place(self.inner.value.get());
+            }
+        }
+    }
+}
 
 pub struct BumpPool {
     // The pool of `Bump`s which can be immediately used.
@@ -95,12 +155,14 @@ impl<'s> PooledBump<'s> {
         self.bump.as_ref().get_ref()
     }
 
-    /// Similar to [`as_bump_unbound`] but consumes the `PooledBump` and temporarily "shuns" the
+    /// Consumes the `PooledBump` and temporarily "shuns" the
     /// [`Bump`], placing it into a special pool inside the [`BumpPool`] which contains pools that
     /// are now detached and floating in a thread without being `Sync` but which can be returned to
-    /// the "ready" pool once the entire [`BumpPool`] is reset. This is the safe version of
-    /// [`as_bump_unbound`] and a counterpart to [`as_bump`] if you know your [`BumpPool`] is going
-    /// to be reset on the regular.
+    /// the "ready" pool once the entire [`BumpPool`] is reset. Unlike [`as_bump_unbound`], the
+    /// returned `&'s Bump` is completely safe to use, including as an allocator - because the type
+    /// `&Bump` is non-`Send`, it's now permanently locked to the thread it was detached in, and
+    /// cannot be accessed from another thread - until its borrow ends, the [`BumpPool`] is reset,
+    /// and it returns to the "ready" pool having been reset itself.
     pub fn detach(mut self) -> &'s Bump {
         let bump = unsafe { self.as_bump_unbound() };
         let mut shunned = self.stampede.shunned.lock();
