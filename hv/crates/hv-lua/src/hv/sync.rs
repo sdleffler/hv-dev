@@ -3,7 +3,7 @@ use std::sync::Arc;
 use hv_alchemy::Type;
 use hv_sync::{
     cell::{ArcCell, ArcRef, ArcRefMut, AtomicRefCell},
-    elastic::{Elastic, StretchedMut},
+    elastic::{Elastic, StretchedMut, StretchedRef},
 };
 
 use crate::{
@@ -87,10 +87,25 @@ impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for Elastic<Stretch
     }
 
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        T::add_methods(&mut UserDataMethodsProxy::<_, T, _>::new(methods));
+        T::add_methods(&mut UserDataMethodsProxy::new(methods));
     }
 
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         T::add_fields(&mut UserDataFieldsProxy::new(fields))
+    }
+}
+
+impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for Elastic<StretchedRef<T>> {
+    fn on_metatable_init(table: Type<Self>) {
+        #[cfg(feature = "send")]
+        table.add::<dyn Send>().add::<dyn Sync>();
+    }
+
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        T::add_methods(&mut UserDataMethodsProxy::new_immutable(methods));
+    }
+
+    fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
+        T::add_fields(&mut UserDataFieldsProxy::new_immutable(fields))
     }
 }

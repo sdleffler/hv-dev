@@ -346,8 +346,8 @@ pub struct StretchedMut<T: ?Sized>(NonNull<T>);
 unsafe impl<T: Send> Send for StretchedMut<T> {}
 unsafe impl<T: Sync> Sync for StretchedMut<T> {}
 
-unsafe impl<T: Stretched> Stretched for StretchedRef<T> {
-    type Parameterized<'a> = &'a T::Parameterized<'a>;
+unsafe impl<T: 'static> Stretched for StretchedRef<T> {
+    type Parameterized<'a> = &'a T;
 
     unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self {
         core::mem::transmute(this)
@@ -366,8 +366,8 @@ unsafe impl<T: Stretched> Stretched for StretchedRef<T> {
     }
 }
 
-impl<'a, T: Stretchable<'a>> Stretchable<'a> for &'a T {
-    type Stretched = StretchedRef<T::Stretched>;
+impl<'a, T: 'static> Stretchable<'a> for &'a T {
+    type Stretched = StretchedRef<T>;
 }
 
 unsafe impl<T: 'static> Stretched for StretchedMut<T> {
@@ -377,8 +377,8 @@ unsafe impl<T: 'static> Stretched for StretchedMut<T> {
         core::mem::transmute(this)
     }
 
-    unsafe fn shorten<'a>(mut this: Self) -> Self::Parameterized<'a> {
-        this.0.as_mut()
+    unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a> {
+        this.0.cast().as_mut()
     }
 
     unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {

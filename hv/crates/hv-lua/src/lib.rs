@@ -117,7 +117,8 @@ pub use crate::table::{Table, TableExt, TablePairs, TableSequence};
 pub use crate::thread::{Thread, ThreadStatus};
 pub use crate::types::{Integer, LightUserData, Number, RegistryKey};
 pub use crate::userdata::{
-    AnyUserData, MetaMethod, UserData, UserDataFields, UserDataMetatable, UserDataMethods,
+    AnyUserData, Immutable, MetaMethod, Mutable, UserData, UserDataFields, UserDataFieldsProxy,
+    UserDataMetatable, UserDataMethods, UserDataMethodsProxy,
 };
 pub use crate::value::{FromLua, FromLuaMulti, MultiValue, Nil, ToLua, ToLuaMulti, Value};
 
