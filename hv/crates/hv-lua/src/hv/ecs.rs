@@ -93,7 +93,7 @@ impl<T: 'static + UserData> UserData for Elastic<StretchedBatchWriter<T>> {
         methods.add_method_mut("push", |_, this, ud: AnyUserData| {
             this.borrow_mut()
                 .ok_or_else(|| Error::external("BatchWriter already destructed!"))?
-                .push(*ud.clone_or_take::<T>()?)
+                .push(ud.clone_or_take::<T>()?)
                 .ok()
                 .ok_or_else(|| Error::external("BatchWriter is full!"))?;
             Ok(())

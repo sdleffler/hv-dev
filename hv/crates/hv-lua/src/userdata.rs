@@ -871,7 +871,7 @@ impl<'lua> AnyUserData<'lua> {
     /// Clones the data inside the `UserData`, or takes out the value of `UserData` and sets the
     /// special "destructed" metatable that prevents any further operations with this userdata. It
     /// will first try cloning, and if that fails, it will take and destroy the userdata.
-    pub fn clone_or_take<T: 'static + UserData>(&self) -> Result<Box<T>> {
+    pub fn clone_or_take<T: 'static + UserData>(&self) -> Result<T> {
         let lua = self.0.lua;
         unsafe {
             let _sg = StackGuard::new(lua.state);
@@ -895,7 +895,7 @@ impl<'lua> AnyUserData<'lua> {
                         protect_lua!(lua.state, 0, 1, fn(state) ffi::lua_newtable(state))?;
                         ffi::lua_setuservalue(lua.state, -2);
 
-                        Ok(take_userdata::<UserDataCell>(lua.state)
+                        Ok(*take_userdata::<UserDataCell>(lua.state)
                             .into_boxed()
                             .downcast()
                             .unwrap())
