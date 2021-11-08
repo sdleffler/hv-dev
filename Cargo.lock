@@ -806,7 +806,6 @@ dependencies = [
  "hecs",
  "hv-alchemy",
  "hv-ecs-derive",
- "hv-event-channel",
  "hv-filesystem",
  "hv-guarded-borrow",
  "hv-input",
@@ -842,16 +841,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "hv-event-channel"
-version = "0.1.0"
-dependencies = [
- "hv-alchemy",
- "hv-lua",
- "hv-sync",
- "shrev",
 ]
 
 [[package]]

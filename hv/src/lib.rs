@@ -5,10 +5,6 @@ pub extern crate anyhow as error;
 
 pub mod ecs;
 
-pub mod event_channel {
-    pub use event_channel::*;
-}
-
 pub extern crate fs;
 
 pub mod lua {
