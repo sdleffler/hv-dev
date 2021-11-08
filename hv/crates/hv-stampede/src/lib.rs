@@ -1,10 +1,11 @@
-#![feature(maybe_uninit_slice, maybe_uninit_extra)]
+#![feature(unsize, coerce_unsized, maybe_uninit_slice, maybe_uninit_extra)]
 #![no_std]
 
 use core::{
     cell::UnsafeCell,
+    marker::Unsize,
     mem::{ManuallyDrop, MaybeUninit},
-    ops::{Deref, DerefMut},
+    ops::{CoerceUnsized, Deref, DerefMut},
     pin::Pin,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -49,7 +50,7 @@ impl<'a, T: ?Sized> Clone for Barc<'a, T> {
 }
 
 impl<'a, T> Barc<'a, T> {
-    pub fn new_in(value: T, bump: PooledBump<'a>) -> Self {
+    pub fn new_in(value: T, bump: &'a Bump) -> Self {
         Self {
             inner: bump.alloc(BarcInner::new(value)),
         }
@@ -74,11 +75,13 @@ impl<'a, T: ?Sized> Drop for Barc<'a, T> {
     }
 }
 
+impl<'a, T: Unsize<U>, U: ?Sized> CoerceUnsized<Barc<'a, U>> for Barc<'a, T> {}
+
 pub struct BumpPool {
     // The pool of `Bump`s which can be immediately used.
     ready: Mutex<Vec<Pin<Box<Bump>>>>,
     // The pool of `Bump`s which have been used thread-locally as allocators and can no longer be
-    // shared. Retrns to `ready` after a `reset` call.
+    // shared. Returns to `ready` after a `reset` call.
     shunned: Mutex<Vec<Pin<Box<Bump>>>>,
 }
 
@@ -122,6 +125,10 @@ impl<'s> PooledBump<'s> {
 
     pub fn alloc_boxed<T>(&self, val: T) -> Owned<'s, T> {
         Owned::new_in(val, unsafe { self.as_bump_unbound() })
+    }
+
+    pub fn alloc_arc<T>(&self, val: T) -> Barc<'s, T> {
+        Barc::new_in(val, unsafe { self.as_bump_unbound() })
     }
 
     pub fn chunk<T>(&self, size: usize) -> Chunk<'s, T> {

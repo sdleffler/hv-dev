@@ -5,20 +5,25 @@ use crate::types::Float;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
-    pub value: Point3<Float>,
+    pub current: Point3<Float>,
+    pub previous: Point3<Float>,
 }
 
 impl Position {
     pub fn new(x: Float, y: Float, z: Float) -> Self {
         Self {
-            value: Point3::new(x, y, z),
+            current: Point3::new(x, y, z),
+            previous: Point3::new(x, y, z),
         }
     }
 }
 
 impl From<Point3<Float>> for Position {
     fn from(value: Point3<Float>) -> Self {
-        Self { value }
+        Self {
+            current: value,
+            previous: value,
+        }
     }
 }
 
@@ -42,15 +47,17 @@ impl LuaUserData for Position {
     fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
         macro_rules! coords {
             ($($a:tt),*) => {{$(
-                fields.add_field_method_get(stringify!($a), |_, this| Ok(this.value.$a));
-                fields.add_field_method_set(stringify!($a), |_, this, a| Ok(this.value.$a = a));
+                fields.add_field_method_get(stringify!($a), |_, this| Ok(this.current.$a));
+                fields.add_field_method_set(stringify!($a), |_, this, a| Ok(this.current.$a = a));
             )*}}
         }
 
         coords!(x, y, z);
 
-        fields.add_field_method_get("value", |_, this| Ok(this.value));
-        fields.add_field_method_set("value", |_, this, value| Ok(this.value = value));
+        fields.add_field_method_get("current", |_, this| Ok(this.current));
+        fields.add_field_method_set("current", |_, this, value| Ok(this.current = value));
+        fields.add_field_method_get("previous", |_, this| Ok(this.current));
+        fields.add_field_method_set("previous", |_, this, value| Ok(this.previous = value));
     }
 
     fn on_type_metatable_init(table: Type<Type<Self>>) {

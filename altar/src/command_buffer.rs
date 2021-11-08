@@ -130,20 +130,14 @@ impl<'a> Drop for CommandBufferInner<'a> {
     }
 }
 
-mod ugly_import_hack {
-    use super::*;
-    // just for the `impl_stretched_methods!` shown down below.
-    use std as core;
+impl<'a> Stretchable<'a> for CommandBufferInner<'a> {
+    type Stretched = StretchedCommandBufferInner;
+}
 
-    impl<'a> Stretchable<'a> for CommandBufferInner<'a> {
-        type Stretched = StretchedCommandBufferInner;
-    }
+unsafe impl Stretched for StretchedCommandBufferInner {
+    type Parameterized<'a> = CommandBufferInner<'a>;
 
-    unsafe impl Stretched for StretchedCommandBufferInner {
-        type Parameterized<'a> = CommandBufferInner<'a>;
-
-        hv::sync::impl_stretched_methods!();
-    }
+    hv::sync::impl_stretched_methods!(std);
 }
 
 pub struct CommandPool {

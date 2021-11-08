@@ -1,4 +1,4 @@
-use crate::graphics::semantics::*;
+use crate::render::pipeline::semantics::*;
 use hv::prelude::*;
 use luminance::{
     backend::shader::{Shader, Uniformable},
