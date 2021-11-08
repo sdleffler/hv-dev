@@ -234,62 +234,61 @@ pub fn render_wireframes<G>(
     // config and such, no scissoring, blending off.
     let render_state = RenderState::default();
     let mut pipeline_gate = graphics_context.new_pipeline_gate();
-    pipeline_gate
-        .pipeline(
-            &wireframe_renderer.target,
-            &PipelineState::default(),
-            |_pipeline, mut shading_gate| {
-                shading_gate.shade(
-                    &mut wireframe_renderer.static_shader,
-                    |mut program_interface, uni, mut render_gate| {
-                        program_interface.set(&uni.mvp, wireframe_renderer.view.into());
+    let render = pipeline_gate.pipeline(
+        &wireframe_renderer.target,
+        &PipelineState::default(),
+        |_pipeline, mut shading_gate| {
+            shading_gate.shade(
+                &mut wireframe_renderer.static_shader,
+                |mut program_interface, uni, mut render_gate| {
+                    program_interface.set(&uni.mvp, wireframe_renderer.view.into());
 
-                        render_gate.render(&render_state, |mut tess_gate| {
-                            for &(static_tess_id, instance) in &wireframe_renderer.static_list {
-                                program_interface.set(&uni.tx, instance.tx.into());
-                                program_interface.set(&uni.color, instance.color.into());
+                    render_gate.render(&render_state, |mut tess_gate| {
+                        for &(static_tess_id, instance) in &wireframe_renderer.static_list {
+                            program_interface.set(&uni.tx, instance.tx.into());
+                            program_interface.set(&uni.color, instance.color.into());
 
-                                let tess = &wireframe_renderer.static_tess[static_tess_id.0].tess;
-                                let tess_view = TessView::whole(tess);
-                                tess_gate.render(tess_view)?;
-                            }
-
-                            Ok(())
-                        })
-                    },
-                )?;
-
-                shading_gate.shade(
-                    &mut wireframe_renderer.dynamic_shader,
-                    |mut program_interface, uni, mut render_gate| {
-                        program_interface.set(&uni.mvp, wireframe_renderer.view.into());
-
-                        render_gate.render(&render_state, |mut tess_gate| {
-                            for (_, dynamic_tess) in wireframe_renderer.dynamic_tess.iter_mut() {
-                                let mut instances = dynamic_tess.tess.instances_mut().unwrap();
-                                let mut txs = dynamic_tess.tx_buffer.slice_mut().unwrap();
-                                for (i, instance) in dynamic_tess.instance_list.iter().enumerate() {
-                                    instances[i].color = InstanceColor::new(instance.color.into());
-                                    txs[i] = instance.tx;
-                                }
-
-                                let tess_view = TessView::inst_whole(
-                                    &dynamic_tess.tess,
-                                    dynamic_tess.instance_list.len(),
-                                );
-
-                                tess_gate.render(tess_view)?;
-                            }
-
-                            Ok(())
-                        })?;
+                            let tess = &wireframe_renderer.static_tess[static_tess_id.0].tess;
+                            let tess_view = TessView::whole(tess);
+                            tess_gate.render(tess_view)?;
+                        }
 
                         Ok(())
-                    },
-                )?;
+                    })
+                },
+            )?;
 
-                Ok(())
-            },
-        )
-        .assume();
+            shading_gate.shade(
+                &mut wireframe_renderer.dynamic_shader,
+                |mut program_interface, uni, mut render_gate| {
+                    program_interface.set(&uni.mvp, wireframe_renderer.view.into());
+
+                    render_gate.render(&render_state, |mut tess_gate| {
+                        for (_, dynamic_tess) in wireframe_renderer.dynamic_tess.iter_mut() {
+                            let mut instances = dynamic_tess.tess.instances_mut().unwrap();
+                            let mut txs = dynamic_tess.tx_buffer.slice_mut().unwrap();
+                            for (i, instance) in dynamic_tess.instance_list.iter().enumerate() {
+                                instances[i].color = InstanceColor::new(instance.color.into());
+                                txs[i] = instance.tx;
+                            }
+
+                            let tess_view = TessView::inst_whole(
+                                &dynamic_tess.tess,
+                                dynamic_tess.instance_list.len(),
+                            );
+
+                            tess_gate.render(tess_view)?;
+                        }
+
+                        Ok(())
+                    })?;
+
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        },
+    );
+    render.assume();
 }
