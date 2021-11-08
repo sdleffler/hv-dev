@@ -880,6 +880,7 @@ dependencies = [
 name = "hv-looprider"
 version = "0.1.0"
 dependencies = [
+ "hv-alchemy",
  "hv-lua",
  "serde",
  "shrev",

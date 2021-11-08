@@ -11,6 +11,7 @@
 #![warn(missing_docs)]
 #![feature(is_sorted)]
 
+use hv_alchemy::Type;
 use hv_lua::prelude::*;
 use serde::{Deserialize, Serialize};
 use shrev::{Event, EventChannel, EventIterator, ReaderId};
@@ -149,6 +150,8 @@ impl<E: LoopriderEvent> Looprider<E> {
     }
 }
 
+impl<E> LuaUserData for Replay<E> where E: LoopriderEvent {}
+
 impl<E> LuaUserData for LoopreaderId<E> where
     E: LoopriderEvent + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua>
 {
@@ -158,6 +161,10 @@ impl<E> LuaUserData for Looprider<E>
 where
     E: LoopriderEvent + for<'lua> FromLua<'lua> + for<'lua> ToLua<'lua>,
 {
+    fn on_metatable_init(table: Type<Self>) {
+        table.add::<dyn Send>().add::<dyn Sync>();
+    }
+
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("flush", |_, this, ()| {
             this.flush();
@@ -175,5 +182,10 @@ where
             this.push(event);
             Ok(())
         });
+    }
+
+    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
+        methods.add_function("record", |_, ()| Ok(Self::record()));
+        methods.add_function("playback", |_, replay| Ok(Self::playback(replay)));
     }
 }
