@@ -1,13 +1,10 @@
-#![feature(allocator_api)]
 #![feature(maybe_uninit_slice, maybe_uninit_extra)]
 #![no_std]
 
 use core::{
-    alloc::{AllocError, Allocator, Layout},
     mem::{ManuallyDrop, MaybeUninit},
     ops::{Deref, DerefMut},
     pin::Pin,
-    ptr::NonNull,
 };
 
 use alloc::{boxed::Box, vec::Vec};
@@ -17,24 +14,32 @@ extern crate alloc;
 
 pub use bumpalo::{boxed::Box as Owned, AllocOrInitError, Bump, ChunkIter, ChunkRawIter};
 
-pub struct Stampede {
-    herd: Mutex<Vec<Pin<Box<Bump>>>>,
+pub struct BumpPool {
+    // The pool of `Bump`s which can be immediately used.
+    ready: Mutex<Vec<Pin<Box<Bump>>>>,
+    // The pool of `Bump`s which have been used thread-locally as allocators and can no longer be
+    // shared. Retrns to `ready` after a `reset` call.
+    shunned: Mutex<Vec<Pin<Box<Bump>>>>,
 }
 
-impl Stampede {
+impl BumpPool {
     pub const fn new() -> Self {
         Self {
-            herd: Mutex::new(Vec::new()),
+            ready: Mutex::new(Vec::new()),
+            shunned: Mutex::new(Vec::new()),
         }
     }
 
     pub fn reset(&mut self) {
-        self.herd.get_mut().iter_mut().for_each(|b| b.reset());
+        for pool in self.shunned.get_mut().drain(..) {
+            self.ready.get_mut().push(pool);
+        }
+        self.ready.get_mut().iter_mut().for_each(|b| b.reset());
     }
 
     pub fn get(&self) -> PooledBump {
         let next = self
-            .herd
+            .ready
             .lock()
             .pop()
             .unwrap_or_else(|| Box::pin(Bump::new()));
@@ -46,59 +51,22 @@ impl Stampede {
 }
 
 pub struct PooledBump<'s> {
-    stampede: &'s Stampede,
+    stampede: &'s BumpPool,
     bump: ManuallyDrop<Pin<Box<Bump>>>,
-}
-
-unsafe impl<'s> Allocator for PooledBump<'s> {
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        unsafe { self.as_bump().allocate(layout) }
-    }
-
-    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        self.as_bump().deallocate(ptr, layout)
-    }
-
-    unsafe fn shrink(
-        &self,
-        ptr: NonNull<u8>,
-        old_layout: Layout,
-        new_layout: Layout,
-    ) -> Result<NonNull<[u8]>, AllocError> {
-        self.as_bump().shrink(ptr, old_layout, new_layout)
-    }
-
-    unsafe fn grow(
-        &self,
-        ptr: NonNull<u8>,
-        old_layout: Layout,
-        new_layout: Layout,
-    ) -> Result<NonNull<[u8]>, AllocError> {
-        self.as_bump().grow(ptr, old_layout, new_layout)
-    }
-
-    unsafe fn grow_zeroed(
-        &self,
-        ptr: NonNull<u8>,
-        old_layout: Layout,
-        new_layout: Layout,
-    ) -> Result<NonNull<[u8]>, AllocError> {
-        self.as_bump().grow_zeroed(ptr, old_layout, new_layout)
-    }
 }
 
 impl<'s> PooledBump<'s> {
     pub fn alloc<T>(&self, val: T) -> &'s mut T {
-        unsafe { self.as_bump().alloc(val) }
+        unsafe { self.as_bump_unbound().alloc(val) }
     }
 
     pub fn alloc_boxed<T>(&self, val: T) -> Owned<'s, T> {
-        Owned::new_in(val, unsafe { self.as_bump() })
+        Owned::new_in(val, unsafe { self.as_bump_unbound() })
     }
 
     pub fn chunk<T>(&self, size: usize) -> Chunk<'s, T> {
         Chunk::new(unsafe {
-            self.as_bump()
+            self.as_bump_unbound()
                 .alloc_slice_fill_with(size, |_| MaybeUninit::uninit())
         })
     }
@@ -110,15 +78,41 @@ impl<'s> PooledBump<'s> {
     ///
     /// You should only ever use this as a temp variable/middle step when allocating something
     /// inside the `PooledBump`.
-    pub unsafe fn as_bump(&self) -> &'s Bump {
+    pub unsafe fn as_bump_unbound(&self) -> &'s Bump {
         let bump_ref = self.bump.as_ref().get_ref();
         core::mem::transmute::<&Bump, &'s Bump>(bump_ref)
+    }
+
+    /// Get access to the [`Bump`] inside without allowing the reference to outlive the
+    /// `PooledBump`. It's important to note that objects allocated inside the returned `&Bump` will
+    /// not be able to live for as long as `'s`/the lifetime parameter of the `PooledBump`. This is
+    /// because if used as an `Allocator`, `&'s Bump` from a `PooledBump<'s>` will provide the `'s`
+    /// lifetime to objects such as [`alloc::boxed::Box`], which means they can live past the
+    /// lifetime of the `PooledBump`, the `PooledBump` is pulled from the pool into another thread,
+    /// the box deallocates, and then calls the `.dealloc` fn on the `PooledBump`... which is in
+    /// another thread, could be trying to allocate/etc., and runs into a race condition.
+    pub fn as_bump(&self) -> &Bump {
+        self.bump.as_ref().get_ref()
+    }
+
+    /// Similar to [`as_bump_unbound`] but consumes the `PooledBump` and temporarily "shuns" the
+    /// [`Bump`], placing it into a special pool inside the [`BumpPool`] which contains pools that
+    /// are now detached and floating in a thread without being `Sync` but which can be returned to
+    /// the "ready" pool once the entire [`BumpPool`] is reset. This is the safe version of
+    /// [`as_bump_unbound`] and a counterpart to [`as_bump`] if you know your [`BumpPool`] is going
+    /// to be reset on the regular.
+    pub fn detach(mut self) -> &'s Bump {
+        let bump = unsafe { self.as_bump_unbound() };
+        let mut shunned = self.stampede.shunned.lock();
+        shunned.push(unsafe { ManuallyDrop::take(&mut self.bump) });
+        core::mem::forget(self);
+        bump
     }
 }
 
 impl<'s> Drop for PooledBump<'s> {
     fn drop(&mut self) {
-        let mut herd = self.stampede.herd.lock();
+        let mut herd = self.stampede.ready.lock();
         herd.push(unsafe { ManuallyDrop::take(&mut self.bump) });
     }
 }

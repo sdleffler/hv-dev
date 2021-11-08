@@ -147,7 +147,7 @@ mod ugly_import_hack {
 }
 
 pub struct CommandPool {
-    stampede: Stampede,
+    stampede: BumpPool,
     raw_chunk_bufs: Mutex<Vec<(*mut (), usize, usize)>>,
     raw_elastic_bufs: Mutex<Vec<(*mut (), usize, usize)>>,
     raw_guard_bufs: Mutex<Vec<(*mut (), usize, usize)>>,
