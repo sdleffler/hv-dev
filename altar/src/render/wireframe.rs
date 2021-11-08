@@ -221,7 +221,8 @@ pub fn collect_wireframes<G>(
 
 pub fn render_wireframes<G>(
     _context: SystemContext,
-    (wireframe_renderer, graphics_context): (&mut WireframeRenderer<G::Backend>, &mut G),
+    wireframe_renderer: &mut WireframeRenderer<G::Backend>,
+    graphics_context: &mut G,
     (): (),
 ) where
     G: GraphicsContext,
