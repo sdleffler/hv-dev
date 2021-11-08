@@ -877,6 +877,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hv-looprider"
+version = "0.1.0"
+dependencies = [
+ "hv-lua",
+ "serde",
+ "shrev",
+ "tracing",
+]
+
+[[package]]
 name = "hv-lua"
 version = "0.6.6"
 dependencies = [

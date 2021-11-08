@@ -1,0 +1,12 @@
+[package]
+name = "hv-looprider"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+hv-lua = { path = "../hv-lua" }
+serde = "1.0.130"
+shrev = "1.1.1"
+tracing = "0.1.29"
