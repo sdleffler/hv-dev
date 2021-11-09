@@ -69,7 +69,6 @@ use core::{
     hash::Hash,
     marker::{PhantomData, Unsize},
     ptr::{DynMetadata, Pointee},
-    sync::atomic::Ordering,
 };
 use hashbrown::{HashMap, HashSet};
 use hv_sync::{atom::AtomSetOnce, cell::AtomicRefCell};
@@ -355,12 +354,12 @@ impl TypeTable {
 
     /// Check whether the type implements [`Clone`] (through [`CloneProxy`]).
     pub fn is_clone(&self) -> bool {
-        !self.alchemical_clone.is_none(Ordering::Relaxed)
+        !self.alchemical_clone.is_none()
     }
 
     /// Check whether the type implements [`Copy`] (through [`CopyProxy`]).
     pub fn is_copy(&self) -> bool {
-        !self.alchemical_copy.is_none(Ordering::Relaxed)
+        !self.alchemical_copy.is_none()
     }
 
     /// Check whether the type implements some object-safe trait representable as `dyn Trait` type
@@ -379,13 +378,13 @@ impl TypeTable {
         if id == TypeId::of::<dyn AlchemicalAny>() {
             return Some(&self.alchemical_any);
         } else if id == TypeId::of::<dyn CloneProxy>() {
-            return self.alchemical_clone.get(Ordering::Relaxed);
+            return self.alchemical_clone.get();
         } else if id == TypeId::of::<dyn CopyProxy>() {
-            return self.alchemical_copy.get(Ordering::Relaxed);
+            return self.alchemical_copy.get();
         } else if id == TypeId::of::<dyn Send>() {
-            return self.send.get(Ordering::Relaxed);
+            return self.send.get();
         } else if id == TypeId::of::<dyn Sync>() {
-            return self.sync.get(Ordering::Relaxed);
+            return self.sync.get();
         }
 
         self.vtables.read().get(&id).copied()
@@ -411,13 +410,13 @@ impl TypeTable {
                 let id = TypeId::of::<U>();
                 let vtable = Box::leak(Box::new(DynVtable::new::<T, U>(ptr)));
                 if id == TypeId::of::<dyn CloneProxy>() {
-                    self.alchemical_clone.set_if_none(vtable, Ordering::Relaxed);
+                    self.alchemical_clone.set_if_none(vtable);
                 } else if id == TypeId::of::<dyn CopyProxy>() {
-                    self.alchemical_copy.set_if_none(vtable, Ordering::Relaxed);
+                    self.alchemical_copy.set_if_none(vtable);
                 } else if id == TypeId::of::<dyn Send>() {
-                    self.send.set_if_none(vtable, Ordering::Relaxed);
+                    self.send.set_if_none(vtable);
                 } else if id == TypeId::of::<dyn Sync>() {
-                    self.sync.set_if_none(vtable, Ordering::Relaxed);
+                    self.sync.set_if_none(vtable);
                 } else {
                     self.vtables.write().insert(id, vtable);
                 }
@@ -445,12 +444,9 @@ impl TypeTable {
     /// Panics if `T` is not the type of this table.
     pub fn add_clone<T: Clone + 'static>(&self) -> &Self {
         assert_eq!(TypeId::of::<T>(), self.id);
-        self.alchemical_clone.set_if_none(
-            Box::leak(Box::new(DynVtable::new::<T, dyn CloneProxy>(
-                core::ptr::null(),
-            ))),
-            Ordering::Relaxed,
-        );
+        self.alchemical_clone.set_if_none(Box::leak(Box::new(
+            DynVtable::new::<T, dyn CloneProxy>(core::ptr::null()),
+        )));
         self
     }
 
@@ -459,12 +455,10 @@ impl TypeTable {
     /// Panics if `T` is not the type of this table.
     pub fn add_copy<T: Copy + 'static>(&self) -> &Self {
         assert_eq!(TypeId::of::<T>(), self.id);
-        self.alchemical_copy.set_if_none(
-            Box::leak(Box::new(DynVtable::new::<T, dyn CopyProxy>(
+        self.alchemical_copy
+            .set_if_none(Box::leak(Box::new(DynVtable::new::<T, dyn CopyProxy>(
                 core::ptr::null(),
-            ))),
-            Ordering::Relaxed,
-        );
+            ))));
         self
     }
 
