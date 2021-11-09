@@ -29,7 +29,7 @@
 //! # Example
 //!
 //! ```rust
-//!use resources::*;
+//!use hv_resources::*;
 //!
 //!struct SomeNumber(usize);
 //!

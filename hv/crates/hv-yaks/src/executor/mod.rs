@@ -125,7 +125,7 @@ where
     ///
     /// # Example
     /// ```rust
-    /// # let mut executor = yaks::Executor::<()>::builder().build();
+    /// # let mut executor = hv_yaks::Executor::<()>::builder().build();
     /// # let world_a = hecs::World::new();
     /// # let world_b = hecs::World::new();
     /// executor.run(&world_a, ());
@@ -153,7 +153,7 @@ where
     /// The `resources` argument when calling this function must be a tuple of exclusive references
     /// to values of types specified by the generic parameter `Resources` of the executor:
     /// ```rust
-    /// # use yaks::Executor;
+    /// # use hv_yaks::Executor;
     /// # let world = hecs::World::new();
     /// let mut executor = Executor::<(f32, u32)>::builder().build();
     /// let mut some_f32 = 0f32;
@@ -177,7 +177,7 @@ where
     /// [`rayon::ThreadPool::install()`](../rayon/struct.ThreadPool.html#method.install) block
     /// to use that thread pool instead of the global one:
     /// ```rust
-    /// # use yaks::Executor;
+    /// # use hv_yaks::Executor;
     /// # let world = hecs::World::new();
     /// # #[cfg(feature = "parallel")]
     /// # let thread_pool =
@@ -195,8 +195,12 @@ where
     /// #     }
     /// #     DummyPool
     /// # };
-    /// # let mut executor = Executor::<()>::builder().build();
-    /// thread_pool.install(|| executor.run(&world, ()));
+    /// thread_pool.install(|| {
+    ///     // Executors are not `Send` or `Sync` (as they may have local resources) so you'll need
+    ///     // to construct it over on the other thread.
+    ///     let mut executor = Executor::<()>::builder().build();
+    ///     executor.run(&world, ())
+    /// });
     /// ```
     /// Doing so will cause all [`yaks::batch()`](fn.batch.html) calls inside systems
     /// to also use said thread pool.

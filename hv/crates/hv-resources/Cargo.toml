@@ -1,8 +1,8 @@
 [package]
-name = "resources"
+name = "hv-resources"
 version = "1.1.0"
 description = "Safe store for one value of each type, with interior mutability."
-authors = ["Alexander Sepity <alexander.sepity@gmail.com>"]
+authors = ["Alexander Sepity <alexander.sepity@gmail.com>, Shea 'Decibel' Leffler <shea@errno.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Ratysz/resources"

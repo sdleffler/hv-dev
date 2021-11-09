@@ -8,11 +8,11 @@ use glfw::Context;
 use hv::{
     input::{GenericAxis, GenericButton, InputEvent, Key, ScrollAxis},
     prelude::*,
+    resources::Resources,
 };
 use luminance_glfw::{GL33Context, GlfwSurface};
 
 pub use luminance_windowing::{WindowDim, WindowOpt};
-use resources::Resources;
 
 impl MainLoopContext for GL33Context {
     fn set_vsync(&mut self, vsync_on: bool) -> Result<()> {

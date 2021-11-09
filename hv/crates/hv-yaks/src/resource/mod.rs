@@ -26,8 +26,8 @@ use contains::Contains;
 pub use atomic_borrow::AtomicBorrow;
 pub use fetch::Fetch;
 use hecs::World;
+use hv_resources::{Ref, RefMut, Resource, Resources, SyncResources};
 pub use ref_extractor::{MultiRefExtractor, RefExtractor};
-use resources::{Ref, RefMut, Resource, Resources, SyncResources};
 pub use tuple::ResourceTuple;
 pub use wrap::ResourceWrap;
 
@@ -226,7 +226,7 @@ fn smoke_test() {
     let (mut a, mut b, mut c) = (1.0f32, 2u32, 3u64);
     executor.run(&world, (&mut a, &mut b, &mut c));
 
-    let mut resources = resources::Resources::new();
+    let mut resources = hv_resources::Resources::new();
     resources.insert(1.0f32);
     resources.insert(2u32);
     resources.insert(3u64);

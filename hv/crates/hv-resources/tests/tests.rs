@@ -1,4 +1,4 @@
-use resources::*;
+use hv_resources::*;
 
 #[derive(Debug, PartialEq)]
 struct One(usize);

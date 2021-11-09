@@ -1,5 +1,5 @@
 use hecs::World;
-use yaks::{Executor, QueryMarker};
+use hv_yaks::{Executor, QueryMarker};
 
 struct A(usize);
 

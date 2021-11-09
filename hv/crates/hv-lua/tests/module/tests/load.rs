@@ -1,3 +1,5 @@
+#![cfg(not(feature = "vendored"))]
+
 use std::env;
 use std::path::PathBuf;
 

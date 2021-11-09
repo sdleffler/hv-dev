@@ -2,13 +2,13 @@ use hv::{
     bump::{Owned, *},
     ecs::{DynamicBundle, Entity, EntityBuilder, World},
     prelude::*,
+    resources::Resources,
     sync::{
         cell::AtomicRef,
         elastic::{Elastic, ElasticGuard, Stretchable, Stretched},
         NoSharedAccess,
     },
 };
-use resources::Resources;
 
 use spin::Mutex;
 use std::{cell::UnsafeCell, mem::ManuallyDrop, sync::Arc};

@@ -16,7 +16,7 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 /// # }
 /// # let world = hecs::World::new();
 /// # let num_entities = 64;
-/// yaks::batch(
+/// hv_yaks::batch(
 ///     &mut world.query::<(&mut Pos, &Vel)>(),
 ///     num_entities / 16,
 ///     |_entity, (pos, vel)| {
@@ -51,7 +51,7 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 /// #     DummyPool
 /// # };
 /// thread_pool.install(|| {
-///     yaks::batch(
+///     hv_yaks::batch(
 ///         &mut world.query::<(&mut Pos, &Vel)>(),
 ///         num_entities / 16,
 ///         |_entity, (pos, vel)| {
@@ -63,7 +63,7 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 /// `batch()` can be called in systems, where it will use whichever thread pool is used by
 /// the system or the executor it's in:
 /// ```rust
-/// # use yaks::{QueryMarker, Executor};
+/// # use hv_yaks::{QueryMarker, Executor};
 /// # struct Pos;
 /// # struct Vel;
 /// # impl std::ops::AddAssign<&Vel> for Pos {
@@ -89,7 +89,7 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 /// # };
 /// let mut executor = Executor::<(u32, )>::builder()
 ///     .system(|context, num_entities: &u32, query: QueryMarker<(&mut Pos, &Vel)>| {
-///         yaks::batch(
+///         hv_yaks::batch(
 ///             &mut context.query(query),
 ///             num_entities / 16,
 ///             |_entity, (pos, vel)| {
@@ -102,6 +102,18 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 /// executor.run(&world, &mut num_entities);
 ///
 /// thread_pool.install(|| {
+///     let mut executor = Executor::<(u32, )>::builder()
+///         .system(|context, num_entities: &u32, query: QueryMarker<(&mut Pos, &Vel)>| {
+///             hv_yaks::batch(
+///                 &mut context.query(query),
+///                 num_entities / 16,
+///                 |_entity, (pos, vel)| {
+///                     *pos += vel;
+///                 },
+///             )
+///         })
+///         .build();
+///
 ///     executor.run(&world, &mut num_entities);
 /// });
 /// ```

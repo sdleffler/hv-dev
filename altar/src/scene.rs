@@ -1,5 +1,5 @@
 use hv::prelude::*;
-use resources::Resources;
+use hv::resources::Resources;
 
 pub struct Action<T, C> {
     #[allow(clippy::type_complexity)]

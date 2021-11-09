@@ -3,10 +3,10 @@ use std::{ops::ControlFlow, path::PathBuf};
 use hv::{
     input::{GenericAxis, GenericButton, InputEvent, Mappable},
     prelude::*,
+    resources::Resources,
     timer::TimeContext,
 };
 use luminance::context::GraphicsContext;
-use resources::Resources;
 
 use crate::scene::SceneStack;
 

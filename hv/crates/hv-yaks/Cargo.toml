@@ -1,5 +1,5 @@
 [package]
-name = "yaks"
+name = "hv-yaks"
 version = "0.1.0"
 description = "Minimalistic framework for automatic multithreading of hecs via rayon"
 authors = ["Alexander Sepity <alexander.sepity@gmail.com>", "Shea 'Decibel' Leffler <shea@errno.com>"]
@@ -25,11 +25,11 @@ parallel = ["crossbeam-channel", "fixedbitset", "rayon"]
 [dependencies]
 crossbeam-channel = { version = "0.5.1", optional = true }
 fixedbitset = { version = "0.4.0", optional = true }
-hecs = { path = "../hecs" }
+hecs = { path = "../../../hecs" }
 parking_lot = "0.11.2"
 paste = "1.0.5"
 rayon = { version = "1.5.1", optional = true }
-resources = { path = "../resources", features = ["fetch"] }
+hv-resources = { path = "../hv-resources", features = ["fetch"] }
 
 [dev-dependencies]
 rand = "0.8.4"

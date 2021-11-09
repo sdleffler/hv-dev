@@ -27,7 +27,7 @@ impl<'scope> SystemContext<'scope> {
     ///
     /// # Example
     /// ```rust
-    /// # use yaks::{SystemContext, QueryMarker};
+    /// # use hv_yaks::{SystemContext, QueryMarker};
     /// # struct Pos;
     /// # #[derive(Clone, Copy)]
     /// # struct Vel;
@@ -58,7 +58,7 @@ impl<'scope> SystemContext<'scope> {
     ///
     /// # Example
     /// ```rust
-    /// # use yaks::{SystemContext, QueryMarker};
+    /// # use hv_yaks::{SystemContext, QueryMarker};
     /// # #[derive(Default)]
     /// # struct Pos;
     /// # #[derive(Clone, Copy, Default, Ord, PartialOrd, Eq, PartialEq)]

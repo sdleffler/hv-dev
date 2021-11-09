@@ -1,5 +1,5 @@
 use hecs::World;
-use resources::Resources;
+use hv_resources::Resources;
 
 use crate::Executor;
 

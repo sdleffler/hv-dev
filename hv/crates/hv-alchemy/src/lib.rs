@@ -915,22 +915,22 @@ impl dyn AlchemicalAny {
 
     /// Try to cast this `&dyn AlchemicalAny` to some type `T`.
     pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
-        let at = Self::type_table(self);
-        (at.id == TypeId::of::<T>())
+        let tt = (*self).type_table();
+        (tt.id == TypeId::of::<T>())
             .then(|| unsafe { &*(self as *const dyn AlchemicalAny as *const T) })
     }
 
     /// Try to cast this `&mut dyn AlchemicalAny` to some type `T`.
     pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
-        let at = Self::type_table(self);
-        (at.id == TypeId::of::<T>())
+        let tt = (*self).type_table();
+        (tt.id == TypeId::of::<T>())
             .then(|| unsafe { &mut *(self as *mut dyn AlchemicalAny as *mut T) })
     }
 
     /// Try to cast this `Box<dyn AlchemicalAny>` to some type `T`.
     pub fn downcast<T: Any>(self: Box<Self>) -> Option<Box<T>> {
-        let at = Self::type_table(&self);
-        (at.id == TypeId::of::<T>())
+        let tt = (*self).type_table();
+        (tt.id == TypeId::of::<T>())
             .then(|| unsafe { Box::from_raw(Box::into_raw(self) as *mut T) })
     }
 

@@ -208,7 +208,7 @@ impl TimeContext {
     /// in your `update()` callback:
     ///
     /// ```rust
-    /// # use hv_core::{prelude::*, timer::{self, TimeContext}};
+    /// # use hv::{prelude::*, timer::{self, TimeContext}};
     /// # fn update_game_physics() -> Result<()> { Ok(()) }
     /// # struct State;
     /// # impl State {
@@ -238,7 +238,7 @@ impl TimeContext {
     /// and then many the next.
     ///
     /// ```rust
-    /// # use hv_core::{prelude::*, timer::{self, TimeContext}};
+    /// # use hv::{prelude::*, timer::{self, TimeContext}};
     /// # fn update_game_physics() -> Result<()> { Ok(()) }
     /// # struct State;
     /// # impl State {

@@ -17,7 +17,6 @@ luminance = "0.44.1"
 luminance-glfw = { version = "0.16.0", optional = true }
 luminance-windowing = { version = "0.10.0", optional = true }
 parry3d = "0.7.1"
-resources = { path = "../resources" }
 serde = "1.0.130"
 spin = "0.9.2"
 static_assertions = "1.1.0"

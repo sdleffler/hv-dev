@@ -1,4 +1,4 @@
-use yaks::{Executor, SystemContext};
+use hv_yaks::{Executor, SystemContext};
 
 fn dummy_system(_: SystemContext, _: (), _: ()) {}
 

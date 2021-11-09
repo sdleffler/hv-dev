@@ -11,6 +11,8 @@ use hv::lua::{
     UserDataFields, UserDataMethods, Value,
 };
 
+use hv::alchemy::Type;
+
 #[test]
 fn test_user_data() -> Result<()> {
     struct UserData1(i64);
@@ -87,6 +89,10 @@ fn test_metamethods() -> Result<()> {
     struct MyUserData(i64);
 
     impl UserData for MyUserData {
+        fn on_metatable_init(table: Type<Self>) {
+            table.add_clone().add_copy();
+        }
+
         fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
             methods.add_method("get", |_, data, ()| Ok(data.0));
             methods.add_meta_function(

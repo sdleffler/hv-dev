@@ -1,7 +1,7 @@
 //! Copy of the crate level documentation & readme example.
 
 use hecs::{With, Without, World};
-use yaks::{Executor, QueryMarker};
+use hv_yaks::{Executor, QueryMarker};
 
 fn main() {
     let mut world = World::new();
@@ -42,21 +42,21 @@ fn main() {
 
 #[allow(clippy::type_complexity)]
 fn system_with_two_queries(
-    context: yaks::SystemContext,
+    context: hv_yaks::SystemContext,
     (entities, average): (&u32, &f32),
     (with_f32, without_f32): (
         QueryMarker<With<f32, &mut u32>>,
         QueryMarker<Without<f32, &mut u32>>,
     ),
 ) {
-    yaks::batch(
+    hv_yaks::batch(
         &mut context.query(with_f32),
         entities / 8,
         |_entity, unsigned| {
             *unsigned += average.round() as u32;
         },
     );
-    yaks::batch(
+    hv_yaks::batch(
         &mut context.query(without_f32),
         entities / 8,
         |_entity, unsigned| {

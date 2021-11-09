@@ -192,7 +192,7 @@ where
     ///
     /// # Example
     /// ```rust
-    /// # use yaks::{QueryMarker, SystemContext, Executor};
+    /// # use hv_yaks::{QueryMarker, SystemContext, Executor};
     /// # let world = hecs::World::new();
     /// # struct A;
     /// # struct B;
@@ -321,7 +321,7 @@ where
     /// # Examples
     /// These two executors are identical.
     /// ```rust
-    /// # use yaks::{QueryMarker, SystemContext, Executor};
+    /// # use hv_yaks::{QueryMarker, SystemContext, Executor};
     /// # let world = hecs::World::new();
     /// # fn system_0(_: SystemContext, _: (), _: ()) {}
     /// # fn system_1(_: SystemContext, _: (), _: ()) {}
@@ -356,7 +356,7 @@ where
     /// that won't matter as long as the given dependencies truthfully reflect any
     /// relationships the systems may have.
     /// ```rust
-    /// # use yaks::{QueryMarker, SystemContext, Executor};
+    /// # use hv_yaks::{QueryMarker, SystemContext, Executor};
     /// # let world = hecs::World::new();
     /// # fn system_0(_: SystemContext, _: (), _: ()) {}
     /// # fn system_1(_: SystemContext, _: (), _: ()) {}

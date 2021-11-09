@@ -886,7 +886,7 @@ impl<'lua> AnyUserData<'lua> {
                         .try_clone();
 
                     if let Some(cloned) = maybe_cloned {
-                        Ok(*cloned.downcast().unwrap())
+                        Ok(*cloned.downcast::<T>().unwrap())
                     } else {
                         // Clear uservalue
                         #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
@@ -895,14 +895,11 @@ impl<'lua> AnyUserData<'lua> {
                         protect_lua!(lua.state, 0, 1, fn(state) ffi::lua_newtable(state))?;
                         ffi::lua_setuservalue(lua.state, -2);
 
-                        Ok(*take_userdata::<UserDataCell>(lua.state)
-                            .into_boxed()
-                            .downcast()
-                            .unwrap())
+                        Ok(take_userdata::<UserDataCell>(lua.state).into_inner::<T>())
                     }
                 }
-                Some(_) => Err(Error::UserDataDestructed),
-                _ => Err(Error::UserDataTypeMismatch),
+                Some(_) => Err(Error::UserDataTypeMismatch),
+                _ => Err(Error::UserDataDestructed),
             }
         }
     }

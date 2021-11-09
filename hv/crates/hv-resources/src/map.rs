@@ -109,7 +109,7 @@ impl Resources {
     ///
     /// # Example
     /// ```rust
-    /// # use resources::Resources;
+    /// # use hv_resources::Resources;
     /// let mut resources = Resources::new();
     /// assert!(resources.insert(0f32).is_none());
     /// assert!(resources.insert(1u32).is_none());
@@ -187,7 +187,7 @@ impl<'a> SyncResources<'a> {
     ///
     /// # Example
     /// ```rust
-    /// # use resources::Resources;
+    /// # use hv_resources::Resources;
     /// let mut resources = Resources::new();
     /// assert!(resources.insert(0f32).is_none());
     /// assert!(resources.insert(1u32).is_none());

@@ -1,9 +1,9 @@
 //! An annotated non-trivial example. Runs with or without the `parallel` feature.
 
 use hecs::World;
+use hv_yaks::{Executor, QueryMarker, SystemContext};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::time::{Duration, Instant};
-use yaks::{Executor, QueryMarker, SystemContext};
 
 // Each of the tests will be ran this many times.
 const ITERATIONS: u32 = 100;
@@ -56,7 +56,7 @@ fn motion(
     // A helper function that automatically spreads the batches across threads of a
     // `rayon::ThreadPool` - either the global one if called standalone, or a specific one
     // when used with a `rayon::ThreadPool::install()`.
-    yaks::batch(
+    hv_yaks::batch(
         &mut context.query(no_acceleration),
         spawned.batch_size_no_acceleration(),
         |_entity, (mut pos, vel)| {
@@ -65,7 +65,7 @@ fn motion(
         },
     );
     // If the default `parallel` feature is disabled this simply iterates in a single thread.
-    yaks::batch(
+    hv_yaks::batch(
         &mut context.query(with_acceleration),
         spawned.batch_size_with_acceleration(),
         |_entity, (mut pos, mut vel, acc)| {
@@ -102,7 +102,7 @@ fn color(
     // Of course, it's possible to use resources mutably and still batch queries if
     // mutation happens outside batching.
     let blue = rng.gen_range(0.0..1.0);
-    yaks::batch(
+    hv_yaks::batch(
         &mut context.query(query),
         spawned.batch_size_all(),
         |_entity, (pos, vel, mut col)| {
@@ -231,7 +231,7 @@ fn main() {
 
     // The automatically implemented trait `System` allows easily calling systems
     // as plain functions with `::run()`.
-    use yaks::System;
+    use hv_yaks::System;
     print!("running {} iterations of functions... ", ITERATIONS);
     let mut elapsed = Duration::from_millis(0);
     for _ in 0..ITERATIONS {
@@ -247,7 +247,7 @@ fn main() {
     // The `batch()` helper function can also be used outside of systems,
     // since the first argument is simply a `QueryBorrow`.
     // Again, calling this within `rayon::ThreadPool::install()` will use that thread pool.
-    yaks::batch(
+    hv_yaks::batch(
         &mut world.query::<&mut Color>(),
         spawned.batch_size_all(),
         |_entity, color| {

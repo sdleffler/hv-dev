@@ -15,11 +15,11 @@ members = [
     "hv/crates/hv-lua/examples/module",
     "hv/crates/hv-lua/tests/module",
     "hv/crates/hv-math",
+    "hv/crates/hv-resources",
     "hv/crates/hv-stampede",
     "hv/crates/hv-sync",
     "hv/crates/hv-timer",
     "hv/crates/hv-vfs",
+    "hv/crates/hv-yaks",
     "hv",
-    "resources",
-    "yaks",
 ]

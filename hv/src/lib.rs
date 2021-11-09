@@ -14,6 +14,7 @@ pub mod lua {
 
 pub extern crate input;
 pub extern crate math;
+pub extern crate resources;
 pub extern crate stampede as bump;
 pub extern crate sync;
 pub extern crate timer;
