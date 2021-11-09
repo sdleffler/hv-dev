@@ -12,7 +12,6 @@ pub mod capability;
 pub mod cell;
 #[macro_use]
 pub mod elastic;
-pub mod monotonic_list;
 
 #[cfg(feature = "track-leases")]
 pub mod lease;
