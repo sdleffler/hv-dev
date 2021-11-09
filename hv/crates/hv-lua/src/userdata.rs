@@ -19,7 +19,9 @@ use {
     std::result::Result as StdResult,
 };
 
-use hv_alchemy::{AlchemicalAny, AlchemicalPtr, Alchemy, IntoProxy, Type, TypeTable};
+use hv_alchemy::{
+    AlchemicalAny, AlchemicalAnyExt, AlchemicalPtr, Alchemy, IntoProxy, Type, TypeTable,
+};
 use hv_guarded_borrow::{NonBlockingGuardedBorrow, NonBlockingGuardedMutBorrowMut};
 
 use crate::table::{Table, TablePairs};

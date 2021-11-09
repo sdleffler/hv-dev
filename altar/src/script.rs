@@ -4,7 +4,7 @@
 use std::{any::TypeId, collections::HashMap, io::Read};
 
 use hv::{
-    alchemy::AlchemicalAny,
+    alchemy::{AlchemicalAny, AlchemicalAnyExt},
     ecs::{QueryMarker, SystemContext, Without},
     fs::Filesystem,
     lua::TryCloneToUserDataExt,
