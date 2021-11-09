@@ -2,6 +2,7 @@
 #![feature(control_flow_enum)]
 #![feature(generic_associated_types)]
 #![feature(vec_into_raw_parts)]
+#![feature(float_interpolation)]
 
 pub mod command_buffer;
 pub mod event_loop;

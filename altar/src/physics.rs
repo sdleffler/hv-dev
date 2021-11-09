@@ -4,101 +4,124 @@ use parry3d::shape::SharedShape;
 use crate::types::Float;
 
 #[derive(Debug, Clone, Copy)]
+pub struct CompositePosition3 {
+    pub xy: Isometry2<Float>,
+    pub z: Float,
+}
+
+impl CompositePosition3 {
+    pub fn new(translation: Vector3<Float>, rotation: Float) -> Self {
+        Self {
+            xy: Isometry2::new(translation.xy(), rotation),
+            z: translation.z,
+        }
+    }
+
+    pub fn as_isometry3(&self) -> Isometry3<Float> {
+        let translation = self.xy.translation.vector.push(self.z);
+
+        // A quaternion from axis/angle will use `w = cos(theta/2)` and `sin(theta/2)` for the ijk
+        // components. So, we sqrt the rotation to sqrt the internal complex, then extract the
+        // resulting cos/sin.
+        let sqrt_rot2 = self.xy.rotation.powf(0.5);
+        let quat = Quaternion::new(sqrt_rot2.cos_angle(), 0., 0., sqrt_rot2.sin_angle());
+
+        Isometry3::from_parts(
+            Translation3::from(translation),
+            UnitQuaternion::new_unchecked(quat),
+        )
+    }
+
+    pub fn transform_point(&self, pt: &Point3<Float>) -> Point3<Float> {
+        Point3::from(self.xy.transform_point(&pt.xy()).coords.push(self.z + pt.z))
+    }
+
+    pub fn transform_vector(&self, v: &Vector3<Float>) -> Vector3<Float> {
+        self.xy.transform_vector(&v.xy()).push(v.z)
+    }
+
+    pub fn lerp_slerp(&self, b: &Self, t: f32) -> Self {
+        Self {
+            xy: self.xy.lerp_slerp(&b.xy, t),
+            z: t.lerp(self.z, b.z),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CompositeVelocity3 {
+    pub xy: Velocity2<Float>,
+    pub z: Float,
+}
+
+impl CompositeVelocity3 {
+    pub fn new(linear: Vector3<Float>, angular: Float) -> Self {
+        Self {
+            xy: Velocity2::new(linear.xy(), angular),
+            z: linear.z,
+        }
+    }
+
+    pub fn integrate(&self, position: &CompositePosition3, dt: Float) -> CompositePosition3 {
+        let xy = self.xy.integrate(dt);
+        let z = self.z * dt;
+        CompositePosition3 {
+            xy: Isometry2::from_parts(
+                position.xy.translation * xy.translation,
+                position.xy.rotation * xy.rotation,
+            ),
+            z: position.z + z,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct Position {
-    pub current: Point3<Float>,
-    pub previous: Point3<Float>,
+    /// The current position of the entity.
+    pub current: CompositePosition3,
+    /// The last position of the entity.
+    pub previous: CompositePosition3,
 }
 
 impl Position {
-    pub fn new(x: Float, y: Float, z: Float) -> Self {
+    pub fn new(position: CompositePosition3) -> Self {
         Self {
-            current: Point3::new(x, y, z),
-            previous: Point3::new(x, y, z),
+            current: position,
+            previous: position,
         }
     }
-}
 
-impl From<Point3<Float>> for Position {
-    fn from(value: Point3<Float>) -> Self {
-        Self {
-            current: value,
-            previous: value,
-        }
-    }
-}
-
-impl From<Vector3<Float>> for Position {
-    fn from(value: Vector3<Float>) -> Self {
-        Self::from(Point3::from(value))
-    }
-}
-
-impl LuaUserData for Position {
-    fn on_metatable_init(table: Type<Self>) {
-        table
-            .add_clone()
-            .add_copy()
-            .mark_component()
-            .add_conversion_from::<Point3<Float>>()
-            .add_conversion_from::<Vector3<Float>>();
+    /// Create a new position "out of sync" with the current frame. Useful when responding to
+    /// input/performing spawning actions at a different rate/with nonzero remaining dt with respect
+    /// to the physics timestep. This will spawn the entity at the position specified but with the
+    /// *previous* position set to the current integration integrated by `velocity * -dt` (back by
+    /// one step), so that it ends up being rendered at the correct spot.
+    pub fn new_out_of_sync(
+        position: CompositePosition3,
+        velocity: &CompositeVelocity3,
+        dt: f32,
+    ) -> Self {
+        let current = position;
+        let previous = velocity.integrate(&current, -dt);
+        Self { current, previous }
     }
 
-    #[allow(clippy::unit_arg)]
-    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
-        macro_rules! coords {
-            ($($a:tt),*) => {{$(
-                fields.add_field_method_get(stringify!($a), |_, this| Ok(this.current.$a));
-                fields.add_field_method_set(stringify!($a), |_, this, a| Ok(this.current.$a = a));
-            )*}}
-        }
-
-        coords!(x, y, z);
-
-        fields.add_field_method_get("current", |_, this| Ok(this.current));
-        fields.add_field_method_set("current", |_, this, value| Ok(this.current = value));
-        fields.add_field_method_get("previous", |_, this| Ok(this.current));
-        fields.add_field_method_set("previous", |_, this, value| Ok(this.previous = value));
+    /// Interpolate between the previous and current positions. This is useful when rendering w/ a
+    /// fixed timestep and uncapped/higher than timestep render rate.
+    pub fn lerp_slerp(&self, t: f32) -> CompositePosition3 {
+        self.previous.lerp_slerp(&self.current, t)
     }
 
-    fn on_type_metatable_init(table: Type<Type<Self>>) {
-        table.mark_component_type();
-    }
-
-    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M)
-    where
-        Self: 'static,
-    {
-        methods.add_function("new", |_, (x, y, z)| Ok(Self::new(x, y, z)));
+    /// Perform an integration step.
+    pub fn integrate(&mut self, velocity: &CompositeVelocity3, dt: f32) {
+        self.previous = self.current;
+        self.current = velocity.integrate(&self.current, dt);
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Velocity {
-    pub xy: Velocity2<Float>,
-    pub z: Float,
-}
-
-impl Velocity {
-    pub fn new(xy: Velocity2<Float>, z: Float) -> Self {
-        Self { xy, z }
-    }
-}
-
-impl LuaUserData for Velocity {
-    fn on_metatable_init(table: Type<Self>) {
-        table.add_clone().add_copy().mark_component();
-    }
-
-    fn on_type_metatable_init(table: Type<Type<Self>>) {
-        table.mark_component_type();
-    }
-
-    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M)
-    where
-        Self: 'static,
-    {
-        methods.add_function("new", |_, (v2, z)| Ok(Self::new(v2, z)));
-    }
+    pub composite: CompositeVelocity3,
 }
 
 #[derive(Clone)]
@@ -132,5 +155,30 @@ impl LuaUserData for Collider {
 
     fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, (local_tx, shape)| Ok(Self::new(local_tx, shape)));
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::f32;
+
+    #[test]
+    fn composite_position_as_isometry3() {
+        let composite = CompositePosition3 {
+            xy: Isometry2::new(Vector2::new(5., -2.3), f32::consts::FRAC_2_PI),
+            z: 4.,
+        };
+
+        let axisangle = Vector3::z() * f32::consts::FRAC_2_PI;
+        let translation = Vector3::new(5., -2.3, 4.);
+        let isometry3 = Isometry3::new(translation, axisangle);
+
+        let pt = Point3::new(-23.6, 13., -42.);
+        let d = distance(
+            &composite.as_isometry3().transform_point(&pt),
+            &isometry3.transform_point(&pt),
+        );
+        assert!(d < f32::EPSILON, "bad!");
     }
 }
