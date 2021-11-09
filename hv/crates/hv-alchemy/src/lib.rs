@@ -1,4 +1,4 @@
-//! The black arts of transmutation, wrapped for your safe usage and enjoyment.
+//! Heavy Alchemy - The black arts of transmutation, wrapped for your safe usage and enjoyment.
 //!
 //! Functionality for dynamically examining and manipulating `dyn Trait` objects. This is done
 //! mainly through [`TypeTable`], which is a bit like a superpowered [`TypeId`](core::any::TypeId)
