@@ -24,9 +24,23 @@ impl<'lua> FromLua<'lua> for &'static TypeTable {
     }
 }
 
+pub trait MetaType {
+    fn type_table_of_subject(&self) -> &'static TypeTable;
+}
+
+impl<T: 'static> MetaType for Type<T> {
+    fn type_table_of_subject(&self) -> &'static TypeTable {
+        self.as_untyped()
+    }
+}
+
 impl<T: 'static + UserData + MaybeSend> UserData for Type<T> {
     fn on_metatable_init(t: Type<Self>) {
-        t.add_clone().add_copy().add::<dyn Send>().add::<dyn Sync>();
+        t.add_clone()
+            .add_copy()
+            .add::<dyn Send>()
+            .add::<dyn Sync>()
+            .add::<dyn MetaType>();
         T::on_type_metatable_init(hv_alchemy::of())
     }
 

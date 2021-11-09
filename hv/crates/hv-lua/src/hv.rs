@@ -9,7 +9,7 @@ use crate::{
 pub mod ecs;
 pub mod math;
 
-mod alchemy;
+pub mod alchemy;
 mod sync;
 
 pub trait LuaUserDataTypeExt<T> {

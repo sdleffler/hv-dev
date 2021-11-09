@@ -9,7 +9,6 @@ use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe, Location};
 use std::sync::{Arc, Mutex};
 use std::{mem, ptr, str};
 
-use crate::error::{Error, Result};
 use crate::ffi;
 use crate::function::Function;
 use crate::hook::{hook_proc, Debug, HookTriggers};
@@ -32,6 +31,10 @@ use crate::util::{
     push_table, push_userdata, rawset_field, safe_pcall, safe_xpcall, StackGuard, WrappedFailure,
 };
 use crate::value::{FromLua, FromLuaMulti, MultiValue, Nil, ToLua, ToLuaMulti, Value};
+use crate::{
+    error::{Error, Result},
+    userdata::TryCloneToUserDataExt,
+};
 
 #[cfg(not(feature = "send"))]
 use std::rc::Rc;
@@ -1754,7 +1757,7 @@ impl Lua {
             return Ok(());
         }
 
-        let alchemy_table = hv_alchemy::of::<T>();
+        let alchemy_table = hv_alchemy::of::<T>().add::<dyn TryCloneToUserDataExt>();
         T::on_metatable_init(alchemy_table);
 
         let _sg = StackGuard::new_extra(self.state, 1);

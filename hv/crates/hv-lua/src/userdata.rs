@@ -22,7 +22,6 @@ use {
 use hv_alchemy::{AlchemicalAny, AlchemicalPtr, Alchemy, IntoProxy, Type, TypeTable};
 use hv_guarded_borrow::{NonBlockingGuardedBorrow, NonBlockingGuardedMutBorrowMut};
 
-use crate::lua::Lua;
 use crate::table::{Table, TablePairs};
 use crate::types::{Callback, LuaRef, MaybeSend};
 use crate::util::{check_stack, get_userdata, take_userdata, StackGuard};
@@ -33,6 +32,7 @@ use crate::{
 };
 use crate::{ffi, RegistryKey};
 use crate::{function::Function, types::MaybeSync};
+use crate::{hv::alchemy::MetaType, lua::Lua};
 
 #[cfg(any(feature = "lua52", feature = "lua51", feature = "luajit"))]
 use crate::value::Value;
@@ -806,6 +806,11 @@ impl<'lua> AnyUserData<'lua> {
             check_stack(lua.state, 2).expect("unreachable");
             lua.push_userdata_ref(&self.0).expect("unreachable")
         }
+    }
+
+    pub fn meta_type_table(&self) -> Result<&'static TypeTable> {
+        self.dyn_borrow::<dyn MetaType>()
+            .map(|t| t.type_table_of_subject())
     }
 
     /// Borrow this userdata immutably if it is of type `T`.
@@ -1871,5 +1876,22 @@ impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for Arc<RwLock<T>> 
 
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
         T::add_fields(&mut UserDataFieldsProxy::new(fields))
+    }
+}
+
+pub trait TryCloneToUserDataExt {
+    fn try_clone_to_user_data<'lua>(&self, lua: &'lua Lua) -> Result<AnyUserData<'lua>>;
+}
+
+impl<T: 'static + UserData> TryCloneToUserDataExt for T {
+    fn try_clone_to_user_data<'lua>(&self, lua: &'lua Lua) -> Result<AnyUserData<'lua>> {
+        let tt = hv_alchemy::of::<T>();
+        let clone_fn = tt.get_clone().ok_or(Error::UserDataDynMismatch)?;
+
+        if tt.is::<dyn Send>() {
+            unsafe { lua.make_userdata::<T>(UserDataCell::new(clone_fn(self))) }
+        } else {
+            Err(Error::UserDataDynMismatch)
+        }
     }
 }
