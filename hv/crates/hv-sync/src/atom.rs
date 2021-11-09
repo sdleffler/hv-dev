@@ -40,7 +40,7 @@ where
     P: IntoRawPtr + FromRawPtr,
 {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
-        write!(f, "atom({:?})", self.inner.load(Ordering::Relaxed))
+        write!(f, "atom({:?})", self.inner.load(Ordering::Acquire))
     }
 }
 
