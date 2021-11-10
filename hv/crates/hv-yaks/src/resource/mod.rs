@@ -170,9 +170,9 @@ where
 impl<'a, 'closure, Closure, Queries> System<'closure, (), Queries, &'a Resources, Resources>
     for Closure
 where
-    Closure: FnMut(SystemContext, (), Queries) + 'closure,
+    Closure: FnMut(SystemContext, (), &mut Queries) + 'closure,
     Closure: System<'closure, (), Queries, (), ()>,
-    Queries: QueryBundle,
+    Queries: QueryBundle + 'closure,
 {
     fn run(&mut self, world: &World, _: &'a Resources) {
         self.run(world, ());
@@ -182,10 +182,10 @@ where
 impl<'a, 'closure, Closure, A, Queries> System<'closure, A, Queries, &'a Resources, Resources>
     for Closure
 where
-    Closure: FnMut(SystemContext, A, Queries) + 'closure,
+    Closure: FnMut(SystemContext, A, &mut Queries) + 'closure,
     Closure: System<'closure, A, Queries, A, ()>,
     for<'r0> A: ResourcesFetch<'r0>,
-    Queries: QueryBundle,
+    Queries: QueryBundle + 'closure,
 {
     fn run(&mut self, world: &World, resources: &'a Resources) {
         let mut refs = A::fetch(resources);
@@ -198,10 +198,10 @@ macro_rules! impl_system {
         impl<'a, 'closure, Closure, $($letter),*, Queries>
             System<'closure, ($($letter),*), Queries, &'a Resources, Resources> for Closure
         where
-            Closure: FnMut(SystemContext, ($($letter),*), Queries) + 'closure,
+            Closure: FnMut(SystemContext, ($($letter),*), &mut Queries) + 'closure,
             Closure: System<'closure, ($($letter),*), Queries, ($($letter),*), ()>,
             $(for<'r> $letter: ResourcesFetch<'r>,)*
-            Queries: QueryBundle,
+            Queries: QueryBundle + 'closure,
         {
             #[allow(non_snake_case)]
             fn run(&mut self, world: &World, resources: &'a Resources) {
@@ -218,8 +218,8 @@ impl_for_tuples!(impl_system);
 fn smoke_test() {
     use crate::Executor;
     let mut executor = Executor::<(f32, u32, u64)>::builder()
-        .system(|_, _: (&mut f32, &u32), _: ()| {})
-        .system(|_, _: (&mut f32, &u64), _: ()| {})
+        .system(|_, _: (&mut f32, &u32), _: &mut ()| {})
+        .system(|_, _: (&mut f32, &u64), _: &mut ()| {})
         .build();
     let world = hecs::World::new();
 
@@ -232,10 +232,10 @@ fn smoke_test() {
     resources.insert(3u64);
     executor.run(&world, &resources);
 
-    fn dummy_system(_: SystemContext, _: (), _: ()) {}
+    fn dummy_system(_: SystemContext, _: (), _: &mut ()) {}
     dummy_system.run(&world, &resources);
 
-    fn sum_system(_: SystemContext, (a, b): (&mut i32, &usize), _: ()) {
+    fn sum_system(_: SystemContext, (a, b): (&mut i32, &usize), _: &mut ()) {
         *a += *b as i32;
     }
     resources.insert(3usize);

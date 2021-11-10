@@ -13,9 +13,8 @@ pub trait System<'closure, Resources, Queries, RefSource, Marker> {
 impl<'closure, Closure, Resources, Queries> System<'closure, Resources, Queries, Resources, ()>
     for Closure
 where
-    Closure: FnMut(SystemContext, Resources, Queries) + Send + Sync + 'closure,
-    Resources: Send + Sync,
-    Queries: QueryBundle,
+    Closure: FnMut(SystemContext, Resources, &mut Queries) + 'closure,
+    Queries: QueryBundle + 'closure,
 {
     fn run(&mut self, world: &World, resources: Resources) {
         self(
@@ -24,7 +23,7 @@ where
                 world,
             },
             resources,
-            Queries::markers(),
+            &mut Queries::markers(),
         );
     }
 }
@@ -33,18 +32,18 @@ where
 fn smoke_test() {
     let world = hecs::World::new();
 
-    fn dummy_system(_: SystemContext, _: (), _: ()) {}
+    fn dummy_system(_: SystemContext, _: (), _: &mut ()) {}
     dummy_system.run(&world, ());
 
     let mut counter = 0i32;
-    fn increment_system(_: SystemContext, value: &mut i32, _: ()) {
+    fn increment_system(_: SystemContext, value: &mut i32, _: &mut ()) {
         *value += 1;
     }
     increment_system.run(&world, &mut counter);
     assert_eq!(counter, 1);
 
     let increment = 3usize;
-    fn sum_system(_: SystemContext, (a, b): (&mut i32, &usize), _: ()) {
+    fn sum_system(_: SystemContext, (a, b): (&mut i32, &usize), _: &mut ()) {
         *a += *b as i32;
     }
     sum_system.run(&world, (&mut counter, &increment));

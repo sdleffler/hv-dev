@@ -248,7 +248,7 @@ mod tests {
     struct B(usize);
     struct C(usize);
 
-    fn dummy_system(_: SystemContext, _: (), _: ()) {}
+    fn dummy_system(_: SystemContext, _: (), _: &mut ()) {}
 
     fn local_pool_scope_fifo<'scope, F>(closure: F)
     where
@@ -394,8 +394,8 @@ mod tests {
         let world = World::new();
         let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
-                .system(|_, _: &A, _: ()| {})
-                .system(|_, a: &mut A, _: ()| a.0 += 1),
+                .system(|_, _: &A, _: &mut ()| {})
+                .system(|_, a: &mut A, _: &mut ()| a.0 += 1),
         )
         .unwrap_to_scheduler();
         let mut a = A(0);
@@ -423,8 +423,8 @@ mod tests {
         let world = World::new();
         let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
-                .system(|_, a: &mut A, _: ()| a.0 += 1)
-                .system(|_, a: &mut A, _: ()| a.0 += 1),
+                .system(|_, a: &mut A, _: &mut ()| a.0 += 1)
+                .system(|_, a: &mut A, _: &mut ()| a.0 += 1),
         )
         .unwrap_to_scheduler();
         let mut a = A(0);
@@ -453,8 +453,10 @@ mod tests {
         world.spawn_batch((0..10).map(|_| (B(0),)));
         let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
-                .system(|ctx, _: (), q: QueryMarker<&B>| for (_, _) in ctx.query(q).iter() {})
-                .system(|ctx, a: &A, q: QueryMarker<&mut B>| {
+                .system(
+                    |ctx, _: (), &mut q: &mut QueryMarker<&B>| for (_, _) in ctx.query(q).iter() {},
+                )
+                .system(|ctx, a: &A, &mut q: &mut QueryMarker<&mut B>| {
                     for (_, b) in ctx.query(q).iter() {
                         b.0 += a.0;
                     }
@@ -489,12 +491,12 @@ mod tests {
         world.spawn_batch((0..10).map(|_| (B(0),)));
         let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
-                .system(|ctx, a: &A, q: QueryMarker<&mut B>| {
+                .system(|ctx, a: &A, &mut q: &mut QueryMarker<&mut B>| {
                     for (_, b) in ctx.query(q).iter() {
                         b.0 += a.0;
                     }
                 })
-                .system(|ctx, a: &A, q: QueryMarker<&mut B>| {
+                .system(|ctx, a: &A, &mut q: &mut QueryMarker<&mut B>| {
                     for (_, b) in ctx.query(q).iter() {
                         b.0 += a.0;
                     }
@@ -530,13 +532,13 @@ mod tests {
         world.spawn_batch((0..10).map(|_| (B(0), C(0))));
         let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
-                .system(|ctx, a: &A, q: QueryMarker<(&A, &mut B)>| {
-                    for (_, (_, b)) in ctx.query(q).iter() {
+                .system(|ctx, a: &A, q: &mut QueryMarker<(&A, &mut B)>| {
+                    for (_, (_, b)) in ctx.query(*q).iter() {
                         b.0 += a.0;
                     }
                 })
-                .system(|ctx, a: &A, q: QueryMarker<(&mut B, &C)>| {
-                    for (_, (b, _)) in ctx.query(q).iter() {
+                .system(|ctx, a: &A, q: &mut QueryMarker<(&mut B, &C)>| {
+                    for (_, (b, _)) in ctx.query(*q).iter() {
                         b.0 += a.0;
                     }
                 }),

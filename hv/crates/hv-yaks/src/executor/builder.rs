@@ -70,14 +70,15 @@ where
     ) -> System<'closures, Resources, LocalResources>
     where
         Resources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + Send + Sync + 'closures,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, &mut Queries) + Send + Sync + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
-        Queries: QueryBundle,
+        Queries: QueryBundle + Send + Sync + 'closures,
     {
+        let mut queries = Queries::markers();
         let closure = Box::new(
             move |context: SystemContext<'a>, resources: &'a Resources::Wrapped| {
                 let fetched = ResourceRefs::fetch(resources);
-                closure(context, fetched, Queries::markers());
+                closure(context, fetched, &mut queries);
                 unsafe { ResourceRefs::release(resources) };
             },
         );
@@ -125,18 +126,20 @@ where
     where
         Resources::Wrapped: 'a,
         LocalResources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, Queries) + 'closures,
+        Closure:
+            FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, &mut Queries) + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
         LocalResourceRefs: Fetch<'a, LocalResources::Wrapped, LocalMarkers> + 'a,
-        Queries: QueryBundle,
+        Queries: QueryBundle + 'closures,
     {
+        let mut queries = Queries::markers();
         let closure = Box::new(
             move |context: SystemContext<'a>,
                   resources: &'a Resources::Wrapped,
                   local_resources: &'a LocalResources::Wrapped| {
                 let fetched = ResourceRefs::fetch(resources);
                 let local_fetched = LocalResourceRefs::fetch(local_resources);
-                closure(context, fetched, local_fetched, Queries::markers());
+                closure(context, fetched, local_fetched, &mut queries);
                 unsafe { ResourceRefs::release(resources) };
             },
         );
@@ -200,7 +203,7 @@ where
     /// fn system_0(
     ///     context: SystemContext,
     ///     res_a: &A,
-    ///     (query_0, query_1): (
+    ///     &mut (query_0, query_1): &mut (
     ///         QueryMarker<(&B, &mut C)>,
     ///         QueryMarker<hecs::Without<B, &C>>
     ///     ),
@@ -212,7 +215,7 @@ where
     /// fn system_1(
     ///     context: SystemContext,
     ///     (res_a, res_b): (&mut A, &B),
-    ///     query_0: QueryMarker<(&mut B, &mut C)>,
+    ///     &mut query_0: &mut QueryMarker<(&mut B, &mut C)>,
     /// ) {
     ///     // This system may read or write resource of type `A`, may read resource of type `B`,
     ///     // and may prepare & execute queries of `(&mut B, &mut C)`.
@@ -223,7 +226,7 @@ where
     /// let mut executor = Executor::<(A, B, C)>::builder()
     ///     .system(system_0)
     ///     .system(system_1)
-    ///     .system(|context, res_c: &C, _queries: ()| {
+    ///     .system(|context, res_c: &C, _queries: &mut ()| {
     ///         // This system may read resource of type `C` and will not perform any queries.
     ///         increment += 1; // `increment` will be borrowed by the executor.
     ///     })
@@ -238,9 +241,9 @@ where
     pub fn system<'a, Closure, ResourceRefs, Queries, Markers>(mut self, closure: Closure) -> Self
     where
         Resources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + Send + Sync + 'closures,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, &mut Queries) + Send + Sync + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
-        Queries: QueryBundle,
+        Queries: QueryBundle + Send + Sync + 'closures,
     {
         let id = SystemId(self.systems.len());
         let system = Self::box_system::<'a, Closure, ResourceRefs, Queries, Markers>(closure);
@@ -272,10 +275,11 @@ where
     where
         Resources::Wrapped: 'a,
         LocalResources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, Queries) + 'closures,
+        Closure:
+            FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, &mut Queries) + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
         LocalResourceRefs: Fetch<'a, LocalResources::Wrapped, LocalMarkers> + 'a,
-        Queries: QueryBundle,
+        Queries: QueryBundle + 'closures,
     {
         let id = SystemId(self.systems.len());
         let system = Self::box_local_system::<
@@ -323,11 +327,11 @@ where
     /// ```rust
     /// # use hv_yaks::{QueryMarker, SystemContext, Executor};
     /// # let world = hecs::World::new();
-    /// # fn system_0(_: SystemContext, _: (), _: ()) {}
-    /// # fn system_1(_: SystemContext, _: (), _: ()) {}
-    /// # fn system_2(_: SystemContext, _: (), _: ()) {}
-    /// # fn system_3(_: SystemContext, _: (), _: ()) {}
-    /// # fn system_4(_: SystemContext, _: (), _: ()) {}
+    /// # fn system_0(_: SystemContext, _: (), _: &mut ()) {}
+    /// # fn system_1(_: SystemContext, _: (), _: &mut ()) {}
+    /// # fn system_2(_: SystemContext, _: (), _: &mut ()) {}
+    /// # fn system_3(_: SystemContext, _: (), _: &mut ()) {}
+    /// # fn system_4(_: SystemContext, _: (), _: &mut ()) {}
     /// let _ = Executor::<()>::builder()
     ///     .system_with_handle(system_0, 0)
     ///     .system_with_handle(system_1, 1)
@@ -358,11 +362,11 @@ where
     /// ```rust
     /// # use hv_yaks::{QueryMarker, SystemContext, Executor};
     /// # let world = hecs::World::new();
-    /// # fn system_0(_: SystemContext, _: (), _: ()) {}
-    /// # fn system_1(_: SystemContext, _: (), _: ()) {}
-    /// # fn system_2(_: SystemContext, _: (), _: ()) {}
-    /// # fn system_3(_: SystemContext, _: (), _: ()) {}
-    /// # fn system_4(_: SystemContext, _: (), _: ()) {}
+    /// # fn system_0(_: SystemContext, _: (), _: &mut ()) {}
+    /// # fn system_1(_: SystemContext, _: (), _: &mut ()) {}
+    /// # fn system_2(_: SystemContext, _: (), _: &mut ()) {}
+    /// # fn system_3(_: SystemContext, _: (), _: &mut ()) {}
+    /// # fn system_4(_: SystemContext, _: (), _: &mut ()) {}
     /// let _ = Executor::<()>::builder()
     ///     .system_with_handle(system_1, 1)
     ///     .system_with_handle(system_0, 0)
@@ -382,9 +386,9 @@ where
     ) -> ExecutorBuilder<'closures, Resources, LocalResources, NewHandle>
     where
         Resources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + Send + Sync + 'closures,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, &mut Queries) + Send + Sync + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
-        Queries: QueryBundle,
+        Queries: QueryBundle + Send + Sync + 'closures,
         NewHandle: HandleConversion<Handle> + Debug,
     {
         let mut handles = NewHandle::convert_hash_map(self.handles);
@@ -430,10 +434,11 @@ where
     where
         Resources::Wrapped: 'a,
         LocalResources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, Queries) + 'closures,
+        Closure:
+            FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, &mut Queries) + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
         LocalResourceRefs: Fetch<'a, LocalResources::Wrapped, LocalMarkers> + 'a,
-        Queries: QueryBundle,
+        Queries: QueryBundle + 'closures,
         NewHandle: HandleConversion<Handle> + Debug,
     {
         let mut handles = NewHandle::convert_hash_map(self.handles);
@@ -490,9 +495,9 @@ where
     ) -> Self
     where
         Resources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + Send + Sync + 'closures,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, &mut Queries) + Send + Sync + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
-        Queries: QueryBundle,
+        Queries: QueryBundle + Send + Sync + 'closures,
         Handle: Eq + Hash + Debug,
     {
         let id = SystemId(self.systems.len());
@@ -535,10 +540,11 @@ where
     where
         Resources::Wrapped: 'a,
         LocalResources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, Queries) + 'closures,
+        Closure:
+            FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, &mut Queries) + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
         LocalResourceRefs: Fetch<'a, LocalResources::Wrapped, LocalMarkers> + 'a,
-        Queries: QueryBundle,
+        Queries: QueryBundle + 'closures,
         Handle: Eq + Hash + Debug,
     {
         let id = SystemId(self.systems.len());
@@ -596,9 +602,9 @@ where
     ) -> Self
     where
         Resources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, Queries) + Send + Sync + 'closures,
+        Closure: FnMut(SystemContext<'a>, ResourceRefs, &mut Queries) + Send + Sync + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
-        Queries: QueryBundle,
+        Queries: QueryBundle + Send + Sync + 'closures,
         Handle: Eq + Hash + Debug,
     {
         assert!(
@@ -653,10 +659,11 @@ where
     where
         Resources::Wrapped: 'a,
         LocalResources::Wrapped: 'a,
-        Closure: FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, Queries) + 'closures,
+        Closure:
+            FnMut(SystemContext<'a>, ResourceRefs, LocalResourceRefs, &mut Queries) + 'closures,
         ResourceRefs: Fetch<'a, Resources::Wrapped, Markers> + 'a,
         LocalResourceRefs: Fetch<'a, LocalResources::Wrapped, LocalMarkers> + 'a,
-        Queries: QueryBundle,
+        Queries: QueryBundle + 'closures,
         Handle: Eq + Hash + Debug,
     {
         assert!(

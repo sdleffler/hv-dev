@@ -47,7 +47,7 @@ fn motion(
     // A resource this system requires. Can be a single one, or any tuple up to 16.
     spawned: &SpawnedEntities,
     // Queries this system will execute. Can be a single one, or any tuple up to 16.
-    (no_acceleration, with_acceleration): (
+    &mut (no_acceleration, with_acceleration): &mut (
         // `QueryMarker` is a zero-sized type that can be fed into methods of `SystemContext`.
         QueryMarker<hecs::Without<Acceleration, (&mut Position, &Velocity)>>,
         QueryMarker<(&mut Position, &mut Velocity, &Acceleration)>,
@@ -81,7 +81,7 @@ fn motion(
 fn find_highest_velocity(
     context: SystemContext,
     highest: &mut Velocity,
-    query: QueryMarker<&Velocity>,
+    &mut query: &mut QueryMarker<&Velocity>,
 ) {
     // This cannot be batched as is because it needs mutable access to `highest`;
     // however, it's possible to work around that by using channels and/or `RwLock`.
@@ -97,7 +97,7 @@ fn find_highest_velocity(
 fn color(
     context: SystemContext,
     (spawned, rng): (&SpawnedEntities, &mut StdRng),
-    query: QueryMarker<(&Position, &Velocity, &mut Color)>,
+    &mut query: &mut QueryMarker<(&Position, &Velocity, &mut Color)>,
 ) {
     // Of course, it's possible to use resources mutably and still batch queries if
     // mutation happens outside batching.
@@ -117,7 +117,7 @@ fn color(
 fn find_average_color(
     context: SystemContext,
     (average_color, spawned): (&mut Color, &SpawnedEntities),
-    query: QueryMarker<&Color>,
+    &mut query: &mut QueryMarker<&Color>,
 ) {
     *average_color = Color(0.0, 0.0, 0.0, 0.0);
     for (_entity, color) in context.query(query).iter() {
@@ -193,7 +193,7 @@ fn main() {
         // for the lifetime of the executor.
         // (Note, systems with no resources or queries have
         // no business being in an executor, this is for demonstration only.)
-        .system(|_context, _resources: (), _queries: ()| iterations += 1)
+        .system(|_context, _resources: (), _queries: &mut ()| iterations += 1)
         // The builder will panic if given a system with a handle it already contains,
         // a list of dependencies with a system it doesn't contain yet,
         // or a system that depends on itself.

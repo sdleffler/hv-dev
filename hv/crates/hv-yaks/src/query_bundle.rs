@@ -1,4 +1,4 @@
-use hecs::{Component, Query, With, Without};
+use hecs::{Component, PreparedQuery, Query, With, Without};
 
 #[cfg(feature = "parallel")]
 use hecs::World;
@@ -119,6 +119,25 @@ where
     }
 }
 
+impl<Q0> QueryBundle for PreparedQuery<Q0>
+where
+    Q0: QueryExt,
+{
+    fn markers() -> Self {
+        PreparedQuery::new()
+    }
+
+    #[cfg(feature = "parallel")]
+    fn insert_component_types(component_type_set: &mut BorrowTypeSet) {
+        Q0::insert_component_types(component_type_set);
+    }
+
+    #[cfg(feature = "parallel")]
+    fn set_archetype_bits(world: &World, archetype_set: &mut ArchetypeSet) {
+        Q0::set_archetype_bits(world, archetype_set);
+    }
+}
+
 impl<Q0> QueryExt for (Q0,)
 where
     Q0: QueryExt,
@@ -135,6 +154,25 @@ where
 {
     fn markers() -> Self {
         (QueryMarker::new(),)
+    }
+
+    #[cfg(feature = "parallel")]
+    fn insert_component_types(component_type_set: &mut BorrowTypeSet) {
+        Q0::insert_component_types(component_type_set);
+    }
+
+    #[cfg(feature = "parallel")]
+    fn set_archetype_bits(world: &World, archetype_set: &mut ArchetypeSet) {
+        Q0::set_archetype_bits(world, archetype_set);
+    }
+}
+
+impl<Q0> QueryBundle for (PreparedQuery<Q0>,)
+where
+    Q0: Query + QueryExt,
+{
+    fn markers() -> Self {
+        (PreparedQuery::new(),)
     }
 
     #[cfg(feature = "parallel")]
@@ -172,6 +210,25 @@ macro_rules! impl_query_bundle {
         {
             fn markers() -> Self {
                 ($(QueryMarker::<$letter>::new(),)*)
+            }
+
+            #[cfg(feature = "parallel")]
+            fn insert_component_types(component_type_set: &mut BorrowTypeSet) {
+                $($letter::insert_component_types(component_type_set);)*
+            }
+
+            #[cfg(feature = "parallel")]
+            fn set_archetype_bits(world: &World, archetype_set: &mut ArchetypeSet) {
+                $($letter::set_archetype_bits(world, archetype_set);)*
+            }
+        }
+
+        impl<$($letter),*> QueryBundle for ($(PreparedQuery<$letter>,)*)
+        where
+            $($letter: Query + QueryExt,)*
+        {
+            fn markers() -> Self {
+                ($(PreparedQuery::<$letter>::new(),)*)
             }
 
             #[cfg(feature = "parallel")]

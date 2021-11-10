@@ -57,8 +57,8 @@ mod tests {
     fn trivial() {
         ExecutorParallel::<(), ()>::build(
             Executor::builder()
-                .system(|_, _: (), _: ()| {})
-                .system(|_, _: (), _: ()| {}),
+                .system(|_, _: (), _: &mut ()| {})
+                .system(|_, _: (), _: &mut ()| {}),
         )
         .unwrap_to_dispatcher();
     }
@@ -67,8 +67,8 @@ mod tests {
     fn trivial_with_resources() {
         ExecutorParallel::<(A, B, C), ()>::build(
             Executor::builder()
-                .system(|_, _: (), _: ()| {})
-                .system(|_, _: (), _: ()| {}),
+                .system(|_, _: (), _: &mut ()| {})
+                .system(|_, _: (), _: &mut ()| {}),
         )
         .unwrap_to_dispatcher();
     }
@@ -81,10 +81,10 @@ mod tests {
         let mut c = C(2);
         let mut executor = ExecutorParallel::<(A, B, C), ()>::build(
             Executor::builder()
-                .system(|_, (a, c): (&mut A, &C), _: ()| {
+                .system(|_, (a, c): (&mut A, &C), _: &mut ()| {
                     a.0 += c.0;
                 })
-                .system(|_, (b, c): (&mut B, &C), _: ()| {
+                .system(|_, (b, c): (&mut B, &C), _: &mut ()| {
                     b.0 += c.0;
                 }),
         )
@@ -107,13 +107,13 @@ mod tests {
         let mut a = A(1);
         let mut executor = ExecutorParallel::<(A,), ()>::build(
             Executor::builder()
-                .system(|ctx, a: &A, q: QueryMarker<(&A, &mut B)>| {
-                    for (_, (_, b)) in ctx.query(q).iter() {
+                .system(|ctx, a: &A, q: &mut QueryMarker<(&A, &mut B)>| {
+                    for (_, (_, b)) in ctx.query(*q).iter() {
                         b.0 += a.0;
                     }
                 })
-                .system(|ctx, a: &A, q: QueryMarker<(&A, &mut C)>| {
-                    for (_, (_, c)) in ctx.query(q).iter() {
+                .system(|ctx, a: &A, q: &mut QueryMarker<(&A, &mut C)>| {
+                    for (_, (_, c)) in ctx.query(*q).iter() {
                         c.0 += a.0;
                     }
                 }),

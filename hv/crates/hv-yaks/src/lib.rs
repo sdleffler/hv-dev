@@ -59,7 +59,7 @@
 //! let mut average = 0f32;
 //! let mut executor = Executor::<(u32, usize, f32)>::builder()
 //!     .system_with_handle(
-//!         |context, (entities, average): (&u32, &mut f32), query: QueryMarker<&f32>| {
+//!         |context, (entities, average): (&u32, &mut f32), &mut query: &mut QueryMarker<&f32>| {
 //!             *average = 0.0;
 //!             for (_entity, float) in context.query(query).iter() {
 //!                 *average += *float;
@@ -69,7 +69,7 @@
 //!         "average",
 //!     )
 //!     .system_with_handle(
-//!         |context, increment: &usize, query: QueryMarker<&mut u32>| {
+//!         |context, increment: &usize, &mut query: &mut QueryMarker<&mut u32>| {
 //!             for (_entity, unsigned) in context.query(query).iter() {
 //!                 *unsigned += *increment as u32
 //!             }
@@ -83,7 +83,7 @@
 //! fn system_with_two_queries(
 //!     context: hv_yaks::SystemContext,
 //!     (entities, average): (&u32, &f32),
-//!     (with_f32, without_f32): (
+//!     &mut (with_f32, without_f32): &mut (
 //!         QueryMarker<With<f32, &mut u32>>,
 //!         QueryMarker<Without<f32, &mut u32>>,
 //!     ),

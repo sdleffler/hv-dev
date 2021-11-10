@@ -1,6 +1,6 @@
 use hv_yaks::{Executor, SystemContext};
 
-fn dummy_system(_: SystemContext, _: (), _: ()) {}
+fn dummy_system(_: SystemContext, _: (), _: &mut ()) {}
 
 #[test]
 #[should_panic(expected = "system 0 already exists")]

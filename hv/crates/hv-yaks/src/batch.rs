@@ -88,7 +88,7 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 /// #     DummyPool
 /// # };
 /// let mut executor = Executor::<(u32, )>::builder()
-///     .system(|context, num_entities: &u32, query: QueryMarker<(&mut Pos, &Vel)>| {
+///     .system(|context, num_entities: &u32, &mut query: &mut QueryMarker<(&mut Pos, &Vel)>| {
 ///         hv_yaks::batch(
 ///             &mut context.query(query),
 ///             num_entities / 16,
@@ -103,7 +103,7 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 ///
 /// thread_pool.install(|| {
 ///     let mut executor = Executor::<(u32, )>::builder()
-///         .system(|context, num_entities: &u32, query: QueryMarker<(&mut Pos, &Vel)>| {
+///         .system(|context, num_entities: &u32, &mut query: &mut QueryMarker<(&mut Pos, &Vel)>| {
 ///             hv_yaks::batch(
 ///                 &mut context.query(query),
 ///                 num_entities / 16,
