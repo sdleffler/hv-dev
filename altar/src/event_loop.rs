@@ -131,6 +131,9 @@ impl<C: 'static, E: Send + Sync + 'static> EventLoop<C> for TimedSceneStackLoop<
     ) -> Result<ControlFlow<(), ()>> {
         let mut event_queue = self.event_queue.take().unwrap();
         event_queue.events.append(events);
+
+        // In case there was an `EventQueue` already in the `Resources`, we hold on to it (and put
+        // it back later.)
         let prev_eq = resources.insert(event_queue);
         let dt = (self.target_fps as f32).recip();
 
@@ -151,6 +154,7 @@ impl<C: 'static, E: Send + Sync + 'static> EventLoop<C> for TimedSceneStackLoop<
 
         self.event_queue = Some(resources.remove().unwrap_or_else(EventQueue::new));
 
+        // We put back the event queue that was there before us, if it exists.
         if let Some(prev) = prev_eq {
             resources.insert(prev);
         }
