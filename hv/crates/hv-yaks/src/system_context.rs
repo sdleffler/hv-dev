@@ -1,5 +1,6 @@
 use hecs::{
-    Archetype, ArchetypesGeneration, Entity, NoSuchEntity, Query, QueryBorrow, QueryOne, World,
+    Archetype, ArchetypesGeneration, Entity, NoSuchEntity, PreparedQuery, PreparedQueryBorrow,
+    Query, QueryBorrow, QueryOne, World,
 };
 
 use crate::{QueryMarker, SystemId};
@@ -38,7 +39,7 @@ impl<'scope> SystemContext<'scope> {
     /// fn some_system(
     ///     context: SystemContext,
     ///     _resources: (),
-    ///     query: QueryMarker<(&mut Pos, &Vel)>
+    ///     &mut query: &mut QueryMarker<(&mut Pos, &Vel)>
     /// ) {
     ///     for (_entity, (pos, vel)) in context.query(query).iter() {
     ///         *pos += *vel;
@@ -50,6 +51,39 @@ impl<'scope> SystemContext<'scope> {
         Q: Query + Send + Sync,
     {
         self.world.query()
+    }
+
+    /// Perform a query with a cache of the query results. See [`PreparedQuery`] for more.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use hv_yaks::{SystemContext};
+    /// # use hecs::PreparedQuery;
+    /// # struct Pos;
+    /// # #[derive(Clone, Copy)]
+    /// # struct Vel;
+    /// # impl std::ops::AddAssign<Vel> for Pos {
+    /// #     fn add_assign(&mut self, _: Vel) {}
+    /// # }
+    /// # let world = hecs::World::new();
+    /// fn some_system(
+    ///     context: SystemContext,
+    ///     _resources: (),
+    ///     query: &mut PreparedQuery<(&mut Pos, &Vel)>
+    /// ) {
+    ///     for (_entity, (pos, vel)) in context.prepared_query(query).iter() {
+    ///         *pos += *vel;
+    ///     }
+    /// };
+    /// ```
+    pub fn prepared_query<'q, Q>(
+        &'q self,
+        prepared_query: &'q mut PreparedQuery<Q>,
+    ) -> PreparedQueryBorrow<'q, Q>
+    where
+        Q: Query + Send + Sync,
+    {
+        prepared_query.query(self.world)
     }
 
     /// Prepares a query against a single entity using the given
