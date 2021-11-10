@@ -244,6 +244,24 @@ impl<T> Default for ChunkMap<T> {
 }
 
 impl<T> ChunkMap<T> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_layers(layers: impl IntoIterator<Item = (i32, ChunkLayer<T>)>) -> Self {
+        Self {
+            layers: layers.into_iter().collect(),
+        }
+    }
+
+    pub fn layers(&self) -> impl Iterator<Item = (i32, &ChunkLayer<T>)> {
+        self.layers.iter().map(|(&i, c)| (i, c))
+    }
+
+    pub fn layers_mut(&mut self) -> impl Iterator<Item = (i32, &mut ChunkLayer<T>)> {
+        self.layers.iter_mut().map(|(&i, c)| (i, c))
+    }
+
     pub fn get_layers_in_range(
         &self,
         range: impl RangeBounds<i32>,
@@ -258,8 +276,16 @@ impl<T> ChunkMap<T> {
         self.layers.range_mut(range).map(|(&i, c)| (i, c))
     }
 
-    pub fn get_or_insert_layer(&mut self, layer: i32) -> &mut ChunkLayer<T> {
-        self.layers.entry(layer).or_default()
+    pub fn get_or_insert_layer(&mut self, index: i32) -> &mut ChunkLayer<T> {
+        self.layers.entry(index).or_default()
+    }
+
+    pub fn insert_layer(&mut self, index: i32, layer: ChunkLayer<T>) -> Option<ChunkLayer<T>> {
+        self.layers.insert(index, layer)
+    }
+
+    pub fn remove_layer(&mut self, index: i32) -> Option<ChunkLayer<T>> {
+        self.layers.remove(&index)
     }
 
     pub fn get_slot(&self, coords: Vector3<i32>) -> Option<&T> {
