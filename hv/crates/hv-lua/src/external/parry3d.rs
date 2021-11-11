@@ -9,6 +9,7 @@ use parry3d::{
 };
 
 use crate::{
+    from_table::Sequence,
     hv::{LuaUserDataTypeExt, LuaUserDataTypeTypeExt},
     AnyUserData, Error, ExternalResult, Lua, Result, Table, ToLua, UserData, UserDataFields,
     UserDataMethods, Value,
@@ -73,7 +74,7 @@ impl UserData for Compound {
     fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function(
             "new",
-            |_, (txs, shapes): (Vec<Isometry3<Real>>, Vec<SharedShape>)| {
+            |_, (txs, shapes): (Sequence<Isometry3<Real>>, Sequence<SharedShape>)| {
                 let pairs = txs.into_iter().zip(shapes).collect();
                 Ok(Self::new(pairs))
             },
@@ -91,14 +92,14 @@ impl UserData for ConvexPolyhedron {
     }
 
     fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
-        methods.add_function("from_convex_hull", |_, points: Vec<Point3<Real>>| {
+        methods.add_function("from_convex_hull", |_, points: Sequence<Point3<Real>>| {
             Ok(Self::from_convex_hull(&points))
         });
 
         methods.add_function(
             "from_convex_mesh",
-            |_, (points, indices): (Vec<Point3<Real>>, Vec<[u32; 3]>)| {
-                Ok(Self::from_convex_mesh(points, &indices))
+            |_, (points, indices): (Sequence<Point3<Real>>, Sequence<[u32; 3]>)| {
+                Ok(Self::from_convex_mesh(points.0, &indices))
             },
         );
     }
@@ -138,17 +139,20 @@ impl UserData for SharedShape {
         });
         methods.add_function(
             "compound",
-            |_, (txs, shapes): (Vec<Isometry3<Real>>, Vec<SharedShape>)| {
+            |_, (txs, shapes): (Sequence<Isometry3<Real>>, Sequence<SharedShape>)| {
                 let pairs = txs.into_iter().zip(shapes).collect();
                 Ok(Self::compound(pairs))
             },
         );
-        methods.add_function("convex_hull", |_, points: Vec<Point3<Real>>| {
+        methods.add_function("convex_hull", |_, points: Sequence<Point3<Real>>| {
             Ok(Self::convex_hull(&points))
         });
-        methods.add_function("convex_mesh", |_, (points, indices): (_, Vec<[u32; 3]>)| {
-            Ok(Self::convex_mesh(points, &indices))
-        });
+        methods.add_function(
+            "convex_mesh",
+            |_, (points, indices): (Sequence<_>, Sequence<[u32; 3]>)| {
+                Ok(Self::convex_mesh(points.0, &indices.0))
+            },
+        );
         methods.add_function("cuboid", |_, (hx, hy, hz)| Ok(Self::cuboid(hx, hy, hz)));
     }
 }

@@ -2,16 +2,16 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::{CStr, CString};
 
-use hv_lua::{Lua, Result};
+use hv_lua::{Lua, Result, Seq};
 use maplit::{btreemap, btreeset, hashmap, hashset};
 
 #[test]
-fn test_conv_vec() -> Result<()> {
+fn test_conv_seq() -> Result<()> {
     let lua = Lua::new();
 
-    let v = vec![1, 2, 3];
+    let v = Seq(vec![1, 2, 3]);
     lua.globals().set("v", v.clone())?;
-    let v2: Vec<i32> = lua.globals().get("v")?;
+    let v2: Seq<i32> = lua.globals().get("v")?;
     assert_eq!(v, v2);
 
     Ok(())

@@ -1,4 +1,5 @@
 use hv::lua::{Lua, Nil, Result, Table, TableExt, Value};
+use hv_lua::Seq;
 
 #[test]
 fn test_set_get() -> Result<()> {
@@ -117,7 +118,7 @@ fn test_table_sequence_from() -> Result<()> {
 
     assert_eq!(
         get_table
-            .call::<_, Table>(vec![1, 2, 3])?
+            .call::<_, Table>(Seq(vec![1, 2, 3]))?
             .sequence_values()
             .collect::<Result<Vec<i64>>>()?,
         vec![1, 2, 3]

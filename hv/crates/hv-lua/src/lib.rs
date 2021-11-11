@@ -105,6 +105,7 @@ pub mod prelude;
 
 pub use crate::{ffi::lua_CFunction, ffi::lua_State};
 
+pub use crate::conversion::from_table;
 pub use crate::error::{Error, ExternalError, ExternalResult, Result};
 pub use crate::function::Function;
 pub use crate::hook::{Debug, DebugEvent, DebugNames, DebugSource, DebugStack, HookTriggers};
@@ -113,7 +114,7 @@ pub use crate::multi::Variadic;
 pub use crate::scope::Scope;
 pub use crate::stdlib::StdLib;
 pub use crate::string::String;
-pub use crate::table::{Table, TableExt, TablePairs, TableSequence};
+pub use crate::table::{Table, TableExt, TablePairsIter, TableSequenceIter};
 pub use crate::thread::{Thread, ThreadStatus};
 pub use crate::types::{Integer, LightUserData, Number, RegistryKey};
 pub use crate::userdata::{

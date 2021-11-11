@@ -24,7 +24,7 @@ use hv_alchemy::{
 };
 use hv_guarded_borrow::{NonBlockingGuardedBorrow, NonBlockingGuardedMutBorrowMut};
 
-use crate::table::{Table, TablePairs};
+use crate::table::{Table, TablePairsIter};
 use crate::types::{Callback, LuaRef, MaybeSend};
 use crate::util::{check_stack, get_userdata, take_userdata, StackGuard};
 use crate::value::{FromLua, FromLuaMulti, ToLua, ToLuaMulti};
@@ -41,6 +41,8 @@ use crate::value::Value;
 
 #[cfg(feature = "async")]
 use crate::types::AsyncCallback;
+
+mod collections;
 
 /// Kinds of metamethods that can be overridden.
 ///
@@ -1237,7 +1239,7 @@ impl<'lua> UserDataMetatable<'lua> {
 ///
 /// [`UserData`]: crate::UserData
 /// [`UserDataMetatable::pairs`]: crate::UserDataMetatable::method.pairs
-pub struct UserDataMetatablePairs<'lua, V>(TablePairs<'lua, StdString, V>);
+pub struct UserDataMetatablePairs<'lua, V>(TablePairsIter<'lua, StdString, V>);
 
 impl<'lua, V> Iterator for UserDataMetatablePairs<'lua, V>
 where

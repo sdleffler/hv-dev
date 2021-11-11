@@ -19,6 +19,8 @@ use crate::types::{LightUserData, MaybeSend};
 use crate::userdata::{AnyUserData, UserData};
 use crate::value::{FromLua, Nil, ToLua, Value};
 
+pub mod from_table;
+
 impl<'lua> ToLua<'lua> for Value<'lua> {
     #[inline]
     fn to_lua(self, _: &'lua Lua) -> Result<Value<'lua>> {
@@ -517,26 +519,6 @@ impl<'lua, T: FromLua<'lua>> FromLua<'lua> for Box<[T]> {
             Err(Error::FromLuaConversionError {
                 from: value.type_name(),
                 to: "Box<[T]>",
-                message: Some("expected table".to_string()),
-            })
-        }
-    }
-}
-
-impl<'lua, T: ToLua<'lua>> ToLua<'lua> for Vec<T> {
-    fn to_lua(self, lua: &'lua Lua) -> Result<Value<'lua>> {
-        Ok(Value::Table(lua.create_sequence_from(self)?))
-    }
-}
-
-impl<'lua, T: FromLua<'lua>> FromLua<'lua> for Vec<T> {
-    fn from_lua(value: Value<'lua>, _: &'lua Lua) -> Result<Self> {
-        if let Value::Table(table) = value {
-            table.sequence_values().collect()
-        } else {
-            Err(Error::FromLuaConversionError {
-                from: value.type_name(),
-                to: "Vec",
                 message: Some("expected table".to_string()),
             })
         }

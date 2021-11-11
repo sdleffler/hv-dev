@@ -10,6 +10,7 @@ use hv::lua::{
     ChunkMode, Error, ExternalError, Function, Lua, LuaOptions, Nil, Result, StdLib, String, Table,
     UserData, Value, Variadic,
 };
+use hv_lua::Seq;
 
 #[test]
 fn test_safety() -> Result<()> {
@@ -870,7 +871,7 @@ fn test_recursion() -> Result<()> {
 fn test_too_many_returns() -> Result<()> {
     let lua = Lua::new();
     let f = lua.create_function(|_, ()| Ok(Variadic::from_iter(1..1000000)))?;
-    assert!(f.call::<_, Vec<u32>>(()).is_err());
+    assert!(f.call::<_, Seq<u32>>(()).is_err());
     Ok(())
 }
 
