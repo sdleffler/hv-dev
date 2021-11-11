@@ -102,9 +102,7 @@ impl<T> IndexMut<SubCoords> for Chunk<T> {
 impl<T: Default> Default for Chunk<T> {
     fn default() -> Self {
         let mut array = MaybeUninit::uninit_array();
-        array
-            .iter_mut()
-            .for_each(|t| drop(t.write(Default::default())));
+        array.fill_with(|| MaybeUninit::new(Default::default()));
         Chunk {
             data: Box::new(unsafe { MaybeUninit::array_assume_init(array) }),
         }
