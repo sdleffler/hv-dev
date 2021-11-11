@@ -199,6 +199,15 @@ impl Drop for Lua {
 impl Drop for ExtraData {
     fn drop(&mut self) {
         *mlua_expect!(self.registry_unref_list.lock(), "unref list poisoned") = None;
+
+        let vecs = mem::take(&mut self.multivalue_vec_pool);
+        for (ptr, len, cap) in vecs {
+            assert_eq!(
+                len, 0,
+                "a vector returned to the multivalue vec pool was nonempty!"
+            );
+            drop(unsafe { Vec::from_raw_parts(ptr, len, cap) });
+        }
     }
 }
 

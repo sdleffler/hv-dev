@@ -261,6 +261,7 @@ impl<'lua> MultiValue<'lua> {
 
 impl<'lua> Drop for MultiValue<'lua> {
     fn drop(&mut self) {
+        self.0.clear();
         self.1.recycle_multivalue_vec(mem::take(&mut self.0));
     }
 }
