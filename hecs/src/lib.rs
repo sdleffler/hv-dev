@@ -35,7 +35,6 @@
 #![warn(missing_docs)]
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(option_result_unwrap_unchecked)]
 
 #[cfg(feature = "std")]
 extern crate std;

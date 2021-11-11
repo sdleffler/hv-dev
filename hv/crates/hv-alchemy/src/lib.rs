@@ -69,11 +69,48 @@ use core::{
     hash::Hash,
     marker::{PhantomData, Unsize},
     ptr::{DynMetadata, Pointee},
+    sync::atomic::{AtomicPtr, Ordering},
 };
 use hashbrown::{HashMap, HashSet};
 use hv_sync::{atom::AtomSetOnce, cell::AtomicRefCell};
 use lazy_static::lazy_static;
 use spin::RwLock;
+
+/// An object-safe trait which contains a method that will only be called if its `T: Send` bound can
+/// be proven for the argument type `T`.
+pub trait WithSend<T: ?Sized> {
+    /// Called if it can be dynamically proven that `T: Send`.
+    fn with_send(&mut self)
+    where
+        T: Send;
+}
+
+/// An object-safe trait which contains a method that will only be called if its `T: Sync` bound can
+/// be proven for the argument type `T`.
+pub trait WithSync<T: ?Sized> {
+    /// Called if it can be dynamically proven that `T: Sync`.
+    fn with_sync(&mut self)
+    where
+        T: Sync;
+}
+
+/// An object-safe trait which contains a method that will only be called if its `T: Copy` bound can
+/// be proven for the argument type `T`.
+pub trait WithCopy<T: ?Sized> {
+    /// Called if it can be dynamically proven that `T: Copy`.
+    fn with_copy(&mut self)
+    where
+        T: Copy;
+}
+
+/// An object-safe trait which contains a method that will only be called if its `T: Clone` bound
+/// can be proven for the argument type `T`.
+pub trait WithClone<T: ?Sized> {
+    /// Called if it can be dynamically proven that `T: Clone`.
+    fn with_clone(&mut self)
+    where
+        T: Clone;
+}
 
 /// Convenience function for getting the [`Type`] for some `T`.
 pub fn of<T: 'static>() -> Type<T> {
@@ -134,7 +171,7 @@ fn make_registry() -> HashMap<TypeId, &'static TypeTable> {
             + Send
             + Sync,
     {
-        t.add_clone().add_copy().add::<dyn Send>().add::<dyn Sync>();
+        t.add_clone().add_copy().add_send().add_sync();
         wrappers(t);
     }
 
@@ -308,6 +345,11 @@ pub struct TypeTable {
     pub(crate) alchemical_copy: AtomSetOnce<&'static DynVtable>,
     pub(crate) send: AtomSetOnce<&'static DynVtable>,
     pub(crate) sync: AtomSetOnce<&'static DynVtable>,
+
+    pub(crate) send_shim: AtomicPtr<()>,
+    pub(crate) sync_shim: AtomicPtr<()>,
+    pub(crate) clone_shim: AtomicPtr<()>,
+    pub(crate) copy_shim: AtomicPtr<()>,
 }
 
 impl TypeTable {
@@ -327,6 +369,10 @@ impl TypeTable {
             alchemical_copy: AtomSetOnce::empty(),
             send: AtomSetOnce::empty(),
             sync: AtomSetOnce::empty(),
+            send_shim: AtomicPtr::new(core::ptr::null_mut()),
+            sync_shim: AtomicPtr::new(core::ptr::null_mut()),
+            clone_shim: AtomicPtr::new(core::ptr::null_mut()),
+            copy_shim: AtomicPtr::new(core::ptr::null_mut()),
         };
 
         Box::leak(Box::new(this))
@@ -410,13 +456,13 @@ impl TypeTable {
                 let id = TypeId::of::<U>();
                 let vtable = Box::leak(Box::new(DynVtable::new::<T, U>(ptr)));
                 if id == TypeId::of::<dyn CloneProxy>() {
-                    self.alchemical_clone.set_if_none(vtable);
+                    panic!("use `add_clone` instead of explicitly adding `dyn CloneProxy`!");
                 } else if id == TypeId::of::<dyn CopyProxy>() {
-                    self.alchemical_copy.set_if_none(vtable);
+                    panic!("use `add_copy` instead of explicitly adding `dyn CopyProxy`!");
                 } else if id == TypeId::of::<dyn Send>() {
-                    self.send.set_if_none(vtable);
+                    panic!("use `add_send` instead of explicitly adding `dyn Send`!");
                 } else if id == TypeId::of::<dyn Sync>() {
-                    self.sync.set_if_none(vtable);
+                    panic!("use `add_sync` instead of explicitly adding `dyn Sync`!");
                 } else {
                     self.vtables.write().insert(id, vtable);
                 }
@@ -443,10 +489,21 @@ impl TypeTable {
     ///
     /// Panics if `T` is not the type of this table.
     pub fn add_clone<T: Clone + 'static>(&self) -> &Self {
+        fn clone_shim<T: Clone>(with: &mut dyn WithClone<T>) {
+            with.with_clone();
+        }
+
         assert_eq!(TypeId::of::<T>(), self.id);
         self.alchemical_clone.set_if_none(Box::leak(Box::new(
             DynVtable::new::<T, dyn CloneProxy>(core::ptr::null()),
         )));
+        let shim_ptr = clone_shim::<T> as *const () as *mut ();
+        let _ = self.clone_shim.compare_exchange(
+            core::ptr::null_mut(),
+            shim_ptr,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
         self
     }
 
@@ -454,11 +511,91 @@ impl TypeTable {
     ///
     /// Panics if `T` is not the type of this table.
     pub fn add_copy<T: Copy + 'static>(&self) -> &Self {
+        fn copy_shim<T: Copy>(with: &mut dyn WithCopy<T>) {
+            with.with_copy();
+        }
+
         assert_eq!(TypeId::of::<T>(), self.id);
         self.alchemical_copy
             .set_if_none(Box::leak(Box::new(DynVtable::new::<T, dyn CopyProxy>(
                 core::ptr::null(),
             ))));
+
+        let shim_ptr = copy_shim::<T> as *const () as *mut ();
+        let _ = self.copy_shim.compare_exchange(
+            core::ptr::null_mut(),
+            shim_ptr,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+        self
+    }
+
+    /// Mark that this table's type (`T`) is [`Send`].
+    ///
+    /// Panics if `T` is not the type of this table.
+    pub fn add_send<T: Send + 'static>(&self) -> &Self {
+        self.add_send_with::<T>(core::ptr::null())
+    }
+
+    /// Mark that this table's type (`T`) is [`Sync`].
+    ///
+    /// Panics if `T` is not the type of this table.
+    pub fn add_sync<T: Sync + 'static>(&self) -> &Self {
+        self.add_sync_with::<T>(core::ptr::null())
+    }
+
+    /// Mark that this table's type (`T`) is [`Send`], given a pointer to cast and extract the
+    /// vtable from.
+    ///
+    /// Panics if `T` is not the type of this table.
+    pub fn add_send_with<T>(&self, ptr: *const T) -> &Self
+    where
+        T: ?Sized + Send + Alchemical<dyn Send> + 'static,
+    {
+        fn send_shim<T: ?Sized + Send>(with: &mut dyn WithSend<T>) {
+            with.with_send();
+        }
+
+        assert_eq!(TypeId::of::<T>(), self.id);
+        self.send
+            .set_if_none(Box::leak(Box::new(DynVtable::new::<T, dyn Send>(ptr))));
+
+        let shim_ptr = send_shim::<T> as *const () as *mut ();
+        let _ = self.send_shim.compare_exchange(
+            core::ptr::null_mut(),
+            shim_ptr,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+
+        self
+    }
+
+    /// Mark that this table's type (`T`) is [`Sync`], given a pointer to cast and extract the
+    /// vtable from.
+    ///
+    /// Panics if `T` is not the type of this table.
+    pub fn add_sync_with<T>(&self, ptr: *const T) -> &Self
+    where
+        T: ?Sized + Sync + Alchemical<dyn Sync> + 'static,
+    {
+        fn sync_shim<T: ?Sized + Sync>(with: &mut dyn WithSync<T>) {
+            with.with_sync();
+        }
+
+        assert_eq!(TypeId::of::<T>(), self.id);
+        self.sync
+            .set_if_none(Box::leak(Box::new(DynVtable::new::<T, dyn Sync>(ptr))));
+
+        let shim_ptr = sync_shim::<T> as *const () as *mut ();
+        let _ = self.sync_shim.compare_exchange(
+            core::ptr::null_mut(),
+            shim_ptr,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+
         self
     }
 
@@ -587,6 +724,24 @@ impl<T: ?Sized + 'static> Type<T> {
         self
     }
 
+    /// Register `T` as [`Send`].
+    pub fn add_send(self) -> Self
+    where
+        T: Send + Sized,
+    {
+        self.0.add_send::<T>();
+        self
+    }
+
+    /// Register `T` as [`Sync`].
+    pub fn add_sync(self) -> Self
+    where
+        T: Sync + Sized,
+    {
+        self.0.add_sync::<T>();
+        self
+    }
+
     /// Register `T`'s implementation of some object-safe trait `U`, given a pointer to extract
     /// from, and return `Self` for convenience when adding multiple traits.
     pub fn add_with<U>(self, ptr: *const T) -> Self
@@ -612,6 +767,50 @@ impl<T: ?Sized + 'static> Type<T> {
     /// Get the [`&'static TypeTable`](TypeTable) underlying this `Type<T>`.
     pub fn as_untyped(self) -> &'static TypeTable {
         self.0
+    }
+
+    /// Run a function in a shim if `T: Copy`, with a static `Copy` bound on the shim (but not on
+    /// this function.)
+    pub fn try_prove_copy(self, with: &mut dyn WithCopy<T>) {
+        let ptr = self.0.copy_shim.load(Ordering::Acquire);
+
+        if !ptr.is_null() {
+            let f = unsafe { core::mem::transmute::<*mut (), fn(&mut dyn WithCopy<T>)>(ptr) };
+            f(with);
+        }
+    }
+
+    /// Run a function in a shim if `T: Clone`, with a static `Clone` bound on the shim (but not on
+    /// this function.)
+    pub fn try_prove_clone(self, with: &mut dyn WithClone<T>) {
+        let ptr = self.0.clone_shim.load(Ordering::Acquire);
+
+        if !ptr.is_null() {
+            let f = unsafe { core::mem::transmute::<*mut (), fn(&mut dyn WithClone<T>)>(ptr) };
+            f(with);
+        }
+    }
+
+    /// Run a function in a shim if `T: Send`, with a static `Send` bound on the shim (but not on
+    /// this function.)
+    pub fn try_prove_send(self, with: &mut dyn WithSend<T>) {
+        let ptr = self.0.send_shim.load(Ordering::Acquire);
+
+        if !ptr.is_null() {
+            let f = unsafe { core::mem::transmute::<*mut (), fn(&mut dyn WithSend<T>)>(ptr) };
+            f(with);
+        }
+    }
+
+    /// Run a function in a shim if `T: Sync`, with a static `Sync` bound on the shim (but not on
+    /// this function.)
+    pub fn try_prove_sync(self, with: &mut dyn WithSync<T>) {
+        let ptr = self.0.sync_shim.load(Ordering::Acquire);
+
+        if !ptr.is_null() {
+            let f = unsafe { core::mem::transmute::<*mut (), fn(&mut dyn WithSync<T>)>(ptr) };
+            f(with);
+        }
     }
 }
 
@@ -1022,10 +1221,10 @@ mod tests {
         Type::<i32>::of().add_clone();
 
         let boxed: Box<dyn AlchemicalAny> = Box::new(5i32);
-        let other: Box<dyn AlchemicalAny> = boxed.try_clone().unwrap();
+        let other: Box<dyn AlchemicalAny> = (*boxed).try_clone().unwrap();
 
-        let a = *boxed.downcast_ref::<i32>().unwrap();
-        let b = *other.downcast_ref::<i32>().unwrap();
+        let a = *(*boxed).downcast_ref::<i32>().unwrap();
+        let b = *(*other).downcast_ref::<i32>().unwrap();
 
         assert_eq!(a, b);
     }
@@ -1039,10 +1238,10 @@ mod tests {
         Type::<i32>::of().add_copy();
 
         let boxed: Box<dyn AlchemicalAny> = Box::new(5i32);
-        let other: Box<dyn AlchemicalAny> = boxed.try_copy().unwrap();
+        let other: Box<dyn AlchemicalAny> = (*boxed).try_copy().unwrap();
 
-        let a = *boxed.downcast_ref::<i32>().unwrap();
-        let b = *other.downcast_ref::<i32>().unwrap();
+        let a = *(*boxed).downcast_ref::<i32>().unwrap();
+        let b = *(*other).downcast_ref::<i32>().unwrap();
 
         assert_eq!(a, b);
     }

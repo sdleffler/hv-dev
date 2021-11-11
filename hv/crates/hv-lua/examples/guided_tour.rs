@@ -1,7 +1,10 @@
 use std::f32;
 use std::iter::FromIterator;
 
-use hv_lua::{chunk, Function, Lua, MetaMethod, Result, Seq, UserData, UserDataMethods, Variadic};
+use hv_lua::{
+    chunk, from_table::Sequence, Function, Lua, MetaMethod, Result, UserData, UserDataMethods,
+    Variadic,
+};
 
 fn main() -> Result<()> {
     // You can create a new Lua state with `Lua::new()`. This loads the default Lua std library
@@ -15,7 +18,7 @@ fn main() -> Result<()> {
     let globals = lua.globals();
 
     globals.set("string_var", "hello")?;
-    globals.set("int_var", 42)?;
+    globals.set("int_var", 42i32)?;
 
     assert_eq!(globals.get::<_, String>("string_var")?, "hello");
     assert_eq!(globals.get::<_, i64>("int_var")?, 42);
@@ -40,8 +43,8 @@ fn main() -> Result<()> {
 
     // User can use special `chunk!` macro to use Rust tokenizer and automatically capture variables
 
-    let a = 1;
-    let b = 2;
+    let a = 1i32;
+    let b = 2i32;
     let name = "world";
     lua.load(chunk! {
         print($a + $b)
@@ -52,15 +55,15 @@ fn main() -> Result<()> {
     // You can create and manage Lua tables
 
     let array_table = lua.create_table()?;
-    array_table.set(1, "one")?;
-    array_table.set(2, "two")?;
-    array_table.set(3, "three")?;
+    array_table.set(1i32, "one")?;
+    array_table.set(2i32, "two")?;
+    array_table.set(3i32, "three")?;
     assert_eq!(array_table.len()?, 3);
 
     let map_table = lua.create_table()?;
-    map_table.set("one", 1)?;
-    map_table.set("two", 2)?;
-    map_table.set("three", 3)?;
+    map_table.set("one", 1i32)?;
+    map_table.set("two", 2i32)?;
+    map_table.set("three", 3i32)?;
     let v: i64 = map_table.get("two")?;
     assert_eq!(v, 2);
 
@@ -103,12 +106,13 @@ fn main() -> Result<()> {
     // of the arguments can be anything that is convertible from the parameters given by Lua, in
     // this case, the function expects two string sequences.
 
-    let check_equal = lua.create_function(|_, (list1, list2): (Seq<String>, Seq<String>)| {
-        // This function just checks whether two string lists are equal, and in an inefficient way.
-        // Lua callbacks return `mlua::Result`, an Ok value is a normal return, and an Err return
-        // turns into a Lua 'error'. Again, any type that is convertible to Lua may be returned.
-        Ok(list1 == list2)
-    })?;
+    let check_equal =
+        lua.create_function(|_, (list1, list2): (Sequence<String>, Sequence<String>)| {
+            // This function just checks whether two string lists are equal, and in an inefficient way.
+            // Lua callbacks return `mlua::Result`, an Ok value is a normal return, and an Err return
+            // turns into a Lua 'error'. Again, any type that is convertible to Lua may be returned.
+            Ok(list1 == list2)
+        })?;
     globals.set("check_equal", check_equal)?;
 
     // You can also accept runtime variadic arguments to rust callbacks.

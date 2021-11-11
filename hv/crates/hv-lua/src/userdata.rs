@@ -890,9 +890,9 @@ impl<'lua> AnyUserData<'lua> {
             match type_id {
                 Some(type_id) if type_id == TypeId::of::<T>() => {
                     // Try to borrow userdata exclusively. At the same time, try cloning it.
-                    let maybe_cloned = (*get_userdata::<UserDataCell>(lua.state, -1))
-                        .try_dyn_borrow_mut::<dyn AlchemicalAny>()?
-                        .try_clone();
+                    let maybe_cloned = (*(*get_userdata::<UserDataCell>(lua.state, -1))
+                        .try_dyn_borrow_mut::<dyn AlchemicalAny>()?)
+                    .try_clone();
 
                     if let Some(cloned) = maybe_cloned {
                         Ok(*cloned.downcast::<T>().unwrap())
@@ -1287,7 +1287,7 @@ impl<'lua> Serialize for AnyUserData<'lua> {
 
 impl UserData for RegistryKey {
     fn on_metatable_init(table: Type<Self>) {
-        table.add::<dyn Send>().add::<dyn Sync>();
+        table.add_send().add_sync();
     }
 
     fn add_fields<'lua, F: UserDataFields<'lua, Self>>(fields: &mut F) {
@@ -1854,7 +1854,7 @@ impl<T: 'static + UserData + MaybeSend> UserData for Arc<Mutex<T>> {
         table.add_clone();
 
         #[cfg(feature = "send")]
-        table.add::<dyn Send>().add::<dyn Sync>();
+        table.add_send().add_sync();
     }
 
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
@@ -1871,7 +1871,7 @@ impl<T: 'static + UserData + MaybeSend + MaybeSync> UserData for Arc<RwLock<T>> 
         table.add_clone();
 
         #[cfg(feature = "send")]
-        table.add::<dyn Send>().add::<dyn Sync>();
+        table.add_send().add_sync();
     }
 
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {

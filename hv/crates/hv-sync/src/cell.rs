@@ -735,7 +735,7 @@ pub struct ArcRef<T: ?Sized, C: ?Sized = T> {
     lease: Lease,
 }
 
-unsafe impl<T: Send + Sync, C: ?Sized> Send for ArcRef<T, C> {}
+unsafe impl<T: Send + Sync, C: ?Sized + Send + Sync> Send for ArcRef<T, C> {}
 unsafe impl<T: Send + Sync, C: ?Sized> Sync for ArcRef<T, C> {}
 
 impl<T: ?Sized, C: ?Sized> Deref for ArcRef<T, C> {
@@ -814,8 +814,8 @@ pub struct ArcRefMut<T: ?Sized, C: ?Sized = T> {
     lease: Lease,
 }
 
-unsafe impl<T: Send + Sync, C: ?Sized> Send for ArcRefMut<T, C> {}
-unsafe impl<T: Sync, C: ?Sized> Sync for ArcRefMut<T, C> {}
+unsafe impl<T: Send + Sync, C: ?Sized + Send + Sync> Send for ArcRefMut<T, C> {}
+unsafe impl<T: Send + Sync, C: ?Sized> Sync for ArcRefMut<T, C> {}
 
 impl<T: ?Sized, C: ?Sized> ArcRefMut<T, C> {
     /// Make a new `ArcRefMut` for a component of the borrowed data.
@@ -991,10 +991,12 @@ impl<T: ?Sized, C: ?Sized> NonBlockingGuardedBorrow<T> for ArcRef<T, C> {
     type Guard<'a>
     where
         T: 'a,
+        Self: 'a,
     = &'a T;
     type BorrowError<'a>
     where
         T: 'a,
+        Self: 'a,
     = Infallible;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
@@ -1006,10 +1008,12 @@ impl<T: ?Sized, C: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRef<T, C> {
     type MutGuardMut<'a>
     where
         T: 'a,
+        Self: 'a,
     = &'a mut T;
     type MutBorrowMutError<'a>
     where
         T: 'a,
+        Self: 'a,
     = &'static str;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
@@ -1023,10 +1027,12 @@ impl<T: ?Sized, C: ?Sized> NonBlockingGuardedBorrow<T> for ArcRefMut<T, C> {
     type Guard<'a>
     where
         T: 'a,
+        Self: 'a,
     = &'a T;
     type BorrowError<'a>
     where
         T: 'a,
+        Self: 'a,
     = Infallible;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
@@ -1038,10 +1044,12 @@ impl<T: ?Sized, C: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRefMut<T, C>
     type MutGuardMut<'a>
     where
         T: 'a,
+        Self: 'a,
     = &'a mut T;
     type MutBorrowMutError<'a>
     where
         T: 'a,
+        Self: 'a,
     = Infallible;
 
     fn try_nonblocking_guarded_mut_borrow_mut(

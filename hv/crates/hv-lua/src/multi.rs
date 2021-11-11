@@ -12,7 +12,7 @@ use crate::value::{FromLua, FromLuaMulti, MultiValue, Nil, ToLua, ToLuaMulti};
 /// on success, or in the case of an error, returning `nil` and an error message.
 impl<'lua, T: ToLua<'lua>, E: ToLua<'lua>> ToLuaMulti<'lua> for StdResult<T, E> {
     fn to_lua_multi(self, lua: &'lua Lua) -> Result<MultiValue<'lua>> {
-        let mut result = MultiValue::new();
+        let mut result = MultiValue::new(lua);
 
         match self {
             Ok(v) => result.push_front(v.to_lua(lua)?),
@@ -28,7 +28,7 @@ impl<'lua, T: ToLua<'lua>, E: ToLua<'lua>> ToLuaMulti<'lua> for StdResult<T, E> 
 
 impl<'lua, T: ToLua<'lua>> ToLuaMulti<'lua> for T {
     fn to_lua_multi(self, lua: &'lua Lua) -> Result<MultiValue<'lua>> {
-        let mut v = MultiValue::new();
+        let mut v = MultiValue::new(lua);
         v.push_front(self.to_lua(lua)?);
         Ok(v)
     }
@@ -125,7 +125,7 @@ impl<T> DerefMut for Variadic<T> {
 
 impl<'lua, T: ToLua<'lua>> ToLuaMulti<'lua> for Variadic<T> {
     fn to_lua_multi(self, lua: &'lua Lua) -> Result<MultiValue<'lua>> {
-        self.0.into_iter().map(|e| e.to_lua(lua)).collect()
+        MultiValue::try_from_iter(self.0.into_iter().map(|e| e.to_lua(lua)), lua)
     }
 }
 
@@ -142,8 +142,8 @@ impl<'lua, T: FromLua<'lua>> FromLuaMulti<'lua> for Variadic<T> {
 macro_rules! impl_tuple {
     () => (
         impl<'lua> ToLuaMulti<'lua> for () {
-            fn to_lua_multi(self, _: &'lua Lua) -> Result<MultiValue<'lua>> {
-                Ok(MultiValue::new())
+            fn to_lua_multi(self, lua: &'lua Lua) -> Result<MultiValue<'lua>> {
+                Ok(MultiValue::new(lua))
             }
         }
 

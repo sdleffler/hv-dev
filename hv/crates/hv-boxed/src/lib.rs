@@ -433,5 +433,5 @@ impl<T: ?Sized + Hash, Space: Storage<T>> Hash for MiniBox<T, Space> {
     }
 }
 
-unsafe impl<T: ?Sized + Send, Space: Storage<T>> Send for MiniBox<T, Space> {}
+unsafe impl<T: ?Sized + Send, Space: Storage<T> + Send> Send for MiniBox<T, Space> {}
 unsafe impl<T: ?Sized + Sync, Space: Storage<T>> Sync for MiniBox<T, Space> {}

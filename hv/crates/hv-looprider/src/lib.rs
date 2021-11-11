@@ -175,7 +175,7 @@ where
 
         methods.add_method("read", |_, this, reader: LuaAnyUserData| {
             let mut reader = reader.borrow_mut::<LoopreaderId<E>>()?;
-            Ok(this.read(&mut reader).cloned().collect::<LuaSeq<_>>())
+            Ok(this.read(&mut reader).cloned().collect::<LuaSequence<_>>())
         });
 
         methods.add_method_mut("push", |_, this, event| {

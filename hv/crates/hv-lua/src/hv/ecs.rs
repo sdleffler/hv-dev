@@ -108,6 +108,7 @@ impl<T: 'static + UserData> UserData for Elastic<StretchedBatchWriter<T>> {
     }
 }
 
+#[allow(clippy::missing_safety_doc)]
 pub(crate) unsafe trait DynamicBundleProxy {
     fn key(&self) -> Option<TypeId>;
     unsafe fn with_ids(&self, f: &mut dyn FnMut(&[TypeId]));

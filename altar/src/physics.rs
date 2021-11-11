@@ -43,7 +43,7 @@ impl CompositePosition3 {
     pub fn lerp_slerp(&self, b: &Self, t: f32) -> Self {
         Self {
             xy: self.xy.lerp_slerp(&b.xy, t),
-            z: t.lerp(self.z, b.z),
+            z: self.z + t * (b.z - self.z),
         }
     }
 }

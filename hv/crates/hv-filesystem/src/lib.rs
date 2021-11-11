@@ -47,7 +47,7 @@ extern crate hv_vfs as vfs;
 use anyhow::*;
 use directories::ProjectDirs;
 use hv_alchemy::Type;
-use hv_lua::{ExternalError, ExternalResult, Seq, UserData, UserDataMethods};
+use hv_lua::{from_table::Sequence, ExternalError, ExternalResult, UserData, UserDataMethods};
 use std::{
     env, fmt,
     io::{self, Read},
@@ -449,7 +449,7 @@ impl UserData for Filesystem {
                             .ok_or_else(|| anyhow!("bad unicode in path").to_lua_err())?,
                     )
                 })
-                .collect::<Result<Seq<_>, _>>()
+                .collect::<Result<Sequence<_>, _>>()
         });
 
         methods.add_method_mut(

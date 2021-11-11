@@ -1,4 +1,7 @@
-use std::iter::{self, FromIterator};
+use std::{
+    iter::{self},
+    mem,
+};
 use std::{slice, str, vec};
 
 #[cfg(feature = "serialize")]
@@ -154,27 +157,13 @@ pub trait FromLua<'lua>: Sized {
 
 /// Multiple Lua values used for both argument passing and also for multiple return values.
 #[derive(Debug, Clone)]
-pub struct MultiValue<'lua>(Vec<Value<'lua>>);
+pub struct MultiValue<'lua>(Vec<Value<'lua>>, &'lua Lua);
 
 impl<'lua> MultiValue<'lua> {
     /// Creates an empty `MultiValue` containing no values.
     #[inline]
-    pub fn new() -> MultiValue<'lua> {
-        MultiValue(Vec::new())
-    }
-}
-
-impl<'lua> Default for MultiValue<'lua> {
-    #[inline]
-    fn default() -> MultiValue<'lua> {
-        MultiValue::new()
-    }
-}
-
-impl<'lua> FromIterator<Value<'lua>> for MultiValue<'lua> {
-    #[inline]
-    fn from_iter<I: IntoIterator<Item = Value<'lua>>>(iter: I) -> Self {
-        MultiValue::from_vec(Vec::from_iter(iter))
+    pub fn new(lua: &'lua Lua) -> MultiValue<'lua> {
+        MultiValue(lua.pull_multivalue_vec(), lua)
     }
 }
 
@@ -183,8 +172,10 @@ impl<'lua> IntoIterator for MultiValue<'lua> {
     type IntoIter = iter::Rev<vec::IntoIter<Value<'lua>>>;
 
     #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter().rev()
+    fn into_iter(mut self) -> Self::IntoIter {
+        let iter = mem::take(&mut self.0).into_iter().rev();
+        mem::forget(self);
+        iter
     }
 }
 
@@ -200,14 +191,39 @@ impl<'a, 'lua> IntoIterator for &'a MultiValue<'lua> {
 
 impl<'lua> MultiValue<'lua> {
     #[inline]
-    pub fn from_vec(mut v: Vec<Value<'lua>>) -> MultiValue<'lua> {
-        v.reverse();
-        MultiValue(v)
+    pub fn from_iter<I>(iter: I, lua: &'lua Lua) -> MultiValue<'lua>
+    where
+        I: IntoIterator<Item = Value<'lua>>,
+        I::IntoIter: DoubleEndedIterator,
+    {
+        let mut v = lua.pull_multivalue_vec();
+        v.extend(iter.into_iter().rev());
+        MultiValue(v, lua)
     }
 
     #[inline]
-    pub fn into_vec(self) -> Vec<Value<'lua>> {
-        let mut v = self.0;
+    pub fn try_from_iter<I>(iter: I, lua: &'lua Lua) -> Result<MultiValue<'lua>>
+    where
+        I: IntoIterator<Item = Result<Value<'lua>>>,
+        I::IntoIter: DoubleEndedIterator,
+    {
+        let mut v = lua.pull_multivalue_vec();
+        for t in iter.into_iter().rev() {
+            v.push(t?);
+        }
+        Ok(MultiValue(v, lua))
+    }
+
+    #[inline]
+    pub fn from_vec(mut v: Vec<Value<'lua>>, lua: &'lua Lua) -> MultiValue<'lua> {
+        v.reverse();
+        MultiValue(v, lua)
+    }
+
+    #[inline]
+    pub fn into_vec(mut self) -> Vec<Value<'lua>> {
+        let mut v = mem::take(&mut self.0);
+        mem::forget(self);
         v.reverse();
         v
     }
@@ -240,6 +256,12 @@ impl<'lua> MultiValue<'lua> {
     #[inline]
     pub fn iter(&self) -> iter::Rev<slice::Iter<Value<'lua>>> {
         self.0.iter().rev()
+    }
+}
+
+impl<'lua> Drop for MultiValue<'lua> {
+    fn drop(&mut self) {
+        self.1.recycle_multivalue_vec(mem::take(&mut self.0));
     }
 }
 

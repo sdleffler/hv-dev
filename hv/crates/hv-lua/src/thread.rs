@@ -136,7 +136,7 @@ impl<'lua> Thread<'lua> {
                 return Err(pop_error(thread_state, ret));
             }
 
-            let mut results = MultiValue::new();
+            let mut results = MultiValue::new(lua);
             check_stack(lua.state, nresults + 2)?; // 2 is extra for `lua.pop_value()` below
             ffi::lua_xmove(thread_state, lua.state, nresults);
 

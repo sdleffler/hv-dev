@@ -69,6 +69,10 @@ struct ExtraData {
     registered_userdata_mt: HashMap<*const c_void, Option<&'static TypeTable>>,
     registry_unref_list: Arc<Mutex<Option<Vec<c_int>>>>,
 
+    // A vector of `Vec`s of `Value`s, turned to pointers because they have lifetimes and need to
+    // be stored 'static-ally
+    multivalue_vec_pool: Vec<(*mut (), usize, usize)>,
+
     libs: StdLib,
     mem_info: Option<Box<MemoryInfo>>,
     safe: bool, // Same as in the Lua struct
@@ -161,6 +165,7 @@ const WRAPPED_FAILURES_POOL_SIZE: usize = 16;
 /// Requires `feature = "send"`
 #[cfg(feature = "send")]
 #[cfg_attr(docsrs, doc(cfg(feature = "send")))]
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for Lua {}
 
 impl Drop for Lua {
@@ -469,6 +474,7 @@ impl Lua {
             ref_stack_size: ffi::LUA_MINSTACK - 1,
             ref_stack_top,
             ref_free: Vec::new(),
+            multivalue_vec_pool: Vec::new(),
             wrapped_failures_pool: Vec::new(),
             #[cfg(feature = "async")]
             ref_waker_idx,
@@ -631,7 +637,7 @@ impl Lua {
             let nargs = ffi::lua_gettop(lua.state);
             check_stack(lua.state, 3)?;
 
-            let mut args = MultiValue::new();
+            let mut args = MultiValue::new(lua);
             args.reserve(nargs as usize);
             for _ in 0..nargs {
                 args.push_front(lua.pop_value());
@@ -1941,7 +1947,7 @@ impl Lua {
                 let lua = &mut (*upvalue).lua;
                 lua.state = state;
 
-                let mut args = MultiValue::new();
+                let mut args = MultiValue::new(lua);
                 args.reserve(nargs as usize);
                 for _ in 0..nargs {
                     args.push_front(lua.pop_value());
@@ -2216,6 +2222,28 @@ impl Lua {
 
     pub(crate) unsafe fn hook_callback(&self) -> Option<HookCallback> {
         (*self.extra.get()).hook_callback.clone()
+    }
+
+    pub(crate) fn pull_multivalue_vec(&self) -> Vec<Value> {
+        unsafe {
+            let extra = &mut *self.extra.get();
+            if let Some((ptr, len, cap)) = extra.multivalue_vec_pool.pop() {
+                Vec::from_raw_parts(ptr.cast(), len, cap)
+            } else {
+                Vec::new()
+            }
+        }
+    }
+
+    pub(crate) fn recycle_multivalue_vec(&self, mut v: Vec<Value>) {
+        unsafe {
+            let extra = &mut *self.extra.get();
+            let ptr = v.as_mut_ptr();
+            let len = v.len();
+            let cap = v.capacity();
+            extra.multivalue_vec_pool.push((ptr.cast(), len, cap));
+            mem::forget(v);
+        }
     }
 }
 

@@ -3,7 +3,6 @@
 #![feature(control_flow_enum)]
 #![feature(generic_associated_types)]
 #![feature(vec_into_raw_parts)]
-#![feature(float_interpolation)]
 #![feature(bool_to_option)]
 #![feature(slice_partition_dedup)]
 #![feature(is_sorted)]

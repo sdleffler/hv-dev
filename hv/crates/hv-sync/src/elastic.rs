@@ -50,7 +50,9 @@ pub trait Stretchable<'a>: 'a {
 pub unsafe trait Stretched: 'static + Sized {
     /// The parameterized type, which must be bit-equivalent to the unparameterized `Self` type. It
     /// must have the same size, same pointer size, same alignment, same *everything.*
-    type Parameterized<'a>: Stretchable<'a, Stretched = Self>;
+    type Parameterized<'a>: Stretchable<'a, Stretched = Self>
+    where
+        Self: 'a;
 
     /// Lengthen the lifetime of a [`Stretched::Parameterized`] to `'static`.
     ///
