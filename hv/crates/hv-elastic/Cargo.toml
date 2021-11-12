@@ -11,8 +11,6 @@ documentation = "https://docs.rs/hv-elastic"
 keywords = ["lifetime", "reference", "sync", "arc", "no-std"]
 categories = ["no-std", "concurrency", "data-structures"]
 
-[features]
-
 [dependencies]
 hv-cell = { version = "0.1.0", path = "../hv-cell" }
 hv-guarded-borrow = { version = "0.1.1", path = "../hv-guarded-borrow" }
