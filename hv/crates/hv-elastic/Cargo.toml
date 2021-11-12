@@ -14,7 +14,7 @@ categories = ["no-std", "concurrency", "data-structures"]
 [features]
 
 [dependencies]
-hv-cell = { path = "../hv-cell" }
-hv-guarded-borrow = { path = "../hv-guarded-borrow" }
+hv-cell = { version = "0.1.0", path = "../hv-cell" }
+hv-guarded-borrow = { version = "0.1.0", path = "../hv-guarded-borrow" }
 hv-ecs = { version = "0.1.0", path = "../hv-ecs", optional = true }
 static_assertions = "1.1.0"
