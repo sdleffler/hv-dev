@@ -1,9 +1,8 @@
-use core::{
-    num::NonZeroUsize,
-    panic::Location,
-};
+use core::{num::NonZeroUsize, panic::Location};
 
+use alloc::{borrow::Cow, format, sync::Arc, vec::Vec};
 use slab::Slab;
+use spin::Mutex;
 
 #[derive(Debug)]
 pub struct Lease {
@@ -64,7 +63,7 @@ impl LeaseTracker {
     }
 
     pub fn lease_with(&self, kind: Option<&'static str>, name: Cow<'static, str>) -> Lease {
-        let mut leases = self.leases.lock().expect("lease mutex poisoned!");
+        let mut leases = self.leases.lock();
         let entry = leases.vacant_entry();
         let lease = Lease {
             key: NonZeroUsize::new(entry.key() + 1).unwrap(),
@@ -75,16 +74,12 @@ impl LeaseTracker {
     }
 
     fn remove_lease(&self, key: NonZeroUsize) {
-        self.leases
-            .lock()
-            .expect("lease mutex poisoned!")
-            .remove(key.get() - 1);
+        self.leases.lock().remove(key.get() - 1);
     }
 
     pub fn current_leases(&self) -> impl IntoIterator<Item = OpenLease> {
         self.leases
             .lock()
-            .expect("lease mutex poisoned!")
             .iter()
             .map(|(_, open)| open.clone())
             .collect::<Vec<_>>()

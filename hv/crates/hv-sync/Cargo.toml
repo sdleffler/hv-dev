@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-track-leases = []
-default = []
+track-leases = ["slab"]
+default = ["track-leases"]
 
 [dependencies]
 hecs = { path = "../../../hecs" }
 hv-guarded-borrow = { path = "../hv-guarded-borrow" }
+slab = { version = "0.4.5", optional = true }
+spin = "0.9.2"

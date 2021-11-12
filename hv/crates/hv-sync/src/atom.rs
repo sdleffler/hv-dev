@@ -1,4 +1,8 @@
 //! `no_std` port of the `atom` crate.
+//!
+//! Notable changes:
+//! - Atomic orderings fixed w.r.t. atom operations; `Relaxed` should never be allowed in the first
+//!   place.
 
 //   Copyright 2015 Colin Sherratt
 //
