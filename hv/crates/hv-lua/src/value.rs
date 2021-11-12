@@ -1,8 +1,4 @@
-use std::{
-    iter::{self},
-    mem,
-};
-use std::{slice, str, vec};
+use std::{iter, mem, slice, str, vec};
 
 #[cfg(feature = "serialize")]
 use {
@@ -156,26 +152,45 @@ pub trait FromLua<'lua>: Sized {
 }
 
 /// Multiple Lua values used for both argument passing and also for multiple return values.
-#[derive(Debug, Clone)]
-pub struct MultiValue<'lua>(Vec<Value<'lua>>, &'lua Lua);
+#[derive(Debug)]
+pub struct MultiValue<'lua> {
+    // Values are kept in reverse order, making it easier to pop Lua values off of the stack and put
+    // them directly into the multivalue using `Vec::push` (see `Function::call`, for n results on
+    // the stack, lua.pop_value() => Vec::push happens n times. Is this a curiosity of what order
+    // Lua return values exist on the Lua stack?)
+    stack: Vec<Value<'lua>>,
+    lua: &'lua Lua,
+}
+
+impl<'lua> Clone for MultiValue<'lua> {
+    fn clone(&self) -> Self {
+        let mut new_stack = self.lua.pull_multivalue_vec();
+        new_stack.clone_from(&self.stack);
+        MultiValue {
+            stack: new_stack,
+            lua: self.lua,
+        }
+    }
+}
 
 impl<'lua> MultiValue<'lua> {
     /// Creates an empty `MultiValue` containing no values.
     #[inline]
     pub fn new(lua: &'lua Lua) -> MultiValue<'lua> {
-        MultiValue(lua.pull_multivalue_vec(), lua)
+        MultiValue {
+            stack: lua.pull_multivalue_vec(),
+            lua,
+        }
     }
 }
 
 impl<'lua> IntoIterator for MultiValue<'lua> {
     type Item = Value<'lua>;
-    type IntoIter = iter::Rev<vec::IntoIter<Value<'lua>>>;
+    type IntoIter = MultiValueIntoIter<'lua>;
 
     #[inline]
-    fn into_iter(mut self) -> Self::IntoIter {
-        let iter = mem::take(&mut self.0).into_iter().rev();
-        mem::forget(self);
-        iter
+    fn into_iter(self) -> Self::IntoIter {
+        MultiValueIntoIter(self)
     }
 }
 
@@ -185,7 +200,7 @@ impl<'a, 'lua> IntoIterator for &'a MultiValue<'lua> {
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        (&self.0).iter().rev()
+        (&self.stack).iter().rev()
     }
 }
 
@@ -196,9 +211,9 @@ impl<'lua> MultiValue<'lua> {
         I: IntoIterator<Item = Value<'lua>>,
         I::IntoIter: DoubleEndedIterator,
     {
-        let mut v = lua.pull_multivalue_vec();
-        v.extend(iter.into_iter().rev());
-        MultiValue(v, lua)
+        let mut stack = lua.pull_multivalue_vec();
+        stack.extend(iter.into_iter().rev());
+        MultiValue { stack, lua }
     }
 
     #[inline]
@@ -207,22 +222,22 @@ impl<'lua> MultiValue<'lua> {
         I: IntoIterator<Item = Result<Value<'lua>>>,
         I::IntoIter: DoubleEndedIterator,
     {
-        let mut v = lua.pull_multivalue_vec();
-        for t in iter.into_iter().rev() {
-            v.push(t?);
+        let mut stack = lua.pull_multivalue_vec();
+        for v in iter.into_iter().rev() {
+            stack.push(v?);
         }
-        Ok(MultiValue(v, lua))
+        Ok(MultiValue { stack, lua })
     }
 
     #[inline]
     pub fn from_vec(mut v: Vec<Value<'lua>>, lua: &'lua Lua) -> MultiValue<'lua> {
         v.reverse();
-        MultiValue(v, lua)
+        MultiValue { stack: v, lua }
     }
 
     #[inline]
     pub fn into_vec(mut self) -> Vec<Value<'lua>> {
-        let mut v = mem::take(&mut self.0);
+        let mut v = mem::take(&mut self.stack);
         mem::forget(self);
         v.reverse();
         v
@@ -230,39 +245,55 @@ impl<'lua> MultiValue<'lua> {
 
     #[inline]
     pub(crate) fn reserve(&mut self, size: usize) {
-        self.0.reserve(size);
+        self.stack.reserve(size);
     }
 
     #[inline]
     pub(crate) fn push_front(&mut self, value: Value<'lua>) {
-        self.0.push(value);
+        self.stack.push(value);
     }
 
     #[inline]
     pub(crate) fn pop_front(&mut self) -> Option<Value<'lua>> {
-        self.0.pop()
+        self.stack.pop()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.stack.len()
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.0.len() == 0
+        self.stack.len() == 0
     }
 
     #[inline]
     pub fn iter(&self) -> iter::Rev<slice::Iter<Value<'lua>>> {
-        self.0.iter().rev()
+        self.stack.iter().rev()
+    }
+
+    #[inline]
+    pub fn drain(&mut self) -> iter::Rev<vec::Drain<'_, Value<'lua>>> {
+        self.stack.drain(..).rev()
     }
 }
 
 impl<'lua> Drop for MultiValue<'lua> {
     fn drop(&mut self) {
-        self.0.clear();
-        self.1.recycle_multivalue_vec(mem::take(&mut self.0));
+        self.stack.clear();
+        self.lua.recycle_multivalue_vec(mem::take(&mut self.stack));
+    }
+}
+
+#[derive(Debug)]
+pub struct MultiValueIntoIter<'lua>(MultiValue<'lua>);
+
+impl<'lua> Iterator for MultiValueIntoIter<'lua> {
+    type Item = Value<'lua>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.stack.pop()
     }
 }
 
