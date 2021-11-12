@@ -72,7 +72,8 @@ use core::{
     sync::atomic::{AtomicPtr, Ordering},
 };
 use hashbrown::{HashMap, HashSet};
-use hv_sync::{atom::AtomSetOnce, cell::AtomicRefCell};
+use hv_atom::AtomSetOnce;
+use hv_cell::AtomicRefCell;
 use lazy_static::lazy_static;
 use spin::RwLock;
 

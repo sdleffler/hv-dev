@@ -1,15 +1,67 @@
-use core::{marker::PhantomData, ptr::NonNull};
+//! Heavy Elastic - safe abstractions for "stretching" lifetimes (and dealing with what happens when
+//! they have to snap back.)
+//!
+//! This crate provides four main abstractions:
+//! - [`Stretchable<'a>`], a trait indicating that some type with a lifetime `'a` can have that
+//!   lifetime `'a` *removed* (and virtually set to `'static`.)
+//! - [`Stretched`], a marker trait denoting that a type is a stretched version of a
+//!   [`Stretchable<'a>`] type. It is unsafe to implement [`Stretched`]. Read the docs and do so at
+//!   your own risk, or better yet, avoid doing so and use [`StretchedRef`] and [`StretchedMut`]
+//!   instead.
+//! - [`Elastic<T>`], a container for a stretched value (which may be empty.) It acts as an [`Arc`]
+//!   and an [`AtomicRefCell`], by way of [`ArcCell`](hv_cell::ArcCell), and allows "loaning" the
+//!   [`Stretchable`] type corresponding to its `T: Stretched`.
+//! - [`ElasticGuard<'a, T>`], a guard which ensures that some loan to an [`Elastic<T::Stretched>`]
+//!   doesn't outlive its original lifetime. When dropped, it forcibly takes the value back from the
+//!   [`Elastic`] it was loaned from, and panics if doing so is impossible. You can also take the
+//!   value back manually.
+
+#![no_std]
+#![warn(missing_docs)]
+#![warn(missing_debug_implementations)]
+#![feature(generic_associated_types)]
+
+use core::{fmt, marker::PhantomData, ptr::NonNull};
+
+// Used by `impl_stretched_methods`.
+#[doc(hidden)]
+pub use core::mem::transmute;
 
 use hv_guarded_borrow::{
     NonBlockingGuardedBorrow, NonBlockingGuardedBorrowMut, NonBlockingGuardedMutBorrowMut,
 };
 
-use crate::cell::{ArcCell, ArcRef, ArcRefMut, AtomicRef, AtomicRefMut};
+use hv_cell::{ArcCell, ArcRef, ArcRefMut, AtomicRef, AtomicRefMut};
+
+/// Small convenience macro for correctly implementing the four unsafe methods of [`Stretched`].
+#[macro_export]
+macro_rules! impl_stretched_methods {
+    () => {
+        unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self {
+            $crate::transmute(this)
+        }
+
+        unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a> {
+            $crate::transmute(this)
+        }
+
+        unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {
+            $crate::transmute(this)
+        }
+
+        unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a> {
+            $crate::transmute(this)
+        }
+    };
+}
+
+pub mod external;
 
 /// Marker trait indicating that a type can be stretched (has a type for which there is an
 /// implementation of `Stretched`, and which properly "translates back" with its `Parameterized`
 /// associated type.)
 pub trait Stretchable<'a>: 'a {
+    /// The type you get by stretching `Self`.
     #[rustfmt::skip]
     type Stretched: Stretched<Parameterized<'a> = Self>;
 }
@@ -95,50 +147,20 @@ pub unsafe trait Stretched: 'static + Sized {
     unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a>;
 }
 
-#[macro_export]
-macro_rules! impl_stretched_methods {
-    ($(core)?) => {
-        unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self {
-            core::mem::transmute(this)
-        }
-
-        unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a> {
-            core::mem::transmute(this)
-        }
-
-        unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {
-            core::mem::transmute(this)
-        }
-
-        unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a> {
-            core::mem::transmute(this)
-        }
-    };
-    (std) => {
-        unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self {
-            std::mem::transmute(this)
-        }
-
-        unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a> {
-            std::mem::transmute(this)
-        }
-
-        unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {
-            std::mem::transmute(this)
-        }
-
-        unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a> {
-            std::mem::transmute(this)
-        }
-    };
-}
-
+/// A guard representing a loan of some stretchable value to some [`Elastic`].
 pub struct ElasticGuard<'a, T: Stretchable<'a>> {
     slot: ArcCell<Option<T::Stretched>>,
     _phantom: PhantomData<fn(&'a ())>,
 }
 
+impl<'a, T: Stretchable<'a>> fmt::Debug for ElasticGuard<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ElasticGuard {{ .. }}")
+    }
+}
+
 impl<'a, T: Stretchable<'a>> ElasticGuard<'a, T> {
+    /// Revoke the loan and retrieve the loaned value.
     pub fn take(self) -> T {
         let stretched = self
             .slot
@@ -160,6 +182,30 @@ impl<'a, T: Stretchable<'a>> Drop for ElasticGuard<'a, T> {
     }
 }
 
+/// A container for a stretched value.
+///
+/// This acts a bit like `Arc<AtomicRefCell<Option<T>>>`, through its `Clone` behavior and borrowing
+/// methods, but the similarity ends there. The only way to put data into this type is through
+/// [`Elastic::loan`], which allows you to safely loan some [`Stretchable`], non-`'static` type, to
+/// an [`Elastic`] carrying the corresponding [`Stretched`] type. As [`Stretched`] requires
+/// `'static`, [`Elastic<T>`] is always `'static` and can be used to access non-`'static` types
+/// safely from contexts which require `'static` (such as dynamic typing with `Any` or the
+/// `hv-alchemy` crate.) The lifetime is preserved by a scope guard, [`ElasticGuard`], which is
+/// provided when a value is loaned and which revokes the loan when it is dropped or has the loaned
+/// value forcibly taken back by [`ElasticGuard::take`].
+///
+/// [`Elastic<T>`] is thread-safe. However, internally, it uses an
+/// [`AtomicRefCell`](hv_cell::AtomicRefCell), so if you violate borrowing invariants, you will have
+/// a panic on your hands. This goes likewise for taking the value back w/ [`ElasticGuard`] or
+/// dropping the guard: the guard will panic if it cannot take back the value.
+///
+/// # Soundness
+///
+/// As it comes to soundness, this crate currently will have issues with what might happen if a
+/// thread tries to take back an elastic value from another thread which is currently borrowing it;
+/// the owning thread will panic, and potentially end up dropping the borrowed value, while it is
+/// being accessed by another thread. We may need to use an [`RwLock`] and block instead/use
+/// something which supports poisoning... alternatively, report the error and directly abort.
 #[derive(Debug)]
 pub struct Elastic<T: Stretched> {
     slot: ArcCell<Option<T>>,
@@ -180,24 +226,31 @@ impl<T: Stretched> Default for Elastic<T> {
 }
 
 impl<T: Stretched> Elastic<T> {
+    /// Create an empty [`Elastic<T>`].
     pub fn new() -> Self {
         Self {
             slot: Default::default(),
         }
     }
 
+    /// Attempt to immutably borrow the loaned value, if present. Returns `None` if nothing is
+    /// currently loaned to this [`Elastic`].
     #[track_caller]
     pub fn borrow(&self) -> Option<AtomicRef<T::Parameterized<'_>>> {
         AtomicRef::filter_map(self.slot.as_inner().borrow(), Option::as_ref)
             .map(|arm| AtomicRef::map(arm, |t| unsafe { T::shorten_ref(t) }))
     }
 
+    /// Attempt to mutably borrow the loaned value, if present. Returns `None` if nothing is
+    /// currently loaned to this [`Elastic`].
     #[track_caller]
     pub fn borrow_mut(&self) -> Option<AtomicRefMut<T::Parameterized<'_>>> {
         AtomicRefMut::filter_map(self.slot.as_inner().borrow_mut(), Option::as_mut)
             .map(|arm| AtomicRefMut::map(arm, |t| unsafe { T::shorten_mut(t) }))
     }
 
+    /// Attempt to immutably borrow the loaned value, via a reference-counted guard. Returns `None`
+    /// if nothing is currently loaned to this [`Elastic`].
     #[track_caller]
     pub fn borrow_arc<'b, U: 'b, F>(&'b self, f: F) -> Option<ArcRef<U, Option<T>>>
     where
@@ -207,6 +260,8 @@ impl<T: Stretched> Elastic<T> {
             .map(|arc| ArcRef::map(arc, |t| f(unsafe { T::shorten_ref(t) })))
     }
 
+    /// Attempt to mutably borrow the loaned value, via a reference-counted guard. Returns `None` if
+    /// nothing is currently loaned to this [`Elastic`].
     #[track_caller]
     pub fn borrow_arc_mut<'b, U: 'b, F>(&'b mut self, f: F) -> Option<ArcRefMut<U, Option<T>>>
     where
@@ -216,6 +271,8 @@ impl<T: Stretched> Elastic<T> {
             .map(|arc| ArcRefMut::map(arc, |t| f(unsafe { T::shorten_mut(t) })))
     }
 
+    /// Loan a stretchable value to this [`Elastic`] in exchange for a guard object which ends the
+    /// loan when the value is taken back or when the guard is dropped.
     #[track_caller]
     pub fn loan<'a>(&self, t: T::Parameterized<'a>) -> ElasticGuard<'a, T::Parameterized<'a>> {
         let mut slot = self.slot.as_inner().borrow_mut();
@@ -227,48 +284,6 @@ impl<T: Stretched> Elastic<T> {
             slot: self.slot.clone(),
             _phantom: PhantomData,
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct ElasticRef<T: Stretched> {
-    inner: ArcRef<T, Option<T>>,
-}
-
-impl<T: Stretched> Clone for ElasticRef<T> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<T: Stretched> ElasticRef<T> {
-    /// `ElasticRef` has a requirement that the stdlib `Deref` cannot express - the lifetime of the
-    /// parameterized type must match the lifetime of the borrow.
-    #[allow(clippy::should_implement_trait)]
-    pub fn deref(&'_ self) -> &'_ T::Parameterized<'_> {
-        unsafe { T::shorten_ref(&*self.inner) }
-    }
-}
-
-#[derive(Debug)]
-pub struct ElasticRefMut<T: Stretched> {
-    inner: ArcRefMut<T, Option<T>>,
-}
-
-impl<T: Stretched> ElasticRefMut<T> {
-    /// `ElasticRefMut` has a requirement that the stdlib `Deref` cannot express - the lifetime of
-    /// the parameterized type must match the lifetime of the borrow.
-    #[allow(clippy::should_implement_trait)]
-    pub fn deref(&'_ self) -> &'_ T::Parameterized<'_> {
-        unsafe { T::shorten_ref(&*self.inner) }
-    }
-
-    /// Similar to [`ElasticRefMut::deref`], but for mutable references.
-    #[allow(clippy::should_implement_trait)]
-    pub fn deref_mut(&'_ mut self) -> &'_ mut T::Parameterized<'_> {
-        unsafe { T::shorten_mut(&mut *self.inner) }
     }
 }
 
@@ -336,12 +351,16 @@ where
     }
 }
 
+/// A type representing a stretched `&T` reference. Has the same representation as a `*const T`.
+#[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct StretchedRef<T: ?Sized>(*const T);
 
 unsafe impl<T: Sync> Send for StretchedRef<T> {}
 unsafe impl<T: Sync> Sync for StretchedRef<T> {}
 
+/// A type representing a stretched `&mut T` reference. Has the same representation as a `*mut T`.
+#[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct StretchedMut<T: ?Sized>(NonNull<T>);
 

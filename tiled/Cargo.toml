@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hv = { path = "../hv" }
+hv = { path = "../hv", package = "heavy" }
 log = "0.4.14"
 slab = "0.4.4"
 base64 = "0.13.0"

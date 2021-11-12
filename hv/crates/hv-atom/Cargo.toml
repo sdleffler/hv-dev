@@ -1,0 +1,12 @@
+[package]
+name = "hv-atom"
+description = "Convenient abstractions for atomic operations on smart pointer/reference types, based on the `atom` crate"
+authors = ["Shea 'Decibel' Leffler <shea@errno.com>", "Colin Sherratt <colin.sherratt@gmail.com>"]
+license = "MIT OR Apache-2.0"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+repository = "https://github.com/sdleffler/hv-dev"
+documentation = "https://docs.rs/hv-atom"
+keywords = ["atom", "atomic", "pointer", "sync", "no-std"]
+categories = ["no-std", "concurrency"]

@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! A `no_std` port of the `atomic_refcell` crate, with added functionality for `Arc`-wrapped
+//! `AtomicRefCell`s.
+//!
 //! Implements a container type providing RefCell-like semantics for objects
 //! shared across threads.
 //!
@@ -44,8 +47,12 @@
 //! have been removed. We segment the concurrency logic from the rest of the code to
 //! keep the tricky parts small and easy to audit.
 
+#![no_std]
+#![feature(generic_associated_types)]
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
+
+extern crate alloc;
 
 use alloc::sync::Arc;
 use core::cmp;
@@ -60,7 +67,7 @@ use hv_guarded_borrow::{
 };
 
 #[cfg(feature = "track-leases")]
-use crate::lease::{Lease, LeaseTracker};
+use hv_lease_tracker::{Lease, LeaseTracker};
 
 /// A threadsafe analogue to RefCell but where the borrows are considered strong references to the
 /// inner `Arc`'d value.

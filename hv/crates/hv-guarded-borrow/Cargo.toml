@@ -1,11 +1,19 @@
 [package]
 name = "hv-guarded-borrow"
+description = "Traits and implementations for generic use of \"guarded\" borrows"
+authors = ["Shea 'Decibel' Leffler <shea@errno.com>"]
+license = "MIT OR Apache-2.0"
 version = "0.1.0"
 edition = "2021"
+readme = "README.md"
+repository = "https://github.com/sdleffler/hv-dev"
+documentation = "https://docs.rkkks/hv-guarded-borrow"
+keywords = ["borrow", "trait", "sync"]
+categories = ["no-std", "concurrency"]
 
 [features]
 std = []
 default = []
 
 [dependencies]
-hecs = { path = "../../../hecs", optional = true }
+hecs = { version = "0.6.5", path = "../../../hecs", optional = true }

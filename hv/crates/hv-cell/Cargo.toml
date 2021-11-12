@@ -1,0 +1,19 @@
+[package]
+name = "hv-cell"
+description = "A no-std port of the `atomic_refcell` crate with additional `Arc`-centric functionality"
+authors = ["Shea 'Decibel' Leffler <shea@errno.com>", "Bobby Holley <bobbyholley@gmail.com>"]
+license = "MIT OR Apache-2.0"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+repository = "https://github.com/sdleffler/hv-dev"
+documentation = "https://docs.rs/hv-cell"
+keywords = ["cell", "atomic", "refcell", "arc", "sync"]
+categories = ["no-std", "concurrency"]
+
+[features]
+track-leases = ["hv-lease-tracker"]
+
+[dependencies]
+hv-guarded-borrow = { version = "0.1.0", path = "../hv-guarded-borrow" }
+hv-lease-tracker = { version = "0.1.0", path = "../hv-lease-tracker", optional = true }

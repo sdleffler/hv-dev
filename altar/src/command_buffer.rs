@@ -137,7 +137,7 @@ impl<'a> Stretchable<'a> for CommandBufferInner<'a> {
 unsafe impl Stretched for StretchedCommandBufferInner {
     type Parameterized<'a> = CommandBufferInner<'a>;
 
-    hv::sync::impl_stretched_methods!(std);
+    hv::sync::elastic::impl_stretched_methods!();
 }
 
 pub struct CommandPool {
@@ -280,7 +280,7 @@ static_assertions::assert_eq_align!(StretchedCommandPoolScope, CommandPoolScope)
 unsafe impl Stretched for StretchedCommandPoolScope {
     type Parameterized<'a> = CommandPoolScope<'a>;
 
-    hv::sync::impl_stretched_methods!(std);
+    hv::sync::elastic::impl_stretched_methods!();
 }
 
 impl<'a> Stretchable<'a> for CommandPoolScope<'a> {

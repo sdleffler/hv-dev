@@ -1,5 +1,11 @@
+//! Heavy Guarded-Borrow - traits for generalizing over guarded borrow operations
+//!
+//! Using these traits allows you to write code which generalizes over the type of "guard" that a
+//! type like `Mutex`, `RwLock`, `RefCell`, `AtomicRefCell`, etc. may return.
+
 #![feature(generic_associated_types)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![warn(missing_docs)]
 
 extern crate alloc;
 
@@ -16,44 +22,58 @@ mod hecs;
 #[cfg(feature = "std")]
 mod std;
 
+/// Abstracts over non-blocking guarded immutable borrows (for example, `RefCell::try_borrow`.)
 pub trait NonBlockingGuardedBorrow<T: ?Sized> {
+    /// The guard type (for example, `std::cell::Ref<'a, T>`.)
     type Guard<'a>: Deref<Target = T>
     where
         T: 'a,
         Self: 'a;
+    /// The type returned in the case the value cannot be borrowed.
     type BorrowError<'a>
     where
         T: 'a,
         Self: 'a;
 
+    /// Attempt to perform the borrow.
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>>;
 }
 
+/// Abstracts over non-blocking guarded mutable borrows from behind immutable references
+/// (for example, `RefCell::try_borrow_mut`.)
 pub trait NonBlockingGuardedBorrowMut<T: ?Sized> {
+    /// The guard type (for example, `std::cell::RefMut<'a, T>`.)
     type GuardMut<'a>: Deref<Target = T> + DerefMut
     where
         T: 'a,
         Self: 'a;
+    /// The type returned in the case the value cannot be borrowed.
     type BorrowMutError<'a>
     where
         T: 'a,
         Self: 'a;
 
+    /// Attempt to perform the borrow.
     fn try_nonblocking_guarded_borrow_mut(
         &self,
     ) -> Result<Self::GuardMut<'_>, Self::BorrowMutError<'_>>;
 }
 
+/// Abstracts over non-blocking guarded mutable borrows from behind mutable references
+/// (for example, `RefCell::get_mut`, or calling `.write()` on an `&mut Arc<RwLock<T>>`.)
 pub trait NonBlockingGuardedMutBorrowMut<T: ?Sized> {
+    /// The guard type (for example, `std::sync::RwLockWriteGuard<'a, T>`.)
     type MutGuardMut<'a>: Deref<Target = T> + DerefMut
     where
         T: 'a,
         Self: 'a;
+    /// The type returned in the case the value cannot be borrowed.
     type MutBorrowMutError<'a>
     where
         T: 'a,
         Self: 'a;
 
+    /// Attempt to perform the borrow.
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
     ) -> Result<Self::MutGuardMut<'_>, Self::MutBorrowMutError<'_>>;

@@ -3,6 +3,12 @@
 //! Notable changes:
 //! - Atomic orderings fixed w.r.t. atom operations; `Relaxed` should never be allowed in the first
 //!   place.
+//! - `Atom::empty()` and `AtomSetOnce::empty()` are allowed to be const (requires the
+//!   `const_fn_fn_ptr_basics` feature. This crate requires nightly rust, 1.58 up.)
+
+#![no_std]
+#![feature(const_fn_fn_ptr_basics)]
+#![feature(result_into_ok_or_err)]
 
 //   Copyright 2015 Colin Sherratt
 //
@@ -18,6 +24,8 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
+extern crate alloc;
+
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::cell::UnsafeCell;
@@ -31,11 +39,9 @@ use core::sync::atomic::Ordering;
 
 /// An Atom wraps an AtomicPtr, it allows for safe mutation of an atomic
 /// into common Rust Types.
-pub struct Atom<P>
-where
-    P: IntoRawPtr + FromRawPtr,
-{
+pub struct Atom<P> {
     inner: AtomicPtr<()>,
+    drop: unsafe fn(*mut u8),
     data: PhantomData<UnsafeCell<P>>,
 }
 
@@ -48,22 +54,30 @@ where
     }
 }
 
-impl<P> Atom<P>
-where
-    P: IntoRawPtr + FromRawPtr,
-{
+unsafe fn destructor<P>(ptr: *mut u8) {
+    core::ptr::drop_in_place(ptr.cast::<P>());
+}
+
+impl<P> Atom<P> {
     /// Create a empty Atom
     pub const fn empty() -> Atom<P> {
         Atom {
             inner: AtomicPtr::new(ptr::null_mut()),
+            drop: destructor::<P>,
             data: PhantomData,
         }
     }
+}
 
+impl<P> Atom<P>
+where
+    P: IntoRawPtr + FromRawPtr,
+{
     /// Create a new Atomic from Pointer P
     pub fn new(value: P) -> Atom<P> {
         Atom {
             inner: AtomicPtr::new(value.into_raw()),
+            drop: destructor::<P>,
             data: PhantomData,
         }
     }
@@ -241,12 +255,14 @@ where
     }
 }
 
-impl<P> Drop for Atom<P>
-where
-    P: IntoRawPtr + FromRawPtr,
-{
+impl<P> Drop for Atom<P> {
     fn drop(&mut self) {
-        self.take();
+        let old = self.inner.swap(ptr::null_mut(), Ordering::AcqRel);
+        if !old.is_null() {
+            unsafe {
+                (self.drop)(old.cast::<u8>());
+            }
+        }
     }
 }
 
@@ -325,25 +341,32 @@ unsafe fn copy_mut_lifetime<'a, S: ?Sized, T: ?Sized + 'a>(_ptr: &'a S, ptr: &mu
 ///
 /// `swap` and `take` can be used only with a mutable reference. Meaning
 /// that AtomSetOnce is not usable as a
-#[derive(Debug)]
-pub struct AtomSetOnce<P>
-where
-    P: IntoRawPtr + FromRawPtr,
-{
+pub struct AtomSetOnce<P> {
     inner: Atom<P>,
 }
 
-impl<P> AtomSetOnce<P>
+impl<P> fmt::Debug for AtomSetOnce<P>
 where
-    P: IntoRawPtr + FromRawPtr,
+    P: IntoRawPtr + FromRawPtr + fmt::Debug,
 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl<P> AtomSetOnce<P> {
     /// Create an empty `AtomSetOnce`
     pub const fn empty() -> AtomSetOnce<P> {
         AtomSetOnce {
             inner: Atom::empty(),
         }
     }
+}
 
+impl<P> AtomSetOnce<P>
+where
+    P: IntoRawPtr + FromRawPtr,
+{
     /// Create a new `AtomSetOnce` from Pointer P
     pub fn new(value: P) -> AtomSetOnce<P> {
         AtomSetOnce {

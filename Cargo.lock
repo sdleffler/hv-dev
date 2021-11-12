@@ -34,7 +34,7 @@ version = "0.1.0"
 dependencies = [
  "crossbeam-queue",
  "glfw",
- "hv",
+ "heavy",
  "luminance",
  "luminance-glfw",
  "luminance-windowing",
@@ -726,6 +726,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "heavy"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "hecs",
+ "hv-alchemy",
+ "hv-ecs-derive",
+ "hv-elastic",
+ "hv-filesystem",
+ "hv-guarded-borrow",
+ "hv-input",
+ "hv-lua",
+ "hv-math",
+ "hv-resources",
+ "hv-stampede",
+ "hv-sync",
+ "hv-timer",
+ "hv-yaks",
+ "petgraph",
+ "thiserror",
+]
+
+[[package]]
 name = "heck"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -801,32 +824,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6456b8a6c8f33fee7d958fcd1b60d55b11940a79e63ae87013e6d22e26034440"
 
 [[package]]
-name = "hv"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "hecs",
- "hv-alchemy",
- "hv-ecs-derive",
- "hv-filesystem",
- "hv-guarded-borrow",
- "hv-input",
- "hv-lua",
- "hv-math",
- "hv-resources",
- "hv-stampede",
- "hv-sync",
- "hv-timer",
- "hv-yaks",
- "petgraph",
- "thiserror",
-]
-
-[[package]]
 name = "hv-alchemy"
 version = "0.1.0"
 dependencies = [
  "hashbrown",
+ "hv-atom",
+ "hv-cell",
  "hv-sync",
  "lazy_static",
  "spin 0.9.2",
@@ -844,6 +847,10 @@ version = "0.1.0"
 [[package]]
 name = "hv-cell"
 version = "0.1.0"
+dependencies = [
+ "hv-guarded-borrow",
+ "hv-lease-tracker",
+]
 
 [[package]]
 name = "hv-ecs-derive"
@@ -852,6 +859,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "hv-elastic"
+version = "0.1.0"
+dependencies = [
+ "hecs",
+ "hv-cell",
+ "hv-guarded-borrow",
+ "static_assertions",
 ]
 
 [[package]]
@@ -888,6 +905,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hv-lease-tracker"
+version = "0.1.0"
+dependencies = [
+ "slab",
+ "spin 0.9.2",
+]
+
+[[package]]
 name = "hv-looprider"
 version = "0.1.0"
 dependencies = [
@@ -911,8 +936,8 @@ dependencies = [
  "futures-task",
  "futures-timer",
  "futures-util",
+ "heavy",
  "hecs",
- "hv",
  "hv-alchemy",
  "hv-guarded-borrow",
  "hv-lua-derive",
@@ -981,16 +1006,18 @@ name = "hv-sync"
 version = "0.1.0"
 dependencies = [
  "hecs",
+ "hv-atom",
+ "hv-cell",
+ "hv-elastic",
  "hv-guarded-borrow",
- "slab",
- "spin 0.9.2",
+ "hv-lease-tracker",
 ]
 
 [[package]]
 name = "hv-timer"
 version = "0.1.0"
 dependencies = [
- "hv",
+ "heavy",
 ]
 
 [[package]]
@@ -1311,7 +1338,7 @@ dependencies = [
 name = "module_runner"
 version = "0.0.0"
 dependencies = [
- "hv",
+ "heavy",
 ]
 
 [[package]]
@@ -1859,7 +1886,7 @@ dependencies = [
 name = "rust_module"
 version = "0.0.0"
 dependencies = [
- "hv",
+ "heavy",
 ]
 
 [[package]]
@@ -2234,7 +2261,7 @@ dependencies = [
  "base64",
  "bitfield",
  "flate2",
- "hv",
+ "heavy",
  "log",
  "shrev",
  "simple_logger",

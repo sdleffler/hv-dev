@@ -1,5 +1,5 @@
 [package]
-name = "hv"
+name = "heavy"
 version = "0.2.0"
 edition = "2021"
 
@@ -20,6 +20,7 @@ alchemy = { path = "crates/hv-alchemy", package = "hv-alchemy" }
 anyhow = "1.0.44"
 ecs = { path = "../hecs", package = "hecs" }
 ecs-derive = { path = "crates/hv-ecs-derive", package = "hv-ecs-derive" }
+elastic = { version = "0.1.0", path = "crates/hv-elastic", package = "hv-elastic", features = ["hecs"] }
 fs = { path = "crates/hv-filesystem", package = "hv-filesystem" }
 guarded_borrow = { path = "crates/hv-guarded-borrow", package = "hv-guarded-borrow", features = ["std", "hecs"] }
 lua = { path = "crates/hv-lua", package = "hv-lua", features = ["hv-reexport", "nalgebra", "send", "macros"] }

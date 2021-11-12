@@ -6,19 +6,12 @@
 
 extern crate alloc;
 
-pub mod atom;
+pub extern crate hv_atom as atom;
+pub extern crate hv_cell as cell;
+pub extern crate hv_elastic as elastic;
+
 pub mod borrow;
 pub mod capability;
-pub mod cell;
-#[macro_use]
-pub mod elastic;
-
-#[cfg(feature = "track-leases")]
-pub mod lease;
-
-pub mod hv {
-    pub mod ecs;
-}
 
 /// A wrapper type which only allows `&mut` access to the inner value, therefore making it
 /// unconditionally `Sync`.

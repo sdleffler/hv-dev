@@ -1,7 +1,7 @@
 use std::{any::TypeId, cell::Ref, mem::MaybeUninit};
 
 use hv_alchemy::{AlchemicalAny, Type};
-use hv_sync::{elastic::Elastic, hv::ecs::StretchedBatchWriter};
+use hv_sync::elastic::{external::hecs::StretchedBatchWriter, Elastic};
 
 use crate::{
     userdata::{UserDataFieldsProxy, UserDataMethodsProxy},
