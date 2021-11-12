@@ -1,5 +1,5 @@
-//! Heavy Elastic - safe abstractions for "stretching" lifetimes (and dealing with what happens when
-//! they have to snap back.)
+//! Heavy Elastic - almost-safe abstractions for "stretching" lifetimes (and dealing with what
+//! happens when they have to snap back.)
 //!
 //! This crate provides four main abstractions:
 //! - [`Stretchable<'a>`], a trait indicating that some type with a lifetime `'a` can have that
