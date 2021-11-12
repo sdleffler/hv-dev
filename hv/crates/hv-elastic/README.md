@@ -1,4 +1,4 @@
-# Heavy Elastic - safe lifetime stretching abstractions, for the adventurous or morbidly curious soul
+# Heavy Elastic - *almost*-safe lifetime stretching abstractions, for the adventurous or morbidly curious soul
 
 Ever needed to access an `&'a T` from a closure which has to be `'static`?
 
