@@ -76,9 +76,11 @@ impl UserData for ecs::ColumnBatchBuilder {
         methods.add_method_mut(
             "writer",
             |lua, this, (ty, scope): (AnyUserData, Function)| {
-                let (guard, writer) = ty
-                    .dyn_borrow::<dyn ComponentType>()?
-                    .column_batch_builder_writer(lua, this)?;
+                // safety: guard MUST be dropped before end of scope
+                let (guard, writer) = unsafe {
+                    ty.dyn_borrow::<dyn ComponentType>()?
+                        .column_batch_builder_writer(lua, this)?
+                };
                 let res = scope.call::<_, MultiValue>(writer);
                 drop(guard);
                 res
@@ -287,7 +289,12 @@ pub trait ComponentType: Send + Sync {
     fn write(&self) -> ecs::DynamicQuery;
 
     fn column_batch_type_add(&self, column_batch_type: &mut ecs::ColumnBatchType);
-    fn column_batch_builder_writer<'lua, 'a>(
+
+    /// # Safety
+    ///
+    /// The `Box` returned from this function contains an `ElasticGuard`. For an invocation to be
+    /// safe, the guard MUST be dropped by the end of its lifetime.
+    unsafe fn column_batch_builder_writer<'lua, 'a>(
         &self,
         lua: &'lua Lua,
         column_batch: &'a mut ecs::ColumnBatchBuilder,
@@ -317,7 +324,7 @@ impl<T: ecs::Component + UserData> ComponentType for Type<T> {
         column_batch_type.add::<T>();
     }
 
-    fn column_batch_builder_writer<'lua, 'a>(
+    unsafe fn column_batch_builder_writer<'lua, 'a>(
         &self,
         lua: &'lua Lua,
         column_batch_builder: &'a mut ecs::ColumnBatchBuilder,

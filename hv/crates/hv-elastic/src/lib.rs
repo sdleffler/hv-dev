@@ -273,11 +273,27 @@ impl<T: Stretched> Elastic<T> {
 
     /// Loan a stretchable value to this [`Elastic`] in exchange for a guard object which ends the
     /// loan when the value is taken back or when the guard is dropped.
+    ///
+    /// Panics if there is already a loan in progress to this [`Elastic`].
+    ///
+    /// # Safety
+    ///
+    /// The guard *must* have its destructor run by the end of its lifetime, either by dropping it
+    /// or using [`ElasticGuard::take`]. Calling [`core::mem::forget`] on an [`ElasticGuard`] is
+    /// considered instant undefined behavior, as it leaves an [`Elastic`] in a state which is not
+    /// well-defined and potentially contains a stretched value which is long past the end of its
+    /// life, causing a use-after-free.
     #[track_caller]
-    pub fn loan<'a>(&self, t: T::Parameterized<'a>) -> ElasticGuard<'a, T::Parameterized<'a>> {
+    pub unsafe fn loan<'a>(
+        &self,
+        t: T::Parameterized<'a>,
+    ) -> ElasticGuard<'a, T::Parameterized<'a>> {
         let mut slot = self.slot.as_inner().borrow_mut();
-        assert!(slot.is_none(), "stretchcell already in use!");
-        let stretched = unsafe { T::lengthen(t) };
+        assert!(
+            slot.is_none(),
+            "Elastic is already in the middle of a loan!"
+        );
+        let stretched = T::lengthen(t);
         *slot = Some(stretched);
 
         ElasticGuard {
