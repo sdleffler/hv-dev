@@ -1,6 +1,6 @@
 //! Copy of the crate level documentation & readme example.
 
-use hecs::{With, Without, World};
+use hv_ecs::{With, Without, World};
 use hv_yaks::{Executor, QueryMarker};
 
 fn main() {

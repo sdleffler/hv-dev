@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 #[cfg(feature = "parallel")]
-use hecs::World;
+use hv_ecs::World;
 
 use super::SystemClosure;
 use crate::{
@@ -181,7 +181,7 @@ where
     /// The system-to-be must return nothing and have these 3 arguments:
     /// - [`SystemContext`](struct.SystemContext.html),
     /// - any tuple (up to 16) or a single one of "resources": references or mutable references
-    /// to `Send + Sync` values not contained in a [`hecs::World`](../hecs/struct.World.html)
+    /// to `Send + Sync` values not contained in a [`hv_ecs::World`](../hv-ecs/struct.World.html)
     /// that the system will be accessing,
     /// - any tuple (up to 16) or a single one of [`QueryMarker`](struct.QueryMarker.html) that
     /// represent the queries the system will be making.
@@ -196,7 +196,7 @@ where
     /// # Example
     /// ```rust
     /// # use hv_yaks::{QueryMarker, SystemContext, Executor};
-    /// # let world = hecs::World::new();
+    /// # let world = hv_ecs::World::new();
     /// # struct A;
     /// # struct B;
     /// # struct C;
@@ -205,11 +205,11 @@ where
     ///     res_a: &A,
     ///     &mut (query_0, query_1): &mut (
     ///         QueryMarker<(&B, &mut C)>,
-    ///         QueryMarker<hecs::Without<B, &C>>
+    ///         QueryMarker<hv_ecs::Without<B, &C>>
     ///     ),
     /// ) {
     ///     // This system may read resource of type `A`, and may prepare & execute queries
-    ///     // of `(&B, &mut C)` and `hecs::Without<B, &C>`.
+    ///     // of `(&B, &mut C)` and `hv_ecs::Without<B, &C>`.
     /// }
     ///
     /// fn system_1(
@@ -326,7 +326,7 @@ where
     /// These two executors are identical.
     /// ```rust
     /// # use hv_yaks::{QueryMarker, SystemContext, Executor};
-    /// # let world = hecs::World::new();
+    /// # let world = hv_ecs::World::new();
     /// # fn system_0(_: SystemContext, _: (), _: &mut ()) {}
     /// # fn system_1(_: SystemContext, _: (), _: &mut ()) {}
     /// # fn system_2(_: SystemContext, _: (), _: &mut ()) {}
@@ -361,7 +361,7 @@ where
     /// relationships the systems may have.
     /// ```rust
     /// # use hv_yaks::{QueryMarker, SystemContext, Executor};
-    /// # let world = hecs::World::new();
+    /// # let world = hv_ecs::World::new();
     /// # fn system_0(_: SystemContext, _: (), _: &mut ()) {}
     /// # fn system_1(_: SystemContext, _: (), _: &mut ()) {}
     /// # fn system_2(_: SystemContext, _: (), _: &mut ()) {}

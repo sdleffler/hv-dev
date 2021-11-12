@@ -1,4 +1,4 @@
-use hecs::World;
+use hv_ecs::World;
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use std::{collections::HashMap, sync::Arc};
@@ -47,7 +47,7 @@ mod tests {
         resource::{AtomicBorrow, ResourceWrap},
         Executor, QueryMarker,
     };
-    use hecs::World;
+    use hv_ecs::World;
 
     struct A(usize);
     struct B(usize);

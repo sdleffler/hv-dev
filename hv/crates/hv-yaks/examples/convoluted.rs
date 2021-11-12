@@ -1,6 +1,6 @@
 //! An annotated non-trivial example. Runs with or without the `parallel` feature.
 
-use hecs::World;
+use hv_ecs::World;
 use hv_yaks::{Executor, QueryMarker, SystemContext};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::time::{Duration, Instant};
@@ -42,14 +42,14 @@ struct Color(f32, f32, f32, f32);
 // A system that simulates 2D kinematic motion.
 #[allow(clippy::type_complexity)]
 fn motion(
-    // Thin wrapper over `&hecs::World`.
+    // Thin wrapper over `&hv_ecs::World`.
     context: SystemContext,
     // A resource this system requires. Can be a single one, or any tuple up to 16.
     spawned: &SpawnedEntities,
     // Queries this system will execute. Can be a single one, or any tuple up to 16.
     &mut (no_acceleration, with_acceleration): &mut (
         // `QueryMarker` is a zero-sized type that can be fed into methods of `SystemContext`.
-        QueryMarker<hecs::Without<Acceleration, (&mut Position, &Velocity)>>,
+        QueryMarker<hv_ecs::Without<Acceleration, (&mut Position, &Velocity)>>,
         QueryMarker<(&mut Position, &mut Velocity, &Acceleration)>,
     ),
 ) {

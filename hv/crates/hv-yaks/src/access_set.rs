@@ -1,5 +1,5 @@
 use fixedbitset::FixedBitSet;
-use hecs::{Access, Query, World};
+use hv_ecs::{Access, Query, World};
 use std::{any::TypeId, collections::HashSet};
 
 pub type TypeSet = HashSet<TypeId>;

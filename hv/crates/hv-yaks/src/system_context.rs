@@ -1,11 +1,11 @@
-use hecs::{
+use hv_ecs::{
     Archetype, ArchetypesGeneration, Entity, NoSuchEntity, PreparedQuery, PreparedQueryBorrow,
     Query, QueryBorrow, QueryOne, World,
 };
 
 use crate::{QueryMarker, SystemId};
 
-/// Thin wrapper over [`hecs::World`](../hecs/struct.World.html), can prepare queries using a
+/// Thin wrapper over [`hv_ecs::World`](../hv-ecs/struct.World.html), can prepare queries using a
 /// [`QueryMarker`](struct.QueryMarker.html).
 ///
 /// It cannot be instantiated directly. See [`System`](trait.System.html) for instructions
@@ -24,7 +24,7 @@ impl<'scope> SystemContext<'scope> {
     }
 
     /// Prepares a query using the given [`QueryMarker`](struct.QueryMarker.html);
-    /// see [`hecs::World::query()`](../hecs/struct.World.html#method.query).
+    /// see [`hv_ecs::World::query()`](../hv-ecs/struct.World.html#method.query).
     ///
     /// # Example
     /// ```rust
@@ -35,7 +35,7 @@ impl<'scope> SystemContext<'scope> {
     /// # impl std::ops::AddAssign<Vel> for Pos {
     /// #     fn add_assign(&mut self, _: Vel) {}
     /// # }
-    /// # let world = hecs::World::new();
+    /// # let world = hv_ecs::World::new();
     /// fn some_system(
     ///     context: SystemContext,
     ///     _resources: (),
@@ -58,14 +58,14 @@ impl<'scope> SystemContext<'scope> {
     /// # Example
     /// ```rust
     /// # use hv_yaks::{SystemContext};
-    /// # use hecs::PreparedQuery;
+    /// # use hv_ecs::PreparedQuery;
     /// # struct Pos;
     /// # #[derive(Clone, Copy)]
     /// # struct Vel;
     /// # impl std::ops::AddAssign<Vel> for Pos {
     /// #     fn add_assign(&mut self, _: Vel) {}
     /// # }
-    /// # let world = hecs::World::new();
+    /// # let world = hv_ecs::World::new();
     /// fn some_system(
     ///     context: SystemContext,
     ///     _resources: (),
@@ -88,7 +88,7 @@ impl<'scope> SystemContext<'scope> {
 
     /// Prepares a query against a single entity using the given
     /// [`QueryMarker`](struct.QueryMarker.html);
-    /// see [`hecs::World::query_one()`](../hecs/struct.World.html#method.query_one).
+    /// see [`hv_ecs::World::query_one()`](../hv-ecs/struct.World.html#method.query_one).
     ///
     /// # Example
     /// ```rust
@@ -100,7 +100,7 @@ impl<'scope> SystemContext<'scope> {
     /// # impl std::ops::AddAssign<Vel> for Pos {
     /// #     fn add_assign(&mut self, _: Vel) {}
     /// # }
-    /// # let world = hecs::World::new();
+    /// # let world = hv_ecs::World::new();
     /// fn some_system(
     ///     context: SystemContext,
     ///     _resources: (),
@@ -137,24 +137,24 @@ impl<'scope> SystemContext<'scope> {
         self.world.query_one(entity)
     }
 
-    /// See [`hecs::World::reserve_entity()`](../hecs/struct.World.html#method.reserve_entity).
+    /// See [`hv_ecs::World::reserve_entity()`](../hv-ecs/struct.World.html#method.reserve_entity).
     pub fn reserve_entity(&self) -> Entity {
         self.world.reserve_entity()
     }
 
-    /// See [`hecs::World::contains()`](../hecs/struct.World.html#method.contains).
+    /// See [`hv_ecs::World::contains()`](../hv-ecs/struct.World.html#method.contains).
     pub fn contains(&self, entity: Entity) -> bool {
         self.world.contains(entity)
     }
 
-    /// See [`hecs::World::archetypes()`](../hecs/struct.World.html#method.archetypes).
+    /// See [`hv_ecs::World::archetypes()`](../hv-ecs/struct.World.html#method.archetypes).
     pub fn archetypes(&self) -> impl ExactSizeIterator<Item = &Archetype> + '_ {
         self.world.archetypes()
     }
 
-    /// See [`hecs::World::archetypes_generation()`][ag].
+    /// See [`hv_ecs::World::archetypes_generation()`][ag].
     ///
-    /// [ag]: ../hecs/struct.World.html#method.archetypes_generation
+    /// [ag]: ../hv-ecs/struct.World.html#method.archetypes_generation
     pub fn archetypes_generation(&self) -> ArchetypesGeneration {
         self.world.archetypes_generation()
     }

@@ -2,11 +2,11 @@ use std::convert::Infallible;
 
 use crate::{NonBlockingGuardedBorrow, NonBlockingGuardedMutBorrowMut};
 
-impl<T> NonBlockingGuardedBorrow<T> for hecs::DynamicComponent<T> {
+impl<T> NonBlockingGuardedBorrow<T> for hv_ecs::DynamicComponent<T> {
     type Guard<'a>
     where
         T: 'a,
-    = hecs::DynamicItemRef<'a, T>;
+    = hv_ecs::DynamicItemRef<'a, T>;
     type BorrowError<'a>
     where
         T: 'a,
@@ -17,11 +17,11 @@ impl<T> NonBlockingGuardedBorrow<T> for hecs::DynamicComponent<T> {
     }
 }
 
-impl<T> NonBlockingGuardedMutBorrowMut<T> for hecs::DynamicComponent<T> {
+impl<T> NonBlockingGuardedMutBorrowMut<T> for hv_ecs::DynamicComponent<T> {
     type MutGuardMut<'a>
     where
         T: 'a,
-    = hecs::DynamicItemRefMut<'a, T>;
+    = hv_ecs::DynamicItemRefMut<'a, T>;
     type MutBorrowMutError<'a>
     where
         T: 'a,

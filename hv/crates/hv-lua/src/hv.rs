@@ -5,7 +5,7 @@ use crate::{
     Lua, RegistryKey, Result, Table, ToLua, UserData,
 };
 
-#[cfg(feature = "hecs")]
+#[cfg(feature = "hv-ecs")]
 pub mod ecs;
 pub mod math;
 
@@ -13,35 +13,35 @@ pub mod alchemy;
 mod sync;
 
 pub trait LuaUserDataTypeExt<T> {
-    /// Mark `Send + Sync` ([`Component`](hecs::Component) equivalent.)
+    /// Mark `Send + Sync` ([`Component`](hv_ecs::Component) equivalent.)
     fn mark_component(self) -> Self
     where
-        T: hecs::Component;
+        T: hv_ecs::Component;
 
-    /// Mark [`DynamicBundle`](hecs::DynamicBundle). (through [`DynamicBundleProxy`])
+    /// Mark [`DynamicBundle`](hv_ecs::DynamicBundle). (through [`DynamicBundleProxy`])
     fn mark_bundle(self) -> Self
     where
-        T: hecs::DynamicBundle;
+        T: hv_ecs::DynamicBundle;
 }
 
 pub trait LuaUserDataTypeTypeExt<T> {
     /// Mark [`Type<T>: ComponentType`](ComponentType) (allows use for constructing dynamic queries)
     fn mark_component_type(self) -> Self
     where
-        T: hecs::Component;
+        T: hv_ecs::Component;
 }
 
 impl<T: 'static + UserData> LuaUserDataTypeExt<T> for Type<T> {
     fn mark_component(self) -> Self
     where
-        T: hecs::Component,
+        T: hv_ecs::Component,
     {
         self.add::<dyn Send>().add::<dyn Sync>()
     }
 
     fn mark_bundle(self) -> Self
     where
-        T: hecs::DynamicBundle,
+        T: hv_ecs::DynamicBundle,
     {
         self.add::<dyn DynamicBundleProxy>()
     }
@@ -50,7 +50,7 @@ impl<T: 'static + UserData> LuaUserDataTypeExt<T> for Type<T> {
 impl<T: 'static + UserData> LuaUserDataTypeTypeExt<T> for Type<Type<T>> {
     fn mark_component_type(self) -> Self
     where
-        T: hecs::Component,
+        T: hv_ecs::Component,
     {
         self.add::<dyn ComponentType>()
     }

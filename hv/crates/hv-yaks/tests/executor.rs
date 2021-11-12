@@ -1,4 +1,4 @@
-use hecs::World;
+use hv_ecs::World;
 use hv_yaks::{Executor, QueryMarker};
 
 struct A(usize);

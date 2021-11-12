@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "altar",
-    "hecs",
     "tiled",
     "hv/crates/hv-alchemy",
     "hv/crates/hv-atom",

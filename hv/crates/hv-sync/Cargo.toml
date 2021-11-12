@@ -8,7 +8,7 @@ track-leases = ["hv-lease-tracker", "hv-cell/track-leases"]
 default = ["track-leases"]
 
 [dependencies]
-hecs = { path = "../../../hecs" }
+hv-ecs = { version = "0.1.0", path = "../hv-ecs" }
 hv-atom = { version = "0.1.0", path = "../hv-atom" }
 hv-cell = { version = "0.1.0", path = "../hv-cell" }
 hv-elastic = { version = "0.1.0", path = "../hv-elastic" }

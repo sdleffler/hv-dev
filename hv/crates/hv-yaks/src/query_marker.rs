@@ -1,4 +1,4 @@
-use hecs::Query;
+use hv_ecs::Query;
 use std::marker::PhantomData;
 
 /// A zero-sized `Copy` type used to describe queries of a system, and prepare them

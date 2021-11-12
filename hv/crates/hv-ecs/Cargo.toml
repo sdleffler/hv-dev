@@ -1,0 +1,13 @@
+[package]
+name = "hv-ecs"
+description = "A wrapper around the `hecs` crate performing reexporting/version patching for Heavy"
+authors = ["Shea 'Decibel' Leffler"]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache 2.0"
+repository = "https://github.com/sdleffler/hv-dev"
+documentation = "https://docs.rs/hv-ecs"
+
+[dependencies]
+# hecs = { version = "0.6.5", path = "../../../hecs" }
+hecs = { version = "0.6.5", git = "https://github.com/sdleffler/hecs", branch = "type-info-expose" }

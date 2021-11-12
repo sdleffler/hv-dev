@@ -25,7 +25,7 @@ use contains::Contains;
 
 pub use atomic_borrow::AtomicBorrow;
 pub use fetch::Fetch;
-use hecs::World;
+use hv_ecs::World;
 use hv_resources::{Ref, RefMut, Resource, Resources, SyncResources};
 pub use ref_extractor::{MultiRefExtractor, RefExtractor};
 pub use tuple::ResourceTuple;
@@ -221,7 +221,7 @@ fn smoke_test() {
         .system(|_, _: (&mut f32, &u32), _: &mut ()| {})
         .system(|_, _: (&mut f32, &u64), _: &mut ()| {})
         .build();
-    let world = hecs::World::new();
+    let world = hv_ecs::World::new();
 
     let (mut a, mut b, mut c) = (1.0f32, 2u32, 3u64);
     executor.run(&world, (&mut a, &mut b, &mut c));

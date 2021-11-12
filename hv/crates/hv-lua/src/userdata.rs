@@ -1295,7 +1295,7 @@ impl UserData for RegistryKey {
     }
 
     fn on_type_metatable_init(table: Type<Type<Self>>) {
-        #[cfg(feature = "hecs")]
+        #[cfg(feature = "hv-ecs")]
         table.add::<dyn crate::hv::ecs::ComponentType>();
     }
 

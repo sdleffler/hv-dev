@@ -1,4 +1,4 @@
-use hecs::World;
+use hv_ecs::World;
 
 use super::SystemClosure;
 use crate::{ExecutorBuilder, ResourceTuple, SystemContext, SystemId};

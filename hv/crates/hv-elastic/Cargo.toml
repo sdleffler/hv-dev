@@ -16,5 +16,5 @@ categories = ["no-std", "concurrency", "data-structures"]
 [dependencies]
 hv-cell = { path = "../hv-cell" }
 hv-guarded-borrow = { path = "../hv-guarded-borrow" }
-hecs = { version = "0.6.5", path = "../../../hecs", optional = true }
+hv-ecs = { version = "0.1.0", path = "../hv-ecs", optional = true }
 static_assertions = "1.1.0"

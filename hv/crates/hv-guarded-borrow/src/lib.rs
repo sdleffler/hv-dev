@@ -16,8 +16,8 @@ use core::{
     convert::Infallible,
 };
 
-#[cfg(feature = "hecs")]
-mod hecs;
+#[cfg(feature = "hv-ecs")]
+mod hv_ecs;
 
 #[cfg(feature = "std")]
 mod std;

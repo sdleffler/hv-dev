@@ -42,7 +42,7 @@
 //! [here](https://github.com/Ratysz/yaks/blob/0.1.0/examples/convoluted.rs).
 //!
 //! ```rust
-//! use hecs::{With, Without, World};
+//! use hv_ecs::{With, Without, World};
 //! use hv_yaks::{Executor, QueryMarker};
 //!
 //! let mut world = World::new();

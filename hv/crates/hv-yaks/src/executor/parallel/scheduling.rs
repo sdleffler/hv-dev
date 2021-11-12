@@ -1,5 +1,5 @@
 use crossbeam_channel::{Receiver, Sender};
-use hecs::{ArchetypesGeneration, World};
+use hv_ecs::{ArchetypesGeneration, World};
 use rayon::ScopeFifo;
 use std::collections::{HashMap, HashSet};
 
@@ -241,7 +241,7 @@ mod tests {
         resource::{AtomicBorrow, ResourceWrap},
         Executor, QueryMarker, SystemContext,
     };
-    use hecs::World;
+    use hv_ecs::World;
     use rayon::{ScopeFifo, ThreadPoolBuilder};
 
     struct A(usize);

@@ -1,4 +1,4 @@
-use hecs::World;
+use hv_ecs::World;
 
 use crate::{QueryBundle, SystemContext};
 
@@ -30,7 +30,7 @@ where
 
 #[test]
 fn smoke_test() {
-    let world = hecs::World::new();
+    let world = hv_ecs::World::new();
 
     fn dummy_system(_: SystemContext, _: (), _: &mut ()) {}
     dummy_system.run(&world, ());

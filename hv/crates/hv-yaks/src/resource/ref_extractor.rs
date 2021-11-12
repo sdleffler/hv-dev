@@ -1,4 +1,4 @@
-use hecs::World;
+use hv_ecs::World;
 use hv_resources::Resources;
 
 use crate::Executor;

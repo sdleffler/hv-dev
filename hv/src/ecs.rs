@@ -2,6 +2,6 @@
 
 pub use ::ecs::*;
 pub use ::ecs_derive::*;
-pub use ::elastic::external::hecs::*;
+pub use ::elastic::external::ecs::*;
 pub use ::lua::hv::ecs::*;
 pub use ::yaks::*;

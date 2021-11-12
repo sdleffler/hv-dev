@@ -1,7 +1,7 @@
-use hecs::{Component, PreparedQuery, Query, With, Without};
+use hv_ecs::{Component, PreparedQuery, Query, With, Without};
 
 #[cfg(feature = "parallel")]
-use hecs::World;
+use hv_ecs::World;
 #[cfg(feature = "parallel")]
 use std::any::TypeId;
 

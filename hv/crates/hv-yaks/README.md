@@ -42,7 +42,7 @@ accept `Resources` struct from the [`resources`] crate in place of resources arg
 A more elaborate and annotated example can be found [here](examples/convoluted.rs).
 
 ```rust
-use hecs::{With, Without, World};
+use hv_ecs::{With, Without, World};
 use yaks::{Executor, QueryMarker};
 
 fn main() {

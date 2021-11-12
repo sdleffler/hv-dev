@@ -1,11 +1,11 @@
-use hecs::{Entity, Fetch, Query, QueryBorrow};
+use hv_ecs::{Entity, Fetch, Query, QueryBorrow};
 
 #[cfg_attr(not(feature = "parallel"), allow(unused_variables))]
-/// Distributes over a `rayon` thread pool the work of applying a function to items in a query.
-/// See [`hecs::QueryBorrow::iter_batched()`](../hecs/struct.QueryBorrow.html#method.iter_batched).
+/// Distributes over a `rayon` thread pool the work of applying a function to items in a query. See
+/// [`hv_ecs::QueryBorrow::iter_batched()`](../hv-ecs/struct.QueryBorrow.html#method.iter_batched).
 ///
-/// If the default `parallel` feature is disabled the functionality is identical
-/// to `query_borrow.iter().for_each(for_each)`.
+/// If the default `parallel` feature is disabled the functionality is identical to
+/// `query_borrow.iter().for_each(for_each)`.
 ///
 /// Calling `batch()` standalone will use the global `rayon` thread pool:
 /// ```rust
@@ -14,7 +14,7 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 /// # impl std::ops::AddAssign<&Vel> for Pos {
 /// #     fn add_assign(&mut self, _: &Vel) {}
 /// # }
-/// # let world = hecs::World::new();
+/// # let world = hv_ecs::World::new();
 /// # let num_entities = 64;
 /// hv_yaks::batch(
 ///     &mut world.query::<(&mut Pos, &Vel)>(),
@@ -32,7 +32,7 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 /// # impl std::ops::AddAssign<&Vel> for Pos {
 /// #     fn add_assign(&mut self, _: &Vel) {}
 /// # }
-/// # let world = hecs::World::new();
+/// # let world = hv_ecs::World::new();
 /// # let num_entities = 64;
 /// # #[cfg(feature = "parallel")]
 /// # let thread_pool =
@@ -60,8 +60,8 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 ///     )
 /// });
 /// ```
-/// `batch()` can be called in systems, where it will use whichever thread pool is used by
-/// the system or the executor it's in:
+/// `batch()` can be called in systems, where it will use whichever thread pool is used by the
+/// system or the executor it's in:
 /// ```rust
 /// # use hv_yaks::{QueryMarker, Executor};
 /// # struct Pos;
@@ -69,7 +69,7 @@ use hecs::{Entity, Fetch, Query, QueryBorrow};
 /// # impl std::ops::AddAssign<&Vel> for Pos {
 /// #     fn add_assign(&mut self, _: &Vel) {}
 /// # }
-/// # let world = hecs::World::new();
+/// # let world = hv_ecs::World::new();
 /// # let mut num_entities = 64;
 /// # #[cfg(feature = "parallel")]
 /// # let thread_pool =

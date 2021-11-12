@@ -1,4 +1,4 @@
-use hecs::World;
+use hv_ecs::World;
 use parking_lot::Mutex;
 use std::{
     cell::RefCell,

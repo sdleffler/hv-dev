@@ -1,4 +1,4 @@
-use hecs::World;
+use hv_ecs::World;
 use std::collections::HashMap;
 
 use crate::{
@@ -37,33 +37,33 @@ pub struct SystemId(pub(crate) usize);
 ///
 /// Systems can be any closure or function that return nothing and have these 3 arguments:
 /// - [`SystemContext`](struct.SystemContext.html),
-/// - any tuple (up to 16) or a single one of "resources": references or mutable references
-/// to `Send + Sync` values not contained in a [`hecs::World`](../hecs/struct.World.html)
-/// that the system will be accessing,
+/// - any tuple (up to 16) or a single one of "resources": references or mutable references to `Send
+///   + Sync` values not contained in a [`hv_ecs::World`](../hv-ecs/struct.World.html) that the
+///   system will be accessing,
 /// - any tuple (up to 16) or a single one of [`QueryMarker`](struct.QueryMarker.html) that
-/// represent the queries the system will be making.
+///   represent the queries the system will be making.
 ///
-/// Additionally, closures may mutably borrow from their environment for the lifetime `'closures`
-/// of the executor, but must be `Send + Sync`. If none of the systems make any borrows from the
+/// Additionally, closures may mutably borrow from their environment for the lifetime `'closures` of
+/// the executor, but must be `Send + Sync`. If none of the systems make any borrows from the
 /// environment, said lifetime can simply be `'static`.
 ///
 /// The generic parameter `Resources` of the executor must be a superset tuple of all resource set
-/// tuples of the contained systems. Any type in `Resources` must appear no more than once,
-/// however, any number of systems in the executor may have either an immutable or a mutable
-/// reference of said type in their signature. For example: if any number of systems require
-/// a `&f32` or a `&mut f32`, `Resources` must contain `f32`.
+/// tuples of the contained systems. Any type in `Resources` must appear no more than once, however,
+/// any number of systems in the executor may have either an immutable or a mutable reference of
+/// said type in their signature. For example: if any number of systems require a `&f32` or a `&mut
+/// f32`, `Resources` must contain `f32`.
 ///
-/// It's possible to define an order of execution of the systems by building up a dependency
-/// graph when building the executor, see [`ExecutorBuilder::system_with_handle()`][swh].
+/// It's possible to define an order of execution of the systems by building up a dependency graph
+/// when building the executor, see [`ExecutorBuilder::system_with_handle()`][swh].
 ///
 /// [swh]: struct.ExecutorBuilder.html#method.system_with_handle
 ///
 /// Executors are relatively costly to instantiate, and should be cached whenever possible.
 ///
-/// Executors are not intended to house any and all behavior of the program, they work best
-/// when treated as a sort of [`yaks::batch()`](fn.batch.html) for systems; e.g.,
-/// make one only when the systems in it may actually benefit from being ran concurrently
-/// and prefer several small executors over a single large one.
+/// Executors are not intended to house any and all behavior of the program, they work best when
+/// treated as a sort of [`yaks::batch()`](fn.batch.html) for systems; e.g., make one only when the
+/// systems in it may actually benefit from being ran concurrently and prefer several small
+/// executors over a single large one.
 ///
 /// See [`::run()`](#method.run), crate examples, and documentation for other items in the library
 /// for more details and specific demos.
@@ -112,22 +112,22 @@ where
         }
     }
 
-    /// Forces the executor to forget stored [`hecs::ArchetypesGeneration`][1], see
-    /// [`hecs::World::archetypes_generation()`][2].
+    /// Forces the executor to forget stored [`hv_ecs::ArchetypesGeneration`][1], see
+    /// [`hv_ecs::World::archetypes_generation()`][2].
     ///
-    /// **Must** be called before using the executor with a different [`hecs::World`][3] than
+    /// **Must** be called before using the executor with a different [`hv_ecs::World`][3] than
     /// it was used with earlier - not doing so may cause a panic when a query makes it's borrows.
     /// In all other cases, calling this function is unnecessary and detrimental to performance.
     ///
-    /// [1]: ../hecs/struct.ArchetypesGeneration.html
-    /// [2]: ../hecs/struct.World.html#method.archetypes_generation
-    /// [3]: ../hecs/struct.World.html
+    /// [1]: ../hv-ecs/struct.ArchetypesGeneration.html
+    /// [2]: ../hv-ecs/struct.World.html#method.archetypes_generation
+    /// [3]: ../hv-ecs/struct.World.html
     ///
     /// # Example
     /// ```rust
     /// # let mut executor = hv_yaks::Executor::<()>::builder().build();
-    /// # let world_a = hecs::World::new();
-    /// # let world_b = hecs::World::new();
+    /// # let world_a = hv_ecs::World::new();
+    /// # let world_b = hv_ecs::World::new();
     /// executor.run(&world_a, ());
     /// executor.run(&world_a, ());
     /// executor.force_archetype_recalculation();
@@ -154,7 +154,7 @@ where
     /// to values of types specified by the generic parameter `Resources` of the executor:
     /// ```rust
     /// # use hv_yaks::Executor;
-    /// # let world = hecs::World::new();
+    /// # let world = hv_ecs::World::new();
     /// let mut executor = Executor::<(f32, u32)>::builder().build();
     /// let mut some_f32 = 0f32;
     /// let mut some_u32 = 0u32;
@@ -178,7 +178,7 @@ where
     /// to use that thread pool instead of the global one:
     /// ```rust
     /// # use hv_yaks::Executor;
-    /// # let world = hecs::World::new();
+    /// # let world = hv_ecs::World::new();
     /// # #[cfg(feature = "parallel")]
     /// # let thread_pool =
     /// # {
@@ -211,7 +211,7 @@ where
     /// e.g. `(&mut SomeResource, &SomeResource)`.
     ///
     /// Additionally, it *may* panic if:
-    /// - a different [`hecs::World`](../hecs/struct.World.html) is supplied than
+    /// - a different [`hv_ecs::World`](../hv-ecs/struct.World.html) is supplied than
     /// in a previous call, without first calling
     /// [`::force_archetype_recalculation()`](#method.force_archetype_recalculation).
     pub fn run_with_local<RefSource>(&mut self, world: &World, resources: RefSource)
