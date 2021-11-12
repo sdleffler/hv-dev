@@ -27,7 +27,7 @@ impl ChunkCoords {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 pub struct SubCoords(Vector2<u32>);
 
 impl Deref for SubCoords {
@@ -133,6 +133,13 @@ impl<T> ChunkLayer<T> {
 
     pub fn get_chunk_mut(&mut self, coords: ChunkCoords) -> Option<&mut Chunk<T>> {
         self.chunks.get_mut(&coords)
+    }
+
+    pub fn get_or_insert_chunk(&mut self, coords: ChunkCoords) -> &mut Chunk<T>
+    where
+        T: Default,
+    {
+        self.chunks.entry(coords).or_default()
     }
 
     pub fn insert_chunk(&mut self, coords: ChunkCoords, chunk: Chunk<T>) -> Option<Chunk<T>> {
@@ -272,6 +279,14 @@ impl<T> ChunkMap<T> {
         range: impl RangeBounds<i32>,
     ) -> impl Iterator<Item = (i32, &mut ChunkLayer<T>)> {
         self.layers.range_mut(range).map(|(&i, c)| (i, c))
+    }
+
+    pub fn get_layer(&self, index: i32) -> Option<&ChunkLayer<T>> {
+        self.layers.get(&index)
+    }
+
+    pub fn get_layer_mut(&mut self, index: i32) -> Option<&mut ChunkLayer<T>> {
+        self.layers.get_mut(&index)
     }
 
     pub fn get_or_insert_layer(&mut self, index: i32) -> &mut ChunkLayer<T> {

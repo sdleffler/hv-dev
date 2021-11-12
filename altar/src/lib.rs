@@ -8,9 +8,9 @@
 #![feature(is_sorted)]
 #![feature(maybe_uninit_uninit_array, maybe_uninit_array_assume_init)]
 
-pub mod chunked_map;
 pub mod command_buffer;
 pub mod event_loop;
+pub mod lattice;
 pub mod physics;
 pub mod render;
 pub mod scene;
