@@ -1,8 +1,15 @@
 [package]
 name = "hv-alchemy"
+description = "Heavy Alchemy - the black arts of transmutation, wrapped for your safe usage and enjoyment"
 authors = ["Shea 'Decibel' Leffler <shea@errno.com>"]
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/sdleffler/hv-dev"
+documentation = "https://docs.rs/hv-alchemy"
+keywords = ["trait", "reflection", "dynamic", "pointer", "specialization"]
+categories = ["no-std", "data-structures"]
 
 [dependencies]
 hashbrown = "0.11.2"
@@ -12,5 +19,3 @@ hv-sync = { version = "0.1.0", path = "../hv-sync" }
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 spin = "0.9.2"
 static_assertions = "1.1.0"
-
-[features]
