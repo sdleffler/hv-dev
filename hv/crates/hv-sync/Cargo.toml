@@ -12,5 +12,5 @@ hv-ecs = { version = "0.1.0", path = "../hv-ecs" }
 hv-atom = { version = "0.1.0", path = "../hv-atom" }
 hv-cell = { version = "0.1.0", path = "../hv-cell" }
 hv-elastic = { version = "0.1.0", path = "../hv-elastic" }
-hv-guarded-borrow = { version = "0.1.0", path = "../hv-guarded-borrow" }
+hv-guarded-borrow = { version = "0.1.1", path = "../hv-guarded-borrow" }
 hv-lease-tracker = { version = "0.1.0", path = "../hv-lease-tracker", optional = true }
