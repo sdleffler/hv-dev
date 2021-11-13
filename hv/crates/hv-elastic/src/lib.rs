@@ -19,7 +19,9 @@
 #![no_std]
 #![warn(missing_docs)]
 #![warn(missing_debug_implementations)]
-#![feature(generic_associated_types)]
+#![feature(generic_associated_types, allocator_api)]
+
+extern crate alloc;
 
 use core::{fmt, marker::PhantomData, ptr::NonNull};
 
@@ -27,11 +29,13 @@ use core::{fmt, marker::PhantomData, ptr::NonNull};
 #[doc(hidden)]
 pub use core::mem::transmute;
 
+use alloc::{boxed::Box, vec::Vec};
 use hv_guarded_borrow::{
     NonBlockingGuardedBorrow, NonBlockingGuardedBorrowMut, NonBlockingGuardedMutBorrowMut,
 };
 
 use hv_cell::{ArcCell, ArcRef, ArcRefMut, AtomicRef, AtomicRefMut};
+use hv_stampede::Bump;
 
 /// Small convenience macro for correctly implementing the four unsafe methods of [`Stretched`].
 #[macro_export]
@@ -498,4 +502,76 @@ unsafe impl<T: Stretched> Stretched for Option<T> {
 
 impl<'a, T: Stretchable<'a>> Stretchable<'a> for Option<T> {
     type Stretched = Option<T::Stretched>;
+}
+
+/// An arena for allocating [`ScopeGuard`]s.
+#[derive(Debug, Default)]
+pub struct ScopeArena {
+    bump: Bump,
+}
+
+impl ScopeArena {
+    /// Create an empty scope arena.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a scope within which we can safely loan elastics.
+    ///
+    /// This method *does not* reset the arena afterwards, so if you use it, it is your
+    /// responsibility to reset the `ScopeArena` with [`ScopeArena::reset`] to avoid memory leaks.
+    pub fn scope<'a, F, R>(&'a self, f: F) -> R
+    where
+        F: FnOnce(&mut ScopeGuard<'a>) -> R,
+    {
+        let mut scope_guard = ScopeGuard {
+            bump: &self.bump,
+            buf: Vec::new_in(&self.bump),
+        };
+        f(&mut scope_guard)
+    }
+
+    /// Create a scope within which we can safely loan elastics, and reset the arena at the end.
+    pub fn scope_mut<'a, F, R>(&'a mut self, f: F) -> R
+    where
+        F: for<'b> FnOnce(&mut ScopeGuard<'b>) -> R,
+    {
+        let result = self.scope(f);
+        self.reset();
+        result
+    }
+
+    /// Clear memory allocated by the arena, preserving the allocations for reuse.
+    pub fn reset(&mut self) {
+        self.bump.reset();
+    }
+}
+
+trait PutItInABox {}
+
+impl<T: ?Sized> PutItInABox for T {}
+
+/// A guard which allows "stashing" [`ElasticGuard`]s for safe loaning.
+///
+/// Bare [`Elastic::loan`] is unsafe, because the returned [`ElasticGuard`] *must* be dropped. A
+/// [`ScopeGuard`] provided by [`ScopeArena::scope`] or [`ScopeArena::scope_mut`] allows for
+/// collecting [`ElasticGuard`]s through its *safe* [`ScopeGuard::loan`] method, because the
+/// [`ScopeArena`] ensures that all loans are ended at the end of the scope.
+pub struct ScopeGuard<'a> {
+    bump: &'a Bump,
+    buf: Vec<Box<dyn PutItInABox + 'a, &'a Bump>, &'a Bump>,
+}
+
+impl<'a> fmt::Debug for ScopeGuard<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ScopeGuard(..{})", self.buf.len())
+    }
+}
+
+impl<'a> ScopeGuard<'a> {
+    /// Loan to an elastic within the lifetime of the scope guard.
+    pub fn loan<T: Stretchable<'a>>(&mut self, elastic: &Elastic<T::Stretched>, value: T) {
+        let guard = unsafe { elastic.loan(value) };
+        self.buf.push(Box::new_in(guard, self.bump));
+    }
 }

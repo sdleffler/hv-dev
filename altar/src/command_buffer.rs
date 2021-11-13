@@ -193,7 +193,10 @@ impl<'a> CommandPoolScope<'a> {
             chunk,
             bufs: (*self.buf).clone(),
         };
-        let guard = elastic.loan(inner);
+
+        // Safety: if the `CommandPoolScope` is leaked, all of the bufs and command buffer memory
+        // that is pointed to are also leaked.
+        let guard = unsafe { elastic.loan(inner) };
         self.guards.lock().push(guard);
 
         CommandBuffer { inner: elastic }
@@ -303,7 +306,11 @@ impl CommandPoolResource {
         Self::default()
     }
 
-    pub fn loan<'g>(&self, scope: CommandPoolScope<'g>) -> CommandPoolGuard<'g> {
+    /// # Safety
+    ///
+    /// The `CommandPoolGuard` *must* be dropped by the end of its scope, or else undefined
+    /// behavior/use-after-free is possible.
+    pub unsafe fn loan<'g>(&self, scope: CommandPoolScope<'g>) -> CommandPoolGuard<'g> {
         CommandPoolGuard(self.inner.loan(scope))
     }
 

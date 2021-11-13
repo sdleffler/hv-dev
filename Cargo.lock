@@ -857,6 +857,7 @@ dependencies = [
  "hv-cell",
  "hv-ecs",
  "hv-guarded-borrow",
+ "hv-stampede",
  "static_assertions",
 ]
 

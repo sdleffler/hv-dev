@@ -11,7 +11,7 @@ use hv::{
     prelude::*,
     sync::{
         cell::ArcCell,
-        elastic::{Elastic, ElasticGuard, StretchedMut, StretchedRef},
+        elastic::{Elastic, ScopeArena, ScopeGuard, StretchedMut, StretchedRef},
     },
 };
 use tracing::{error, trace_span};
@@ -67,10 +67,15 @@ impl ScriptResources {
 
     /// Immutably loan a resource, receiving back a scope guard and a reference to the "stretched"
     /// type.
+    ///
+    /// # Safety
+    ///
+    /// The returned `ElasticGuard` *must* be dropped by the end of its lifetime.
     pub fn loan_ref<'a, T: LuaUserData + 'static>(
         &self,
+        guard: &mut ScopeGuard<'a>,
         val: &'a T,
-    ) -> Option<(ElasticGuard<'a, &'a T>, Elastic<StretchedRef<T>>)> {
+    ) -> Option<Elastic<StretchedRef<T>>> {
         let elastic = self
             .map
             .as_inner()
@@ -78,16 +83,21 @@ impl ScriptResources {
             .get(&TypeId::of::<T>())?
             .downcast_ref::<Elastic<StretchedRef<T>>>()?
             .clone();
-        let guard = elastic.loan(val);
-        Some((guard, elastic))
+        guard.loan(&elastic, val);
+        Some(elastic)
     }
 
     /// Mutably loan a resource, receiving back a scope guard and a reference to the "stretched"
     /// type.
+    ///
+    /// # Safety
+    ///
+    /// The returned `ElasticGuard` *must* be dropped by the end of its lifetime.
     pub fn loan_mut<'a, T: LuaUserData + 'static>(
         &self,
+        guard: &mut ScopeGuard<'a>,
         val: &'a mut T,
-    ) -> Option<(ElasticGuard<'a, &'a mut T>, Elastic<StretchedMut<T>>)> {
+    ) -> Option<Elastic<StretchedMut<T>>> {
         let elastic = self
             .map
             .as_inner()
@@ -95,8 +105,8 @@ impl ScriptResources {
             .get(&TypeId::of::<T>())?
             .downcast_ref::<Elastic<StretchedMut<T>>>()?
             .clone();
-        let guard = elastic.loan(val);
-        Some((guard, elastic))
+        guard.loan(&elastic, val);
+        Some(elastic)
     }
 
     /// Get a resource and dynamically convert it to userdata without requiring a static type.
@@ -188,51 +198,57 @@ impl ScriptContext {
 /// level.
 pub fn script_upkeep_system(
     context: SystemContext,
-    (script_context, fs, command_pool): (&mut ScriptContext, &mut Filesystem, &CommandPoolResource),
+    (scope_arena, script_context, fs, command_pool): (
+        &ScopeArena,
+        &mut ScriptContext,
+        &mut Filesystem,
+        &CommandPoolResource,
+    ),
     lua: &Lua,
     (unloaded_scripts,): (QueryMarker<Without<ScriptLoadError, Without<LuaRegistryKey, &Script>>>,),
 ) {
     let _span = trace_span!("script_upkeep_system").entered();
+    scope_arena.scope(|scope| {
+        let fs = script_context
+            .resources
+            .loan_mut(scope, fs)
+            .expect("no filesystem resource!");
+        let mut command_buffer = command_pool.get_buffer();
 
-    let (_fs_guard, fs) = script_context
-        .resources
-        .loan_mut(fs)
-        .expect("no filesystem resource!");
-    let mut command_buffer = command_pool.get_buffer();
+        let mut buf = String::new();
+        let env_table: LuaTable = lua.registry_value(&script_context.env).unwrap();
 
-    let mut buf = String::new();
-    let env_table: LuaTable = lua.registry_value(&script_context.env).unwrap();
+        for (entity, script) in context.query(unloaded_scripts).iter() {
+            let res = (|| -> Result<LuaRegistryKey> {
+                let mut mut_fs = fs.borrow_mut().unwrap();
+                buf.clear();
+                mut_fs.open(&script.path)?.read_to_string(&mut buf)?;
+                drop(mut_fs);
+                let loaded: LuaValue = lua
+                    .load(&buf)
+                    .set_name(&script.path)?
+                    .set_environment(env_table.clone())?
+                    .call(())?;
+                let registry_key = lua.create_registry_value(loaded)?;
+                Ok(registry_key)
+            })();
 
-    for (entity, script) in context.query(unloaded_scripts).iter() {
-        let res = (|| -> Result<LuaRegistryKey> {
-            let mut mut_fs = fs.borrow_mut().unwrap();
-            buf.clear();
-            mut_fs.open(&script.path)?.read_to_string(&mut buf)?;
-            drop(mut_fs);
-            let loaded: LuaValue = lua
-                .load(&buf)
-                .set_name(&script.path)?
-                .set_environment(env_table.clone())?
-                .call(())?;
-            let registry_key = lua.create_registry_value(loaded)?;
-            Ok(registry_key)
-        })();
+            match res {
+                Ok(key) => command_buffer.insert(entity, (key,)),
+                Err(error) => {
+                    error!(
+                        ?entity,
+                        script = ?script.path,
+                        ?error,
+                        "error instantiating entity script: {:#}",
+                        error
+                    );
 
-        match res {
-            Ok(key) => command_buffer.insert(entity, (key,)),
-            Err(error) => {
-                error!(
-                    ?entity,
-                    script = ?script.path,
-                    ?error,
-                    "error instantiating entity script: {:#}",
-                    error
-                );
-
-                command_buffer.insert(entity, (ScriptLoadError { error },));
+                    command_buffer.insert(entity, (ScriptLoadError { error },));
+                }
             }
         }
-    }
+    });
 }
 
 /// A local system which looks for entities with [`Script`] and [`LuaRegistryKey`] components;
@@ -240,31 +256,37 @@ pub fn script_upkeep_system(
 /// it if it exists. If calling the `update` method fails, an error will be logged.
 pub fn script_update_system(
     context: SystemContext,
-    (script_context, fs, &Dt(dt)): (&mut ScriptContext, &mut Filesystem, &Dt),
+    (scope_arena, script_context, fs, &Dt(dt)): (
+        &ScopeArena,
+        &mut ScriptContext,
+        &mut Filesystem,
+        &Dt,
+    ),
     lua: &Lua,
     (with_registry_key,): (QueryMarker<(&Script, &LuaRegistryKey)>,),
 ) {
     let _span = trace_span!("script_update_system").entered();
+    scope_arena.scope(|scope| {
+        let _fs = script_context.resources.loan_mut(scope, fs);
 
-    let _fs_guard = script_context.resources.loan_mut(fs);
+        for (entity, (script, key)) in context.query(with_registry_key).iter() {
+            let res = (|| -> Result<()> {
+                let table = lua.registry_value::<LuaTable>(key)?;
+                if table.contains_key("update")? {
+                    let _: () = table.call_method("update", (dt,))?;
+                }
+                Ok(())
+            })();
 
-    for (entity, (script, key)) in context.query(with_registry_key).iter() {
-        let res = (|| -> Result<()> {
-            let table = lua.registry_value::<LuaTable>(key)?;
-            if table.contains_key("update")? {
-                let _: () = table.call_method("update", (dt,))?;
+            if let Err(err) = res {
+                error!(
+                    entity = ?entity,
+                    script = ?script.path,
+                    error = ?err,
+                    "error calling entity script update: {:#}",
+                    err
+                );
             }
-            Ok(())
-        })();
-
-        if let Err(err) = res {
-            error!(
-                entity = ?entity,
-                script = ?script.path,
-                error = ?err,
-                "error calling entity script update: {:#}",
-                err
-            );
         }
-    }
+    });
 }

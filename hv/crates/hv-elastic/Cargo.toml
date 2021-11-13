@@ -16,3 +16,4 @@ hv-cell = { version = "0.1.0", path = "../hv-cell" }
 hv-guarded-borrow = { version = "0.1.1", path = "../hv-guarded-borrow" }
 hv-ecs = { version = "0.1.0", path = "../hv-ecs", optional = true }
 static_assertions = "1.1.0"
+hv-stampede = { version = "0.1.0", path = "../hv-stampede" }
