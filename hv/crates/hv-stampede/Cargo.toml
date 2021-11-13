@@ -1,9 +1,15 @@
 [package]
 name = "hv-stampede"
+description = "Bumpalo-based arena allocation utilities for Heavy"
+authors = ["Shea 'Decibel' Leffler <shea@errno.com>"]
+license = "MIT OR Apache-2.0"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+readme = "README.md"
+repository = "https://github.com/sdleffler/hv-stampede"
+documentation = "https://docs.rs/hv-stampede"
+keywords = ["allocator", "arena", "sync", "reference"]
+categories = ["no-std", "concurrency", "memory-management"]
 
 [dependencies]
 bumpalo = { version = "3.8.0", features = ["allocator_api", "boxed"] }

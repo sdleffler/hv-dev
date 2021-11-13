@@ -20,7 +20,7 @@ alchemy = { version = "0.1.0", path = "crates/hv-alchemy", package = "hv-alchemy
 anyhow = "1.0.44"
 ecs = { version = "0.1.0", path = "crates/hv-ecs", package = "hv-ecs" }
 ecs-derive = { version = "0.7.0", path = "crates/hv-ecs-derive", package = "hv-ecs-derive" }
-elastic = { version = "0.2.0", path = "crates/hv-elastic", package = "hv-elastic", features = ["hv-ecs"] }
+elastic = { version = "0.3.0", path = "crates/hv-elastic", package = "hv-elastic", features = ["hv-ecs"] }
 fs = { version = "0.1.0", path = "crates/hv-filesystem", package = "hv-filesystem" }
 guarded_borrow = { version = "0.1.0", path = "crates/hv-guarded-borrow", package = "hv-guarded-borrow", features = ["std", "hv-ecs"] }
 lua = { version = "0.6.6", path = "crates/hv-lua", package = "hv-lua", features = ["hv-reexport", "nalgebra", "send", "macros"] }
