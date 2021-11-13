@@ -15,6 +15,8 @@
 //!   doesn't outlive its original lifetime. When dropped, it forcibly takes the value back from the
 //!   [`Elastic`] it was loaned from, and panics if doing so is impossible. You can also take the
 //!   value back manually.
+//!
+//! Requires nightly for `#![feature(generic_associated_types, allocator_api)]`.
 
 #![no_std]
 #![warn(missing_docs)]
@@ -29,7 +31,7 @@ use core::{fmt, marker::PhantomData, ptr::NonNull};
 #[doc(hidden)]
 pub use core::mem::transmute;
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 use hv_guarded_borrow::{
     NonBlockingGuardedBorrow, NonBlockingGuardedBorrowMut, NonBlockingGuardedMutBorrowMut,
 };
@@ -547,9 +549,9 @@ impl ScopeArena {
     }
 }
 
-trait PutItInABox {}
+trait MakeItDyn {}
 
-impl<T: ?Sized> PutItInABox for T {}
+impl<T: ?Sized> MakeItDyn for T {}
 
 /// A guard which allows "stashing" [`ElasticGuard`]s for safe loaning.
 ///
@@ -559,7 +561,7 @@ impl<T: ?Sized> PutItInABox for T {}
 /// [`ScopeArena`] ensures that all loans are ended at the end of the scope.
 pub struct ScopeGuard<'a> {
     bump: &'a Bump,
-    buf: Vec<Box<dyn PutItInABox + 'a, &'a Bump>, &'a Bump>,
+    buf: Vec<&'a mut (dyn MakeItDyn + 'a), &'a Bump>,
 }
 
 impl<'a> fmt::Debug for ScopeGuard<'a> {
@@ -572,6 +574,16 @@ impl<'a> ScopeGuard<'a> {
     /// Loan to an elastic within the lifetime of the scope guard.
     pub fn loan<T: Stretchable<'a>>(&mut self, elastic: &Elastic<T::Stretched>, value: T) {
         let guard = unsafe { elastic.loan(value) };
-        self.buf.push(Box::new_in(guard, self.bump));
+        self.buf.push(self.bump.alloc(guard));
+    }
+}
+
+impl<'a> Drop for ScopeGuard<'a> {
+    fn drop(&mut self) {
+        for dyn_thing in self.buf.drain(..) {
+            unsafe {
+                core::ptr::drop_in_place(dyn_thing);
+            }
+        }
     }
 }
