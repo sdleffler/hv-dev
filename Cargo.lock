@@ -852,7 +852,7 @@ dependencies = [
 
 [[package]]
 name = "hv-elastic"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "hv-cell",
  "hv-ecs",
@@ -943,6 +943,7 @@ dependencies = [
  "parry3d",
  "pkg-config",
  "reqwest",
+ "rustc-hash",
  "rustyline",
  "serde",
  "serde_json",
@@ -1182,9 +1183,9 @@ dependencies = [
 
 [[package]]
 name = "luajit-src"
-version = "210.2.0+resty5f13855"
+version = "210.3.1+restycd2285f"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49f85722ea9e022305a077b916c9271011a195ee8dc9b2b764fc78b0378e3b72"
+checksum = "0107579f29cba96b4450335469432ee6f0f0bc68690626a951bd680212477efc"
 dependencies = [
  "cc",
 ]

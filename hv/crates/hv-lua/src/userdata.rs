@@ -24,7 +24,6 @@ use hv_alchemy::{
 };
 use hv_guarded_borrow::{NonBlockingGuardedBorrow, NonBlockingGuardedMutBorrowMut};
 
-use crate::table::{Table, TablePairsIter};
 use crate::types::{Callback, LuaRef, MaybeSend};
 use crate::util::{check_stack, get_userdata, take_userdata, StackGuard};
 use crate::value::{FromLua, FromLuaMulti, ToLua, ToLuaMulti};
@@ -35,14 +34,21 @@ use crate::{
 use crate::{ffi, RegistryKey};
 use crate::{function::Function, types::MaybeSync};
 use crate::{hv::alchemy::MetaType, lua::Lua};
+use crate::{
+    table::{Table, TablePairsIter},
+    Value,
+};
 
-#[cfg(any(feature = "lua52", feature = "lua51", feature = "luajit"))]
-use crate::value::Value;
+#[cfg(feature = "lua54")]
+use std::os::raw::c_int;
 
 #[cfg(feature = "async")]
 use crate::types::AsyncCallback;
 
 mod collections;
+
+#[cfg(feature = "lua54")]
+pub(crate) const USER_VALUE_MAXSLOT: usize = 8;
 
 /// Kinds of metamethods that can be overridden.
 ///
@@ -117,7 +123,13 @@ pub enum MetaMethod {
     /// This is not an operator, but it will be called by the built-in `pairs` function.
     ///
     /// Requires `feature = "lua54/lua53/lua52"`
-    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52", doc))]
+    #[cfg(any(
+        feature = "lua54",
+        feature = "lua53",
+        feature = "lua52",
+        feature = "luajit52",
+        doc
+    ))]
     Pairs,
     /// The `__ipairs` metamethod.
     ///
@@ -126,7 +138,7 @@ pub enum MetaMethod {
     /// Requires `feature = "lua52"`
     ///
     /// [`ipairs`]: https://www.lua.org/manual/5.2/manual.html#pdf-ipairs
-    #[cfg(any(feature = "lua52", doc))]
+    #[cfg(any(feature = "lua52", feature = "luajit52", doc))]
     IPairs,
     /// The `__close` metamethod.
     ///
@@ -203,9 +215,14 @@ impl MetaMethod {
             MetaMethod::Call => "__call",
             MetaMethod::ToString => "__tostring",
 
-            #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
+            #[cfg(any(
+                feature = "lua54",
+                feature = "lua53",
+                feature = "lua52",
+                feature = "luajit52"
+            ))]
             MetaMethod::Pairs => "__pairs",
-            #[cfg(feature = "lua52")]
+            #[cfg(any(feature = "lua52", feature = "luajit52"))]
             MetaMethod::IPairs => "__ipairs",
 
             #[cfg(feature = "lua54")]
@@ -265,9 +282,14 @@ impl From<StdString> for MetaMethod {
             "__call" => MetaMethod::Call,
             "__tostring" => MetaMethod::ToString,
 
-            #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
+            #[cfg(any(
+                feature = "lua54",
+                feature = "lua53",
+                feature = "lua52",
+                feature = "luajit52"
+            ))]
             "__pairs" => MetaMethod::Pairs,
-            #[cfg(feature = "lua52")]
+            #[cfg(any(feature = "lua52", feature = "luajit52"))]
             "__ipairs" => MetaMethod::IPairs,
 
             #[cfg(feature = "lua54")]
@@ -410,6 +432,25 @@ pub trait UserDataMethods<'lua, T: UserData> {
         R: ToLuaMulti<'lua>,
         M: 'static + MaybeSend + FnMut(&'lua Lua, &mut T, A) -> Result<R>;
 
+    /// Add an async metamethod which accepts a `T` as the first parameter and returns Future.
+    /// The passed `T` is cloned from the original value.
+    ///
+    /// This is an async version of [`add_meta_method`].
+    ///
+    /// Requires `feature = "async"`
+    ///
+    /// [`add_meta_method`]: #method.add_meta_method
+    #[cfg(all(feature = "async", not(feature = "lua51")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
+    fn add_async_meta_method<S, A, R, M, MR>(&mut self, name: S, method: M)
+    where
+        T: Clone,
+        S: Into<MetaMethod>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        M: 'static + MaybeSend + Fn(&'lua Lua, T, A) -> MR,
+        MR: 'lua + Future<Output = Result<R>>;
+
     /// Add a metamethod which accepts generic arguments.
     ///
     /// Metamethods for binary operators can be triggered if either the left or right argument to
@@ -434,6 +475,23 @@ pub trait UserDataMethods<'lua, T: UserData> {
         R: ToLuaMulti<'lua>,
         F: 'static + MaybeSend + FnMut(&'lua Lua, A) -> Result<R>;
 
+    /// Add a metamethod which accepts generic arguments and returns Future.
+    ///
+    /// This is an async version of [`add_meta_function`].
+    ///
+    /// Requires `feature = "async"`
+    ///
+    /// [`add_meta_function`]: #method.add_meta_function
+    #[cfg(all(feature = "async", not(feature = "lua51")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
+    fn add_async_meta_function<S, A, R, F, FR>(&mut self, name: S, function: F)
+    where
+        S: Into<MetaMethod>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + MaybeSend + Fn(&'lua Lua, A) -> FR,
+        FR: 'lua + Future<Output = Result<R>>;
+
     //
     // Below are internal methods used in generated code
     //
@@ -447,6 +505,15 @@ pub trait UserDataMethods<'lua, T: UserData> {
 
     #[doc(hidden)]
     fn add_meta_callback(&mut self, _meta: MetaMethod, _callback: Callback<'lua, 'static>) {}
+
+    #[doc(hidden)]
+    #[cfg(feature = "async")]
+    fn add_async_meta_callback(
+        &mut self,
+        _meta: MetaMethod,
+        _callback: AsyncCallback<'lua, 'static>,
+    ) {
+    }
 }
 
 /// Field registry for [`UserData`] implementors.
@@ -851,11 +918,13 @@ impl<'lua> AnyUserData<'lua> {
 
     /// Takes out the value of `UserData` and sets the special "destructed" metatable that prevents
     /// any further operations with this userdata.
+    ///
+    /// All associated user values will be also cleared.
     pub fn take<T: 'static + UserData>(&self) -> Result<T> {
         let lua = self.0.lua;
         unsafe {
             let _sg = StackGuard::new(lua.state);
-            check_stack(lua.state, 2)?;
+            check_stack(lua.state, 3)?;
 
             let type_id = lua.push_userdata_ref(&self.0)?.map(|tinfo| tinfo.id);
             match type_id {
@@ -928,12 +997,22 @@ impl<'lua> AnyUserData<'lua> {
                     let _ =
                         (*get_userdata::<UserDataCell>(lua.state, -1)).try_dyn_borrow_mut::<U>()?;
 
-                    // Clear uservalue
-                    #[cfg(any(feature = "lua54", feature = "lua53", feature = "lua52"))]
-                    ffi::lua_pushnil(lua.state);
+                    // Clear associated user values
+                    #[cfg(feature = "lua54")]
+                    for i in 1..=USER_VALUE_MAXSLOT {
+                        ffi::lua_pushnil(lua.state);
+                        ffi::lua_setiuservalue(lua.state, -2, i as c_int);
+                    }
+                    #[cfg(any(feature = "lua53", feature = "lua52"))]
+                    {
+                        ffi::lua_pushnil(lua.state);
+                        ffi::lua_setuservalue(lua.state, -2);
+                    }
                     #[cfg(any(feature = "lua51", feature = "luajit"))]
-                    protect_lua!(lua.state, 0, 1, fn(state) ffi::lua_newtable(state))?;
-                    ffi::lua_setuservalue(lua.state, -2);
+                    protect_lua!(lua.state, 1, 1, fn(state) {
+                        ffi::lua_newtable(state);
+                        ffi::lua_setuservalue(state, -2);
+                    })?;
 
                     Ok(take_userdata::<UserDataCell>(lua.state)
                         .into_boxed()
@@ -1039,27 +1118,76 @@ impl<'lua> AnyUserData<'lua> {
     /// Sets an associated value to this `AnyUserData`.
     ///
     /// The value may be any Lua value whatsoever, and can be retrieved with [`get_user_value`].
-    /// As Lua < 5.3 allows to store only tables, the value will be stored in a table at index 1.
+    ///
+    /// This is the same as calling [`set_nth_user_value`] with `n` set to 1.
     ///
     /// [`get_user_value`]: #method.get_user_value
+    /// [`set_nth_user_value`]: #method.set_nth_user_value
     pub fn set_user_value<V: ToLua<'lua>>(&self, v: V) -> Result<()> {
+        self.set_nth_user_value(1, v)
+    }
+
+    /// Sets an associated `n`th value to this `AnyUserData`.
+    ///
+    /// The value may be any Lua value whatsoever, and can be retrieved with [`get_nth_user_value`].
+    /// `n` starts from 1 and can be up to 65535.
+    ///
+    /// This is supported for all Lua versions.
+    /// In Lua 5.4 first 7 elements are stored in a most efficient way.
+    /// For other Lua versions this functionality is provided using a wrapping table.
+    ///
+    /// [`get_nth_user_value`]: #method.get_nth_user_value
+    pub fn set_nth_user_value<V: ToLua<'lua>>(&self, n: usize, v: V) -> Result<()> {
+        if n < 1 || n > u16::MAX as usize {
+            return Err(Error::RuntimeError(
+                "user value index out of bounds".to_string(),
+            ));
+        }
+
         let lua = self.0.lua;
-        #[cfg(any(feature = "lua52", feature = "lua51", feature = "luajit"))]
-        let v = {
-            // Lua <= 5.2 allows to store only a table. Then we will wrap the value.
-            let t = lua.create_table_with_capacity(1, 0)?;
-            t.raw_set(1, v)?;
-            Value::Table(t)
-        };
-        #[cfg(any(feature = "lua54", feature = "lua53"))]
-        let v = v.to_lua(lua)?;
         unsafe {
             let _sg = StackGuard::new(lua.state);
-            check_stack(lua.state, 3)?;
+            check_stack(lua.state, 5)?;
 
             lua.push_userdata_ref(&self.0)?;
-            lua.push_value(v)?;
-            ffi::lua_setuservalue(lua.state, -2);
+            lua.push_value(v.to_lua(lua)?)?;
+
+            #[cfg(feature = "lua54")]
+            if n < USER_VALUE_MAXSLOT {
+                ffi::lua_setiuservalue(lua.state, -2, n as c_int);
+                return Ok(());
+            }
+
+            // Multiple (extra) user values are emulated by storing them in a table
+
+            let getuservalue_t = |state, idx| {
+                #[cfg(feature = "lua54")]
+                return ffi::lua_getiuservalue(state, idx, USER_VALUE_MAXSLOT as c_int);
+                #[cfg(not(feature = "lua54"))]
+                return ffi::lua_getuservalue(state, idx);
+            };
+            let getn = |n: usize| {
+                #[cfg(feature = "lua54")]
+                return n - USER_VALUE_MAXSLOT + 1;
+                #[cfg(not(feature = "lua54"))]
+                return n;
+            };
+
+            protect_lua!(lua.state, 2, 0, |state| {
+                if getuservalue_t(lua.state, -2) != ffi::LUA_TTABLE {
+                    // Create a new table to use as uservalue
+                    ffi::lua_pop(lua.state, 1);
+                    ffi::lua_newtable(state);
+                    ffi::lua_pushvalue(state, -1);
+
+                    #[cfg(feature = "lua54")]
+                    ffi::lua_setiuservalue(lua.state, -4, USER_VALUE_MAXSLOT as c_int);
+                    #[cfg(not(feature = "lua54"))]
+                    ffi::lua_setuservalue(lua.state, -4);
+                }
+                ffi::lua_pushvalue(state, -2);
+                ffi::lua_rawseti(state, -2, getn(n) as ffi::lua_Integer);
+            })?;
 
             Ok(())
         }
@@ -1067,26 +1195,68 @@ impl<'lua> AnyUserData<'lua> {
 
     /// Returns an associated value set by [`set_user_value`].
     ///
-    /// For Lua < 5.3 the value will be automatically extracted from the table wrapper from index 1.
+    /// This is the same as calling [`get_nth_user_value`] with `n` set to 1.
     ///
     /// [`set_user_value`]: #method.set_user_value
+    /// [`get_nth_user_value`]: #method.get_nth_user_value
     pub fn get_user_value<V: FromLua<'lua>>(&self) -> Result<V> {
+        self.get_nth_user_value(1)
+    }
+
+    /// Returns an associated `n`th value set by [`set_nth_user_value`].
+    ///
+    /// `n` starts from 1 and can be up to 65535.
+    ///
+    /// This is supported for all Lua versions.
+    /// In Lua 5.4 first 7 elements are stored in a most efficient way.
+    /// For other Lua versions this functionality is provided using a wrapping table.
+    ///
+    /// [`set_nth_user_value`]: #method.set_nth_user_value
+    pub fn get_nth_user_value<V: FromLua<'lua>>(&self, n: usize) -> Result<V> {
+        if n < 1 || n > u16::MAX as usize {
+            return Err(Error::RuntimeError(
+                "user value index out of bounds".to_string(),
+            ));
+        }
+
         let lua = self.0.lua;
-        let res = unsafe {
+        unsafe {
             let _sg = StackGuard::new(lua.state);
-            check_stack(lua.state, 3)?;
+            check_stack(lua.state, 4)?;
 
             lua.push_userdata_ref(&self.0)?;
-            ffi::lua_getuservalue(lua.state, -1);
-            lua.pop_value()
-        };
-        #[cfg(any(feature = "lua52", feature = "lua51", feature = "luajit"))]
-        return match <Option<Table>>::from_lua(res, lua)? {
-            Some(t) => t.get(1),
-            None => V::from_lua(Value::Nil, lua),
-        };
-        #[cfg(any(feature = "lua54", feature = "lua53"))]
-        V::from_lua(res, lua)
+
+            #[cfg(feature = "lua54")]
+            if n < USER_VALUE_MAXSLOT {
+                ffi::lua_getiuservalue(lua.state, -1, n as c_int);
+                return V::from_lua(lua.pop_value(), lua);
+            }
+
+            // Multiple (extra) user values are emulated by storing them in a table
+
+            let getuservalue_t = |state, idx| {
+                #[cfg(feature = "lua54")]
+                return ffi::lua_getiuservalue(state, idx, USER_VALUE_MAXSLOT as c_int);
+                #[cfg(not(feature = "lua54"))]
+                return ffi::lua_getuservalue(state, idx);
+            };
+            let getn = |n: usize| {
+                #[cfg(feature = "lua54")]
+                return n - USER_VALUE_MAXSLOT + 1;
+                #[cfg(not(feature = "lua54"))]
+                return n;
+            };
+
+            protect_lua!(lua.state, 1, 1, |state| {
+                if getuservalue_t(lua.state, -1) != ffi::LUA_TTABLE {
+                    ffi::lua_pushnil(lua.state);
+                    return;
+                }
+                ffi::lua_rawgeti(state, -1, getn(n) as ffi::lua_Integer);
+            })?;
+
+            V::from_lua(lua.pop_value(), lua)
+        }
     }
 
     /// Returns a metatable of this `UserData`.
