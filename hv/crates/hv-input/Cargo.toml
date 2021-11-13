@@ -6,8 +6,8 @@ edition = "2021"
 [dependencies]
 glfw = { version = "0.41.0", optional = true }
 hashbrown = "0.11.2"
-hv-alchemy = { path = "../hv-alchemy" }
-hv-lua = { path = "../hv-lua" }
-hv-math = { path = "../hv-math" }
+hv-alchemy = { version = "0.1.0", path = "../hv-alchemy" }
+hv-lua = { version = "0.6.6", path = "../../../hv-lua" }
+hv-math = { version = "0.1.0", path = "../hv-math" }
 serde = "1.0.130"
 strum = { version = "0.22.0", features = ["derive"] }

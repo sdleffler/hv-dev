@@ -191,6 +191,26 @@ So while there's still some unavoidable boilerplate, it's a lot less of a mess a
 writing Lua interaction code as if you're directly interacting with a given type rather than with
 your own custom wrapper boilerplate.
 
+## Compiling
+
+This repository has two submodules, `hv-ecs` (our `hecs` fork) and `hv-lua` (our `mlua` fork.) These
+two crates are kept in separate repositories per fork so that it's easier to pull changes from
+upstream/rebase onto upstream. As a result, the first thing you need to do is:
+
+```
+git clone --recursive https://github.com/sdleffler/hv-dev
+```
+
+Next, by default we depend on LuaJIT. You will want to install LuaJIT 2.0.5 (latest stable as of the
+time of writing) and set environment variables `LUA_INC`, `LUA_LIB`, and `LUA_LIBDIR` accordingly.
+`LUA_INC` will need to be the path to your Lua header files, which is likely the `src` subfolder of
+your LuaJIT download; `LUA_LIBDIR` will be the same path as long as you don't move anything after
+compiling LuaJIT; and `LUA_LIB` will be `lua51` if you use LuaJIT, or potentially `lua52` if using
+LuaJIT partial 5.2 compatibility.
+
+Once you have this, you should be good to go. In the future, FMOD will be added as a dependency and
+will also need to be installed locally.
+
 ## License
 
 Licensed under either of

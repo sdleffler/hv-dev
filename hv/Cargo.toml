@@ -18,12 +18,12 @@ parry3d = ["lua/parry3d"]
 [dependencies]
 alchemy = { version = "0.1.0", path = "crates/hv-alchemy", package = "hv-alchemy" }
 anyhow = "1.0.44"
-ecs = { version = "0.1.0", path = "crates/hv-ecs", package = "hv-ecs" }
+ecs = { version = "0.6.5", path = "../hv-ecs", package = "hecs" }
 ecs-derive = { version = "0.7.0", path = "crates/hv-ecs-derive", package = "hv-ecs-derive" }
 elastic = { version = "0.3.0", path = "crates/hv-elastic", package = "hv-elastic", features = ["hv-ecs"] }
 fs = { version = "0.1.0", path = "crates/hv-filesystem", package = "hv-filesystem" }
 guarded_borrow = { version = "0.1.0", path = "crates/hv-guarded-borrow", package = "hv-guarded-borrow", features = ["std", "hv-ecs"] }
-lua = { version = "0.6.6", path = "crates/hv-lua", package = "hv-lua", features = ["hv-reexport", "nalgebra", "send", "macros"] }
+lua = { version = "0.6.6", path = "../hv-lua", package = "hv-lua", features = ["hv-reexport", "nalgebra", "send", "macros"] }
 math = { version = "0.1.0", path = "crates/hv-math", package = "hv-math" }
 petgraph = "0.6.0"
 sync = { version = "0.1.0", path = "crates/hv-sync", package = "hv-sync" }
@@ -36,27 +36,23 @@ yaks = { version = "0.1.0", path = "crates/hv-yaks", package = "hv-yaks" }
 
 [workspace]
 members = [
-    "hv/crates/hv-alchemy",
-    "hv/crates/hv-atom",
-    "hv/crates/hv-boxed",
-    "hv/crates/hv-cell",
-    "hv/crates/hv-ecs-derive",
-    "hv/crates/hv-elastic",
-    "hv/crates/hv-filesystem",
-    "hv/crates/hv-guarded-borrow",
-    "hv/crates/hv-input",
-    "hv/crates/hv-lease-tracker",
-    "hv/crates/hv-looprider",
-    "hv/crates/hv-lua",
-    "hv/crates/hv-lua/hv-lua-derive",
-    "hv/crates/hv-lua/examples/module",
-    "hv/crates/hv-lua/tests/module",
-    "hv/crates/hv-math",
-    "hv/crates/hv-resources",
-    "hv/crates/hv-stampede",
-    "hv/crates/hv-sync",
-    "hv/crates/hv-timer",
-    "hv/crates/hv-vfs",
-    "hv/crates/hv-yaks",
-    "hv",
+    "crates/hv-alchemy",
+    "crates/hv-atom",
+    "crates/hv-boxed",
+    "crates/hv-cell",
+    "crates/hv-ecs-derive",
+    "crates/hv-elastic",
+    "crates/hv-filesystem",
+    "crates/hv-guarded-borrow",
+    "crates/hv-input",
+    "crates/hv-lease-tracker",
+    "crates/hv-looprider",
+    "crates/hv-math",
+    "crates/hv-resources",
+    "crates/hv-stampede",
+    "crates/hv-sync",
+    "crates/hv-timer",
+    "crates/hv-vfs",
+    "crates/hv-yaks",
+    ".",
 ]

@@ -8,8 +8,8 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.44"
 directories = "4.0.1"
-hv-alchemy = { path = "../hv-alchemy" }
-hv-lua = { path = "../hv-lua" }
-hv-vfs = { path = "../hv-vfs" }
+hv-alchemy = { version = "0.1.0", path = "../hv-alchemy" }
+hv-lua = { version = "0.6.6", path = "../../../hv-lua" }
+hv-vfs = { version = "0.1.0", path = "../hv-vfs" }
 log = "0.4.14"
 static_assertions = "1.1.0"
