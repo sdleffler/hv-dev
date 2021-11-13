@@ -1,6 +1,6 @@
 [submodule "hv/crates/hv-lua"]
-	path = hv/crates/hv-lua
+	path = hv-lua
 	url = https://github.com/sdleffler/hv-lua
 [submodule "hv/crates/hv-ecs"]
-	path = hv/crates/hv-ecs
+	path = hv-ecs
 	url = https://github.com/sdleffler/hv-ecs
