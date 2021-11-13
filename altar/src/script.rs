@@ -123,7 +123,7 @@ impl ScriptResources {
                 .dyncast_ref::<dyn TryCloneToUserDataExt>()
                 .expect("Elastic should always succeed dyncast to dyn TryCloneToUserData!")
                 .try_clone_to_user_data(lua)
-                .expect("Elastic should always succeed clone to userdata!"),
+                .expect("Elastic should always succeed clone to userdata! ... unless it's empty"),
         )
     }
 }

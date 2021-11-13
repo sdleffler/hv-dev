@@ -5,7 +5,7 @@ use hv::{
     resources::Resources,
     sync::{
         cell::AtomicRef,
-        elastic::{Elastic, ElasticGuard, Stretchable, Stretched},
+        elastic::{Elastic, ElasticGuard, ScopeGuard, Stretchable, Stretched},
         NoSharedAccess,
     },
 };
@@ -306,12 +306,8 @@ impl CommandPoolResource {
         Self::default()
     }
 
-    /// # Safety
-    ///
-    /// The `CommandPoolGuard` *must* be dropped by the end of its scope, or else undefined
-    /// behavior/use-after-free is possible.
-    pub unsafe fn loan<'g>(&self, scope: CommandPoolScope<'g>) -> CommandPoolGuard<'g> {
-        CommandPoolGuard(self.inner.loan(scope))
+    pub fn loan<'g>(&self, scope: CommandPoolScope<'g>, guard: &mut ScopeGuard<'g>) {
+        guard.loan(&self.inner, scope);
     }
 
     pub fn borrow(&self) -> AtomicRef<CommandPoolScope> {
