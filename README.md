@@ -195,7 +195,10 @@ your own custom wrapper boilerplate.
 
 This repository has two submodules, `hv-ecs` (our `hecs` fork) and `hv-lua` (our `mlua` fork.) These
 two crates are kept in separate repositories per fork so that it's easier to pull changes from
-upstream/rebase onto upstream. As a result, the first thing you need to do is:
+upstream/rebase onto upstream. Packages in this repository will depend on them via path
+dependencies, and they depend back on this repository via path dependencies, assuming that they live
+in the same directory structure as here; so if you're hacking on them it's probably a good idea to
+start by cloning `hv-dev`. As a result, the first thing you need to do is:
 
 ```
 git clone --recursive https://github.com/sdleffler/hv-dev
