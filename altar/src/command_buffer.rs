@@ -105,9 +105,12 @@ impl LuaUserData for CommandBuffer {
     }
 }
 
-#[repr(C, align(8))]
-struct StretchedCommandBufferInner([u8; std::mem::size_of::<CommandBufferInner>()]);
+struct StretchedCommandBufferInner(
+    [u8; std::mem::size_of::<CommandBufferInner>()],
+    [CommandBufferInner<'static>; 0],
+);
 
+static_assertions::assert_eq_size!(CommandBufferInner, StretchedCommandBufferInner);
 static_assertions::assert_eq_align!(CommandBufferInner, StretchedCommandBufferInner);
 
 struct CommandBufferInner<'a> {
@@ -146,6 +149,9 @@ pub struct CommandPool {
     raw_elastic_bufs: Mutex<Vec<(*mut (), usize, usize)>>,
     raw_guard_bufs: Mutex<Vec<(*mut (), usize, usize)>>,
 }
+
+unsafe impl Send for CommandPool {}
+unsafe impl Sync for CommandPool {}
 
 pub struct CommandPoolScope<'a> {
     command_pool: &'a CommandPool,
@@ -275,9 +281,12 @@ impl<'a> Drop for CommandPoolScope<'a> {
     }
 }
 
-#[repr(C, align(8))]
-pub struct StretchedCommandPoolScope([u8; std::mem::size_of::<CommandPoolScope>()]);
+pub struct StretchedCommandPoolScope(
+    [u8; std::mem::size_of::<CommandPoolScope>()],
+    [CommandPoolScope<'static>; 0],
+);
 
+static_assertions::assert_eq_size!(StretchedCommandPoolScope, CommandPoolScope);
 static_assertions::assert_eq_align!(StretchedCommandPoolScope, CommandPoolScope);
 
 unsafe impl Stretched for StretchedCommandPoolScope {

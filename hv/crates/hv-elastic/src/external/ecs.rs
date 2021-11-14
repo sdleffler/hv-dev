@@ -1,15 +1,13 @@
 //! [`Stretched`] implementations and types for the [`hv_ecs`] crate.
 
 use core::fmt;
-use core::marker::PhantomData;
 
 use crate::{Stretchable, Stretched};
 
 /// The type of a stretched [`BatchWriter`].
-#[repr(C, align(8))]
-pub struct StretchedBatchWriter<T>(
+pub struct StretchedBatchWriter<T: 'static>(
     [u8; core::mem::size_of::<hv_ecs::BatchWriter<u8>>()],
-    PhantomData<T>,
+    [hv_ecs::BatchWriter<'static, T>; 0],
 );
 
 impl<T> fmt::Debug for StretchedBatchWriter<T> {
