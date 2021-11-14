@@ -1,5 +1,5 @@
 use hv::prelude::*;
-use parry3d::shape::SharedShape;
+use parry3d::{bounding_volume::AABB, shape::SharedShape};
 
 use crate::types::Float;
 
@@ -133,6 +133,10 @@ pub struct Collider {
 impl Collider {
     pub fn new(local_tx: Isometry3<Float>, shape: SharedShape) -> Self {
         Self { local_tx, shape }
+    }
+
+    pub fn compute_aabb(&self, tx: &Isometry3<Float>) -> AABB {
+        self.shape.compute_aabb(&(tx * self.local_tx))
     }
 }
 

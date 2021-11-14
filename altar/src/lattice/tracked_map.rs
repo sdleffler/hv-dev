@@ -13,13 +13,13 @@ use crate::lattice::{
 pub struct TrackedChunk<'a, T: Copy + Send + Sync + 'static> {
     layer: i32,
     chunk: ChunkCoords,
-    chunk_mut: &'a mut Chunk<Option<T>>,
+    chunk_mut: &'a mut Chunk<T>,
     channel: &'a mut EventChannel<LatticeEvent<T>>,
 }
 
 impl<'a, T: Copy + Send + Sync + 'static> TrackedChunk<'a, T> {
     pub fn insert(&mut self, sub: SubCoords, value: T) -> Option<T> {
-        let prev = self.chunk_mut[sub].replace(value);
+        let prev = self.chunk_mut.insert(sub, value);
         self.channel.single_write(LatticeEvent::Slot(SlotEvent {
             layer: self.layer,
             chunk: self.chunk,
@@ -30,11 +30,11 @@ impl<'a, T: Copy + Send + Sync + 'static> TrackedChunk<'a, T> {
     }
 
     pub fn get(&self, sub: SubCoords) -> Option<T> {
-        self.chunk_mut[sub]
+        self.chunk_mut.get(sub).copied()
     }
 
     pub fn remove(&mut self, sub: SubCoords) -> Option<T> {
-        let removed = self.chunk_mut[sub].take();
+        let removed = self.chunk_mut.remove(sub);
 
         if let Some(prev) = removed {
             self.channel.single_write(LatticeEvent::Slot(SlotEvent {
@@ -48,23 +48,23 @@ impl<'a, T: Copy + Send + Sync + 'static> TrackedChunk<'a, T> {
         removed
     }
 
-    pub fn as_chunk(&self) -> &Chunk<Option<T>> {
+    pub fn as_chunk(&self) -> &Chunk<T> {
         self.chunk_mut
     }
 
-    pub fn as_chunk_mut(&mut self) -> &mut Chunk<Option<T>> {
+    pub fn as_chunk_mut(&mut self) -> &mut Chunk<T> {
         self.chunk_mut
     }
 }
 
 pub struct TrackedLayer<'a, T: Copy + Send + Sync + 'static> {
     layer: i32,
-    layer_mut: &'a mut ChunkLayer<Option<T>>,
+    layer_mut: &'a mut ChunkLayer<T>,
     channel: &'a mut EventChannel<LatticeEvent<T>>,
 }
 
 impl<'a, T: Copy + Send + Sync + 'static> TrackedLayer<'a, T> {
-    pub fn get_chunk(&self, coords: ChunkCoords) -> Option<&Chunk<Option<T>>> {
+    pub fn get_chunk(&self, coords: ChunkCoords) -> Option<&Chunk<T>> {
         self.layer_mut.get_chunk(coords)
     }
 
@@ -104,11 +104,7 @@ impl<'a, T: Copy + Send + Sync + 'static> TrackedLayer<'a, T> {
         chunk.remove(divided.sub_coords)
     }
 
-    pub fn insert_chunk(
-        &mut self,
-        coords: ChunkCoords,
-        chunk: Chunk<Option<T>>,
-    ) -> Option<Chunk<Option<T>>> {
+    pub fn insert_chunk(&mut self, coords: ChunkCoords, chunk: Chunk<T>) -> Option<Chunk<T>> {
         self.channel.single_write(LatticeEvent::Chunk(ChunkEvent {
             layer: self.layer,
             chunk: coords,
@@ -118,7 +114,7 @@ impl<'a, T: Copy + Send + Sync + 'static> TrackedLayer<'a, T> {
         self.layer_mut.insert_chunk(coords, chunk)
     }
 
-    pub fn remove_chunk(&mut self, coords: ChunkCoords) -> Option<Chunk<Option<T>>> {
+    pub fn remove_chunk(&mut self, coords: ChunkCoords) -> Option<Chunk<T>> {
         let removed = self.layer_mut.remove_chunk(coords);
 
         // Only write the event if a chunk is actually removed.
@@ -133,18 +129,18 @@ impl<'a, T: Copy + Send + Sync + 'static> TrackedLayer<'a, T> {
         removed
     }
 
-    pub fn as_layer(&self) -> &ChunkLayer<Option<T>> {
+    pub fn as_layer(&self) -> &ChunkLayer<T> {
         self.layer_mut
     }
 
-    pub fn as_layer_mut(&mut self) -> &mut ChunkLayer<Option<T>> {
+    pub fn as_layer_mut(&mut self) -> &mut ChunkLayer<T> {
         self.layer_mut
     }
 }
 
 #[derive(Debug)]
 pub struct TrackedMap<T: Copy + Send + Sync + 'static> {
-    map: ChunkMap<Option<T>>,
+    map: ChunkMap<T>,
     channel: EventChannel<LatticeEvent<T>>,
 }
 
@@ -162,7 +158,7 @@ impl<T: Copy + Send + Sync + 'static> TrackedMap<T> {
         }
     }
 
-    pub fn get_layer(&self, index: i32) -> Option<&ChunkLayer<Option<T>>> {
+    pub fn get_layer(&self, index: i32) -> Option<&ChunkLayer<T>> {
         self.map.get_layer(index)
     }
 
@@ -193,24 +189,16 @@ impl<T: Copy + Send + Sync + 'static> TrackedMap<T> {
         &mut self,
         layer: i32,
         chunk_coords: ChunkCoords,
-        chunk: Chunk<Option<T>>,
-    ) -> Option<Chunk<Option<T>>> {
+        chunk: Chunk<T>,
+    ) -> Option<Chunk<T>> {
         self.get_layer_mut(layer)?.insert_chunk(chunk_coords, chunk)
     }
 
-    pub fn remove_chunk(
-        &mut self,
-        layer: i32,
-        chunk_coords: ChunkCoords,
-    ) -> Option<Chunk<Option<T>>> {
+    pub fn remove_chunk(&mut self, layer: i32, chunk_coords: ChunkCoords) -> Option<Chunk<T>> {
         self.get_layer_mut(layer)?.remove_chunk(chunk_coords)
     }
 
-    pub fn insert_layer(
-        &mut self,
-        index: i32,
-        layer: ChunkLayer<Option<T>>,
-    ) -> Option<ChunkLayer<Option<T>>> {
+    pub fn insert_layer(&mut self, index: i32, layer: ChunkLayer<T>) -> Option<ChunkLayer<T>> {
         self.channel.single_write(LatticeEvent::Layer(LayerEvent {
             layer: index,
             kind: LayerEventKind::Insert,
@@ -219,7 +207,7 @@ impl<T: Copy + Send + Sync + 'static> TrackedMap<T> {
         self.map.insert_layer(index, layer)
     }
 
-    pub fn remove_layer(&mut self, index: i32) -> Option<ChunkLayer<Option<T>>> {
+    pub fn remove_layer(&mut self, index: i32) -> Option<ChunkLayer<T>> {
         let removed = self.map.remove_layer(index);
 
         // Only record the event if a layer is *actually* removed.
@@ -233,11 +221,11 @@ impl<T: Copy + Send + Sync + 'static> TrackedMap<T> {
         removed
     }
 
-    pub fn as_chunk_map(&self) -> &ChunkMap<Option<T>> {
+    pub fn as_chunk_map(&self) -> &ChunkMap<T> {
         &self.map
     }
 
-    pub fn as_chunk_map_mut(&mut self) -> &mut ChunkMap<Option<T>> {
+    pub fn as_chunk_map_mut(&mut self) -> &mut ChunkMap<T> {
         &mut self.map
     }
 

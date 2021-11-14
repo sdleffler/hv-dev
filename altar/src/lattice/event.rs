@@ -8,6 +8,36 @@ pub enum SlotEventKind<T: Copy> {
     Remove { prev: T },
 }
 
+impl<T: Copy> SlotEventKind<T> {
+    pub fn after(self) -> Option<T> {
+        match self {
+            Self::Insert { new, .. } => Some(new),
+            Self::Remove { .. } => None,
+        }
+    }
+
+    pub fn before(self) -> Option<T> {
+        match self {
+            Self::Insert { prev, .. } => prev,
+            Self::Remove { prev } => Some(prev),
+        }
+    }
+
+    pub fn append(self, new: Self) -> Option<Self> {
+        use SlotEventKind::*;
+        match (self, new) {
+            (Insert { prev, .. }, Insert { new, .. }) => Some(Insert { new, prev }),
+            // An insert from nothing to a remove cancel each other out.
+            (Insert { prev, .. }, Remove { .. }) => prev.map(|prev| Remove { prev }),
+            (Remove { prev }, Insert { new, .. }) => Some(Insert {
+                new,
+                prev: Some(prev),
+            }),
+            (Remove { .. }, Remove { .. }) => unreachable!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct SlotEvent<T: Copy> {
     pub layer: i32,
@@ -64,7 +94,19 @@ impl<T: Copy> Default for ChunkEventDebouncer<T> {
 
 impl<T: Copy> ChunkEventDebouncer<T> {
     fn push_slot_event(&mut self, ev: SlotEvent<T>) {
-        self.per_slot.insert(ev.sub, ev.kind);
+        use std::collections::hash_map::Entry::*;
+        let entry = self.per_slot.entry(ev.sub);
+        match entry {
+            Occupied(mut occupied) => {
+                match occupied.get().append(ev.kind) {
+                    Some(new) => occupied.insert(new),
+                    None => occupied.remove(),
+                };
+            }
+            Vacant(vacant) => {
+                vacant.insert(ev.kind);
+            }
+        }
     }
 }
 
@@ -132,6 +174,8 @@ impl<T: Copy> LatticeEventDebouncer<T> {
         }
     }
 
+    /// Returns all debounced events, in order of layer events first, then, per chunk, a chunk
+    /// event for that chunk (if it exists) followed by slot events for that chunk.
     pub fn drain(&mut self) -> impl Iterator<Item = LatticeEvent<T>> + '_ {
         self.per_layer.iter_mut().flat_map(|(&layer, led)| {
             let maybe_event = led

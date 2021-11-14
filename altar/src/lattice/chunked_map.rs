@@ -5,6 +5,7 @@ use std::{
     ptr::NonNull,
 };
 
+use bitvec::{array::BitArray, BitArr};
 use hv::prelude::*;
 
 pub const CHUNK_SIDE_LENGTH: usize = 16;
@@ -51,9 +52,23 @@ impl SubCoords {
         Self(v)
     }
 
+    pub fn new_unchecked(v: Vector2<u32>) -> Self {
+        Self(v)
+    }
+
     pub fn to_linear(self) -> usize {
         let v = self.cast::<usize>();
         v.y * CHUNK_SIDE_LENGTH + v.x
+    }
+
+    pub fn from_linear(linear: usize) -> Self {
+        Self::new(
+            Vector2::new(
+                linear.rem_euclid(CHUNK_SIDE_LENGTH),
+                linear.div_euclid(CHUNK_SIDE_LENGTH),
+            )
+            .cast::<u32>(),
+        )
     }
 }
 
@@ -80,32 +95,104 @@ impl DividedCoords {
     }
 }
 
-#[derive(Debug, Clone)]
+// Can't #[derive] on something w/ a type macro in it. (?? what?)
+type ValidBits = BitArr!(for 256);
+
+#[derive(Debug)]
 pub struct Chunk<T> {
-    data: Box<[T; CHUNK_AREA]>,
+    data: Box<[MaybeUninit<T>; CHUNK_AREA]>,
+    valid: ValidBits,
+}
+
+impl<T: Clone> Clone for Chunk<T> {
+    fn clone(&self) -> Self {
+        let mut new_chunk = Chunk::default();
+        for index in self.valid.iter_ones() {
+            new_chunk.data[index].write(unsafe { self.data[index].assume_init_ref() }.clone());
+        }
+        new_chunk.valid = self.valid;
+        new_chunk
+    }
 }
 
 impl<T> Index<SubCoords> for Chunk<T> {
     type Output = T;
 
     fn index(&self, index: SubCoords) -> &Self::Output {
-        &self.data[index.to_linear()]
+        let linear = index.to_linear();
+        assert!(self.valid[linear], "no initialized data at index!");
+        unsafe { self.data[linear].assume_init_ref() }
     }
 }
 
 impl<T> IndexMut<SubCoords> for Chunk<T> {
     fn index_mut(&mut self, index: SubCoords) -> &mut Self::Output {
-        &mut self.data[index.to_linear()]
+        let linear = index.to_linear();
+        assert!(self.valid[linear], "no initialized data at index!");
+        unsafe { self.data[linear].assume_init_mut() }
     }
 }
 
-impl<T: Default> Default for Chunk<T> {
+impl<T> Default for Chunk<T> {
     fn default() -> Self {
-        let mut array = MaybeUninit::uninit_array();
-        array.fill_with(|| MaybeUninit::new(Default::default()));
         Chunk {
-            data: Box::new(unsafe { MaybeUninit::array_assume_init(array) }),
+            data: Box::new(MaybeUninit::uninit_array()),
+            valid: BitArray::zeroed(),
         }
+    }
+}
+
+impl<T> Chunk<T> {
+    pub fn get(&self, index: SubCoords) -> Option<&T> {
+        let linear = index.to_linear();
+        self.valid[linear].then(|| unsafe { self.data[linear].assume_init_ref() })
+    }
+
+    pub fn get_mut(&mut self, index: SubCoords) -> Option<&mut T> {
+        let linear = index.to_linear();
+        self.valid[linear].then(|| unsafe { self.data[linear].assume_init_mut() })
+    }
+
+    pub fn insert(&mut self, index: SubCoords, val: T) -> Option<T> {
+        let linear = index.to_linear();
+        match self.valid[linear] {
+            true => Some(std::mem::replace(
+                unsafe { self.data[linear].assume_init_mut() },
+                val,
+            )),
+            false => {
+                self.valid.set(linear, true);
+                self.data[linear].write(val);
+                None
+            }
+        }
+    }
+
+    pub fn remove(&mut self, index: SubCoords) -> Option<T> {
+        let linear = index.to_linear();
+        self.valid[linear].then(|| {
+            self.valid.set(linear, false);
+            unsafe { std::ptr::read(&self.data[linear]).assume_init() }
+        })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (SubCoords, &T)> + ExactSizeIterator {
+        self.valid.iter_ones().map(|i| {
+            (SubCoords::from_linear(i), unsafe {
+                self.data[i].assume_init_ref()
+            })
+        })
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (SubCoords, &mut T)> + ExactSizeIterator {
+        self.valid.iter_ones().map(|i| {
+            // safety: we're continuously borrowing different elements, and we have mutable access;
+            // so no one else is going to try to access the same two, and we're assured we won't try
+            // to access the same two since our valid bits won't repeat.
+            (SubCoords::from_linear(i), unsafe {
+                (*(&mut self.data[i] as *mut MaybeUninit<_>)).assume_init_mut()
+            })
+        })
     }
 }
 
@@ -127,6 +214,16 @@ impl<T> ChunkLayer<T> {
         }
     }
 
+    pub fn chunks(&self) -> impl Iterator<Item = (ChunkCoords, &Chunk<T>)> {
+        self.chunks.iter().map(|(&coords, chunk)| (coords, chunk))
+    }
+
+    pub fn chunks_mut(&mut self) -> impl Iterator<Item = (ChunkCoords, &mut Chunk<T>)> {
+        self.chunks
+            .iter_mut()
+            .map(|(&coords, chunk)| (coords, chunk))
+    }
+
     pub fn get_chunk(&self, coords: ChunkCoords) -> Option<&Chunk<T>> {
         self.chunks.get(&coords)
     }
@@ -135,10 +232,7 @@ impl<T> ChunkLayer<T> {
         self.chunks.get_mut(&coords)
     }
 
-    pub fn get_or_insert_chunk(&mut self, coords: ChunkCoords) -> &mut Chunk<T>
-    where
-        T: Default,
-    {
+    pub fn get_or_insert_chunk(&mut self, coords: ChunkCoords) -> &mut Chunk<T> {
         self.chunks.entry(coords).or_default()
     }
 
@@ -150,22 +244,19 @@ impl<T> ChunkLayer<T> {
         self.chunks.remove(&coords)
     }
 
-    pub fn get_slot(&self, coords: Vector2<i32>) -> Option<&T> {
+    pub fn get(&self, coords: Vector2<i32>) -> Option<&T> {
         let divided = DividedCoords::from_world_coords(coords);
         self.get_chunk(divided.chunk_coords)
-            .map(|chunk| &chunk[divided.sub_coords])
+            .and_then(|chunk| chunk.get(divided.sub_coords))
     }
 
-    pub fn get_slot_mut(&mut self, coords: Vector2<i32>) -> Option<&mut T> {
+    pub fn get_mut(&mut self, coords: Vector2<i32>) -> Option<&mut T> {
         let divided = DividedCoords::from_world_coords(coords);
         self.get_chunk_mut(divided.chunk_coords)
-            .map(|chunk| &mut chunk[divided.sub_coords])
+            .and_then(|chunk| chunk.get_mut(divided.sub_coords))
     }
 
-    pub fn get_n_slots_mut<const N: usize>(
-        &mut self,
-        coords: [Vector2<i32>; N],
-    ) -> [Option<&mut T>; N] {
+    pub fn get_n_mut<const N: usize>(&mut self, coords: [Vector2<i32>; N]) -> [Option<&mut T>; N] {
         // Fast if N is small.
         for i in 0..N {
             for j in i..N {
@@ -178,7 +269,7 @@ impl<T> ChunkLayer<T> {
 
         let mut ptrs = [None; N];
         for i in 0..N {
-            let t = self.get_slot_mut(coords[i]);
+            let t = self.get_mut(coords[i]);
             ptrs[i] = t.map(|mut_ref| NonNull::new(mut_ref as *mut T).unwrap());
         }
 
@@ -186,11 +277,11 @@ impl<T> ChunkLayer<T> {
         ptrs.map(|t| t.map(|mut nn| unsafe { nn.as_mut() }))
     }
 
-    pub fn get_all_n_slots_mut<const N: usize>(
+    pub fn get_all_n_mut<const N: usize>(
         &mut self,
         coords: [Vector2<i32>; N],
     ) -> Option<[&mut T; N]> {
-        let slots = self.get_n_slots_mut(coords);
+        let slots = self.get_n_mut(coords);
 
         if slots.iter().all(Option::is_some) {
             Some(slots.map(Option::unwrap))
@@ -198,40 +289,49 @@ impl<T> ChunkLayer<T> {
             None
         }
     }
-}
-
-impl<T> ChunkLayer<Option<T>> {
-    pub fn get(&self, coords: Vector2<i32>) -> Option<&T> {
-        self.get_slot(coords).and_then(Option::as_ref)
-    }
-
-    pub fn get_mut(&mut self, coords: Vector2<i32>) -> Option<&mut T> {
-        self.get_slot_mut(coords).and_then(Option::as_mut)
-    }
-
-    pub fn get_n_mut<const N: usize>(&mut self, coords: [Vector2<i32>; N]) -> [Option<&mut T>; N] {
-        self.get_n_slots_mut(coords)
-            .map(|opt| opt.and_then(Option::as_mut))
-    }
-
-    pub fn get_all_n_mut<const N: usize>(
-        &mut self,
-        coords: [Vector2<i32>; N],
-    ) -> Option<[&mut T; N]> {
-        let slots = self.get_all_n_slots_mut(coords)?;
-        slots
-            .iter()
-            .all(|t| t.is_some())
-            .then(|| slots.map(|opt| opt.as_mut().unwrap()))
-    }
 
     pub fn insert(&mut self, coords: Vector2<i32>, value: T) -> Option<T> {
         let divided = DividedCoords::from_world_coords(coords);
-        self.chunks.entry(divided.chunk_coords).or_default()[divided.sub_coords].replace(value)
+        self.chunks
+            .entry(divided.chunk_coords)
+            .or_default()
+            .insert(divided.sub_coords, value)
     }
 
     pub fn remove(&mut self, coords: Vector2<i32>) -> Option<T> {
-        self.get_slot_mut(coords).and_then(Option::take)
+        let divided = DividedCoords::from_world_coords(coords);
+        self.get_chunk_mut(divided.chunk_coords)
+            .and_then(|chunk| chunk.remove(divided.sub_coords))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Vector2<i32>, &T)> {
+        self.chunks().flat_map(|(chunk_coords, chunk)| {
+            chunk.iter().map(move |(sub_coords, value)| {
+                (
+                    DividedCoords {
+                        chunk_coords,
+                        sub_coords,
+                    }
+                    .to_world_coords(),
+                    value,
+                )
+            })
+        })
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Vector2<i32>, &mut T)> {
+        self.chunks_mut().flat_map(|(chunk_coords, chunk)| {
+            chunk.iter_mut().map(move |(sub_coords, value)| {
+                (
+                    DividedCoords {
+                        chunk_coords,
+                        sub_coords,
+                    }
+                    .to_world_coords(),
+                    value,
+                )
+            })
+        })
     }
 }
 
@@ -301,22 +401,19 @@ impl<T> ChunkMap<T> {
         self.layers.remove(&index)
     }
 
-    pub fn get_slot(&self, coords: Vector3<i32>) -> Option<&T> {
+    pub fn get(&self, coords: Vector3<i32>) -> Option<&T> {
         self.layers
             .get(&coords.z)
-            .and_then(|layer| layer.get_slot(coords.xy()))
+            .and_then(|layer| layer.get(coords.xy()))
     }
 
-    pub fn get_slot_mut(&mut self, coords: Vector3<i32>) -> Option<&mut T> {
+    pub fn get_mut(&mut self, coords: Vector3<i32>) -> Option<&mut T> {
         self.layers
             .get_mut(&coords.z)
-            .and_then(|layer| layer.get_slot_mut(coords.xy()))
+            .and_then(|layer| layer.get_mut(coords.xy()))
     }
 
-    pub fn get_n_slots_mut<const N: usize>(
-        &mut self,
-        coords: [Vector3<i32>; N],
-    ) -> [Option<&mut T>; N] {
+    pub fn get_n_mut<const N: usize>(&mut self, coords: [Vector3<i32>; N]) -> [Option<&mut T>; N] {
         // Fast if N is small.
         for i in 0..N {
             for j in i..N {
@@ -329,7 +426,7 @@ impl<T> ChunkMap<T> {
 
         let mut ptrs = [None; N];
         for i in 0..N {
-            let t = self.get_slot_mut(coords[i]);
+            let t = self.get_mut(coords[i]);
             ptrs[i] = t.map(|mut_ref| NonNull::new(mut_ref as *mut T).unwrap());
         }
 
@@ -337,43 +434,17 @@ impl<T> ChunkMap<T> {
         ptrs.map(|t| t.map(|mut nn| unsafe { nn.as_mut() }))
     }
 
-    pub fn get_all_n_slots_mut<const N: usize>(
+    pub fn get_all_n_mut<const N: usize>(
         &mut self,
         coords: [Vector3<i32>; N],
     ) -> Option<[&mut T; N]> {
-        let slots = self.get_n_slots_mut(coords);
+        let slots = self.get_n_mut(coords);
 
         if slots.iter().all(Option::is_some) {
             Some(slots.map(Option::unwrap))
         } else {
             None
         }
-    }
-}
-
-impl<T> ChunkMap<Option<T>> {
-    pub fn get(&self, coords: Vector3<i32>) -> Option<&T> {
-        self.get_slot(coords).and_then(Option::as_ref)
-    }
-
-    pub fn get_mut(&mut self, coords: Vector3<i32>) -> Option<&mut T> {
-        self.get_slot_mut(coords).and_then(Option::as_mut)
-    }
-
-    pub fn get_n_mut<const N: usize>(&mut self, coords: [Vector3<i32>; N]) -> [Option<&mut T>; N] {
-        self.get_n_slots_mut(coords)
-            .map(|opt| opt.and_then(Option::as_mut))
-    }
-
-    pub fn get_all_n_mut<const N: usize>(
-        &mut self,
-        coords: [Vector3<i32>; N],
-    ) -> Option<[&mut T; N]> {
-        let slots = self.get_all_n_slots_mut(coords)?;
-        slots
-            .iter()
-            .all(|t| t.is_some())
-            .then(|| slots.map(|opt| opt.as_mut().unwrap()))
     }
 
     pub fn insert(&mut self, coords: Vector3<i32>, value: T) -> Option<T> {
@@ -384,6 +455,18 @@ impl<T> ChunkMap<Option<T>> {
     }
 
     pub fn remove(&mut self, coords: Vector3<i32>) -> Option<T> {
-        self.get_slot_mut(coords).and_then(Option::take)
+        self.layers
+            .get_mut(&coords.z)
+            .and_then(|layer| layer.remove(coords.xy()))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Vector3<i32>, &T)> {
+        self.layers()
+            .flat_map(|(z, layer)| layer.iter().map(move |(xy, value)| (xy.push(z), value)))
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Vector3<i32>, &mut T)> {
+        self.layers_mut()
+            .flat_map(|(z, layer)| layer.iter_mut().map(move |(xy, value)| (xy.push(z), value)))
     }
 }
