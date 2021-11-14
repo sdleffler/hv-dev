@@ -94,17 +94,24 @@ impl ColliderMap {
         // }
 
         if map.events().read(&mut self.reader_id).len() > 0 {
-            let qbvh_generator = map.as_chunk_map().iter().map(|(coords, &entity)| {
-                let aabb = *self.entities_to_aabbs.entry(entity).or_insert_with(|| {
-                    context
-                        .query_one(query, entity)
-                        .unwrap()
-                        .get()
-                        .unwrap()
-                        .compute_aabb(&Isometry3::from(coords.cast::<f32>()))
-                });
+            // FIXME(sleffy): report warnings when unable to extract a collider/AABB from an entity
+            let qbvh_generator = map.as_chunk_map().iter().filter_map(|(coords, &entity)| {
+                use std::collections::hash_map::Entry::*;
 
-                (pack_coords(coords), aabb)
+                let aabb = match self.entities_to_aabbs.entry(entity) {
+                    Occupied(occupied) => *occupied.get(),
+                    Vacant(vacant) => {
+                        let res = context
+                            .query_one(query, entity)
+                            .ok()?
+                            .get()?
+                            .compute_aabb(&Isometry3::from(coords.cast::<f32>()));
+                        vacant.insert(res);
+                        res
+                    }
+                };
+
+                Some((pack_coords(coords), aabb))
             });
 
             self.buf.clear();
