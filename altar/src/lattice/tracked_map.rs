@@ -232,4 +232,8 @@ impl<T: Copy + Send + Sync + 'static> TrackedMap<T> {
     pub fn events(&self) -> &EventChannel<LatticeEvent<T>> {
         &self.channel
     }
+
+    pub fn events_mut(&mut self) -> &mut EventChannel<LatticeEvent<T>> {
+        &mut self.channel
+    }
 }

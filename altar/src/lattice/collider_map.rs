@@ -67,6 +67,15 @@ pub struct ColliderMap {
 }
 
 impl ColliderMap {
+    pub fn new(map: &mut TrackedMap<Entity>) -> Self {
+        Self {
+            entities_to_aabbs: HashMap::new(),
+            qbvh: QBVH::new(),
+            buf: Vec::new(),
+            reader_id: map.events_mut().register_reader(),
+        }
+    }
+
     pub fn clear_cache(&mut self) {
         self.entities_to_aabbs.clear();
     }
