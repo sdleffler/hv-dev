@@ -529,6 +529,7 @@ impl ScopeArena {
         let mut scope_guard = ScopeGuard {
             bump: &self.bump,
             buf: Vec::new_in(&self.bump),
+            _phantom: PhantomData,
         };
         f(&mut scope_guard)
     }
@@ -559,14 +560,22 @@ impl<T: ?Sized> MakeItDyn for T {}
 /// [`ScopeGuard`] provided by [`ScopeArena::scope`] or [`ScopeArena::scope_mut`] allows for
 /// collecting [`ElasticGuard`]s through its *safe* [`ScopeGuard::loan`] method, because the
 /// [`ScopeArena`] ensures that all loans are ended at the end of the scope.
+///
+/// As an aside, [`ScopeGuard`] is an excellent example of a type which *cannot* be safely
+/// stretched: the lifetime parameter of the [`ScopeGuard`] corresponds to the accepted lifetime on
+/// the type parameter of [`ScopeGuard::loan`]. As a result, effectively, [`ScopeGuard`] has the
+/// variance of `fn(&'a mut ...)`; it is safe to *lengthen* the lifetimes fed to [`ScopeGuard`], but
+/// absolutely not safe to shorten them!
 pub struct ScopeGuard<'a> {
     bump: &'a Bump,
     buf: Vec<&'a mut (dyn MakeItDyn + 'a), &'a Bump>,
+    // Ensure contravariance.
+    _phantom: PhantomData<fn(&'a mut ())>,
 }
 
 impl<'a> fmt::Debug for ScopeGuard<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ScopeGuard(..{})", self.buf.len())
+        write!(f, "ScopeGuard({} guards held)", self.buf.len())
     }
 }
 
