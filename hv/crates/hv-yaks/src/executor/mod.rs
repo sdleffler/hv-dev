@@ -70,8 +70,8 @@ pub struct SystemId(pub(crate) usize);
 pub struct Executor<'closures, Resources, LocalResources = ()>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     pub(crate) borrows: Resources::BorrowTuple,
@@ -85,8 +85,8 @@ where
 impl<'closures, Resources, LocalResources> Executor<'closures, Resources, LocalResources>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     /// Creates a new [`ExecutorBuilder`](struct.ExecutorBuilder.html).
@@ -225,8 +225,8 @@ where
 impl<'closures, Resources> Executor<'closures, Resources, ()>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
 {
     /// Shortcut for [`run_with_local`] when there are no local resources.
     pub fn run<RefSource>(&mut self, world: &World, resources: RefSource)

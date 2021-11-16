@@ -10,10 +10,7 @@ pub struct ResourceCell<R0> {
 }
 
 impl<R0> ResourceCell<R0> {
-    pub fn new(resource: &mut R0, borrow: &mut AtomicBorrow) -> Self
-    where
-        R0: Send,
-    {
+    pub fn new(resource: &mut R0, borrow: &mut AtomicBorrow) -> Self {
         Self {
             cell: NonNull::new(resource).expect("pointers to resources should never be null"),
             borrow: NonNull::new(borrow).expect("pointers to AtomicBorrows should never be null"),

@@ -15,9 +15,9 @@ use crate::fetch::{CantFetch, Fetch};
 /// Types that can be stored in [`Resources`], automatically implemented for all applicable.
 ///
 /// [`Resources`]: struct.Resources.html
-pub trait Resource: Downcast + Send + 'static {}
+pub trait Resource: Downcast + 'static {}
 
-impl<T> Resource for T where T: Send + 'static {}
+impl<T> Resource for T where T: 'static {}
 
 impl_downcast!(Resource);
 
@@ -142,6 +142,106 @@ impl Resources {
     /// View the [`Resources`] with a wrapper that allows for [`Sync`] access.
     pub fn as_sync(&self) -> SyncResources {
         SyncResources { wrapped: self }
+    }
+}
+
+#[derive(Default)]
+pub struct SendResources {
+    wrapped: Resources,
+}
+
+impl SendResources {
+    /// Creates an empty container. Functionally identical to [`::default()`].
+    ///
+    /// [`default`]: #method.default
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns `true` if a resource of type `T` exists in the container.
+    pub fn contains<T: Resource + Send>(&self) -> bool {
+        self.wrapped.contains::<T>()
+    }
+
+    /// Inserts the given resource of type `T` into the container.
+    ///
+    /// If a resource of this type was already present,
+    /// it will be updated, and the original returned.
+    pub fn insert<T: Resource + Send>(&mut self, resource: T) -> Option<T> {
+        self.wrapped.insert(resource)
+    }
+
+    /// Removes the resource of type `T` from the container.
+    ///
+    /// If a resource of this type was present in the container, it will be returned.
+    pub fn remove<T: Resource + Send>(&mut self) -> Option<T> {
+        self.wrapped.remove()
+    }
+
+    /// Gets the type `T`'s corresponding entry for in-place manipulation.
+    pub fn entry<T: Resource + Send>(&mut self) -> Entry<T> {
+        self.wrapped.entry()
+    }
+
+    /// Returns a reference to the stored resource of type `T`.
+    ///
+    /// If such a resource is currently accessed mutably elsewhere,
+    /// or is not present in the container, returns the appropriate error.
+    pub fn get<T: Resource + Send>(&self) -> Result<Ref<T>, CantGetResource> {
+        self.wrapped.get()
+    }
+
+    /// Returns a mutable reference to the stored resource of type `T`.
+    ///
+    /// If such a resource is currently accessed immutably or mutably elsewhere,
+    /// or is not present in the container, returns the appropriate error.
+    pub fn get_mut<T: Resource + Send>(&self) -> Result<RefMut<T>, CantGetResource> {
+        self.wrapped.get_mut()
+    }
+
+    /// Retrieves up to 16 resources of any combination of mutability.
+    ///
+    /// The generic parameter accepts a single one or any tuple (up to 16)
+    /// of immutable or mutable references of types that are to be retrieved.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use hv_resources::SendResources;
+    /// let mut resources = SendResources::new();
+    /// assert!(resources.insert(0f32).is_none());
+    /// assert!(resources.insert(1u32).is_none());
+    /// assert!(resources.insert(2usize).is_none());
+    /// {
+    ///     let res_f32 = resources.fetch::<&f32>().unwrap();
+    ///     assert_eq!(*res_f32, 0f32);
+    /// }
+    /// {
+    ///     let (mut res_f32, res_u32) = resources.fetch::<(&mut f32, &u32)>().unwrap();
+    ///     assert_eq!(*res_u32, 1u32);
+    ///     *res_f32 += *res_u32 as f32;
+    /// }
+    /// {
+    ///     let (res_f32, res_usize) = resources.fetch::<(&f32, &usize)>().unwrap();
+    ///     assert_eq!(*res_f32, 1f32);
+    ///     assert_eq!(*res_usize, 2usize);
+    ///     assert!(resources.fetch::<&mut f32>().is_err()); // f32 is already borrowed.
+    /// }
+    /// assert!(resources.fetch::<&bool>().is_err());// There is no bool in the container.
+    /// ```
+    #[cfg(feature = "fetch")]
+    pub fn fetch<R>(&self) -> Result<<R as Fetch>::Refs, CantFetch>
+    where
+        for<'a> R: Fetch<'a>,
+        for<'f> <R as Fetch<'f>>::Refs: Send,
+    {
+        R::fetch(&self.wrapped)
+    }
+
+    /// View the [`SendResources`] with a wrapper that allows for [`Sync`] access.
+    pub fn as_sync(&self) -> SyncResources {
+        SyncResources {
+            wrapped: &self.wrapped,
+        }
     }
 }
 

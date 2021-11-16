@@ -25,8 +25,8 @@ static INVALID_ID: &str = "system IDs should always be valid";
 pub enum SharedSystemClosure<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     Sync(Arc<Mutex<SystemClosure<'closure, Resources::Wrapped>>>),
@@ -37,8 +37,8 @@ impl<'closure, Resources, LocalResources> Clone
     for SharedSystemClosure<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     fn clone(&self) -> Self {
@@ -53,8 +53,8 @@ where
 pub struct System<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     pub closure: SharedSystemClosure<'closure, Resources, LocalResources>,
@@ -70,8 +70,8 @@ where
 impl<'closure, Resources, LocalResources> SharedSystemClosure<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     fn is_sync(&self) -> bool {
@@ -103,8 +103,8 @@ where
 pub enum ExecutorParallel<'closures, Resources, LocalResources>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     // TODO consider more granularity:
@@ -120,8 +120,8 @@ where
 impl<'closures, Resources, LocalResources> ExecutorParallel<'closures, Resources, LocalResources>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     pub fn build<Handle>(

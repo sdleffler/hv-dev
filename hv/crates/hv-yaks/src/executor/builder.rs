@@ -15,8 +15,8 @@ use crate::{ArchetypeSet, BorrowSet, BorrowTypeSet, TypeSet};
 pub enum BoxedSystemClosure<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple + 'closure,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple + 'closure,
 {
     Sync(Box<SystemClosure<'closure, Resources::Wrapped>>),
@@ -28,8 +28,8 @@ where
 pub struct System<'closure, Resources, LocalResources>
 where
     Resources: ResourceTuple + 'closure,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple + 'closure,
 {
     pub closure: BoxedSystemClosure<'closure, Resources, LocalResources>,
@@ -46,8 +46,8 @@ where
 pub struct ExecutorBuilder<'closures, Resources, LocalResources, Handle = DummyHandle>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     pub(crate) systems: HashMap<SystemId, System<'closures, Resources, LocalResources>>,
@@ -60,8 +60,8 @@ impl<'closures, Resources, LocalResources, Handle>
     ExecutorBuilder<'closures, Resources, LocalResources, Handle>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
     Handle: Eq + Hash,
 {

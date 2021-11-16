@@ -16,8 +16,8 @@ pub struct DependantsLength(pub usize);
 pub struct Scheduler<'closures, Resources, LocalResources>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     pub systems: HashMap<SystemId, System<'closures, Resources, LocalResources>>,
@@ -34,8 +34,8 @@ where
 impl<'closures, Resources, LocalResources> Scheduler<'closures, Resources, LocalResources>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     pub fn run(

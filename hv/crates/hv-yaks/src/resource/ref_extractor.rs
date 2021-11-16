@@ -10,8 +10,8 @@ use super::{ResourceTuple, ResourceWrap};
 pub trait MultiRefExtractor<Resources, LocalResources>
 where
     Resources: ResourceTuple,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple,
 {
     fn extract_and_drive_executor(
@@ -24,8 +24,8 @@ where
 impl<T, U, Resources, LocalResources> MultiRefExtractor<Resources, LocalResources> for (T, U)
 where
     Resources: ResourceTuple + RefExtractor<T>,
-    Resources::Wrapped: Sync,
-    Resources::BorrowTuple: Sync,
+    Resources::Wrapped: Send + Sync,
+    Resources::BorrowTuple: Send + Sync,
     LocalResources: ResourceTuple + RefExtractor<U>,
 {
     fn extract_and_drive_executor(
@@ -52,8 +52,8 @@ where
 impl<'a, Rs, LocalRs> MultiRefExtractor<Rs, LocalRs> for &'a Resources
 where
     Rs: ResourceTuple + RefExtractor<&'a Resources>,
-    Rs::Wrapped: Sync,
-    Rs::BorrowTuple: Sync,
+    Rs::Wrapped: Send + Sync,
+    Rs::BorrowTuple: Send + Sync,
     LocalRs: ResourceTuple + RefExtractor<&'a Resources>,
 {
     fn extract_and_drive_executor(self, executor: &mut Executor<Rs, LocalRs>, world: &World) {
@@ -90,10 +90,7 @@ impl RefExtractor<()> for () {
     }
 }
 
-impl<R0> RefExtractor<&mut R0> for (R0,)
-where
-    R0: Send,
-{
+impl<R0> RefExtractor<&mut R0> for (R0,) {
     // fn extract_and_run(executor: &mut Executor<Self>, world: &World, mut resources: &mut R0) {
     //     let wrapped = resources.wrap(&mut executor.borrows);
     //     executor.inner.run(world, wrapped);
@@ -108,10 +105,7 @@ where
     }
 }
 
-impl<R0> RefExtractor<(&mut R0,)> for (R0,)
-where
-    R0: Send,
-{
+impl<R0> RefExtractor<(&mut R0,)> for (R0,) {
     // fn extract_and_run(executor: &mut Executor<Self>, world: &World, mut resources: (&mut R0,)) {
     //     let wrapped = resources.wrap(&mut executor.borrows);
     //     executor.inner.run(world, wrapped);
@@ -129,10 +123,7 @@ where
 
 macro_rules! impl_ref_extractor {
     ($($letter:ident),*) => {
-        impl<'a, $($letter),*> RefExtractor<($(&mut $letter,)*)> for ($($letter,)*)
-        where
-            $($letter: Send,)*
-        {
+        impl<'a, $($letter),*> RefExtractor<($(&mut $letter,)*)> for ($($letter,)*) {
             // fn extract_and_run(
             //     executor: &mut Executor<Self>,
             //     world: &World,

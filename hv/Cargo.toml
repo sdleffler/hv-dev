@@ -56,3 +56,8 @@ members = [
     "crates/hv-yaks",
     ".",
 ]
+
+[profile.dev]
+# Rust iterators are absolutely horrific without any optimizations, and we like them a lot.
+# Rust iterators are absolutely horrific without any optimizations, and we like them a lot.
+opt-level = 1

@@ -148,31 +148,12 @@ where
     }
 }
 
-impl<Q0> QueryBundle for (QueryMarker<Q0>,)
+impl<Q0> QueryBundle for (Q0,)
 where
-    Q0: Query + QueryExt,
+    Q0: QueryBundle,
 {
     fn markers() -> Self {
-        (QueryMarker::new(),)
-    }
-
-    #[cfg(feature = "parallel")]
-    fn insert_component_types(component_type_set: &mut BorrowTypeSet) {
-        Q0::insert_component_types(component_type_set);
-    }
-
-    #[cfg(feature = "parallel")]
-    fn set_archetype_bits(world: &World, archetype_set: &mut ArchetypeSet) {
-        Q0::set_archetype_bits(world, archetype_set);
-    }
-}
-
-impl<Q0> QueryBundle for (PreparedQuery<Q0>,)
-where
-    Q0: Query + QueryExt,
-{
-    fn markers() -> Self {
-        (PreparedQuery::new(),)
+        (Q0::markers(),)
     }
 
     #[cfg(feature = "parallel")]
@@ -204,31 +185,12 @@ impl_for_tuples!(impl_query_ext);
 
 macro_rules! impl_query_bundle {
     ($($letter:ident),*) => {
-        impl<$($letter),*> QueryBundle for ($(QueryMarker<$letter>,)*)
+        impl<$($letter),*> QueryBundle for ($($letter,)*)
         where
-            $($letter: Query + QueryExt,)*
+            $($letter: QueryBundle,)*
         {
             fn markers() -> Self {
-                ($(QueryMarker::<$letter>::new(),)*)
-            }
-
-            #[cfg(feature = "parallel")]
-            fn insert_component_types(component_type_set: &mut BorrowTypeSet) {
-                $($letter::insert_component_types(component_type_set);)*
-            }
-
-            #[cfg(feature = "parallel")]
-            fn set_archetype_bits(world: &World, archetype_set: &mut ArchetypeSet) {
-                $($letter::set_archetype_bits(world, archetype_set);)*
-            }
-        }
-
-        impl<$($letter),*> QueryBundle for ($(PreparedQuery<$letter>,)*)
-        where
-            $($letter: Query + QueryExt,)*
-        {
-            fn markers() -> Self {
-                ($(PreparedQuery::<$letter>::new(),)*)
+                ($($letter::markers(),)*)
             }
 
             #[cfg(feature = "parallel")]

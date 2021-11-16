@@ -71,7 +71,7 @@ where
 
 impl<'a, R0> RefExtractor<SyncResources<'a>> for (R0,)
 where
-    R0: Resource + Sync,
+    R0: Resource + Send + Sync,
 {
     fn extract_and_run(
         borrow_tuple: &mut Self::BorrowTuple,
@@ -107,7 +107,7 @@ macro_rules! impl_ref_extractor {
 
         impl<'a, $($letter),*> RefExtractor<SyncResources<'a>> for ($($letter,)*)
         where
-            $($letter: Resource + Sync,)*
+            $($letter: Resource + Send + Sync,)*
         {
             #[allow(non_snake_case)]
             fn extract_and_run(

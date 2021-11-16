@@ -73,5 +73,5 @@ pub use entry::{Entry, OccupiedEntry, VacantEntry};
 pub use error::{CantGetResource, InvalidBorrow, NoSuchResource};
 #[cfg(feature = "fetch")]
 pub use fetch::CantFetch;
-pub use map::{Resource, Resources, SyncResources};
+pub use map::{Resource, Resources, SendResources, SyncResources};
 pub use refs::{Ref, RefMut};
