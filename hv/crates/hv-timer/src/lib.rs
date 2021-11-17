@@ -338,7 +338,7 @@ pub fn f64_to_duration(t: f64) -> time::Duration {
 /// of the `f32`.
 pub fn duration_to_f32(d: time::Duration) -> f32 {
     let seconds = d.as_secs() as f32;
-    let nanos = f32::from(d.subsec_nanos() as u16);
+    let nanos = d.subsec_nanos() as f32;
     seconds + (nanos * 1e-9)
 }
 

@@ -8,6 +8,8 @@ pub enum VertexSemantics {
     Uv,
     #[sem(name = "a_VertColor", repr = "[f32; 4]", wrapper = "VertexColor")]
     Color,
+    #[sem(name = "a_Normal", repr = "[f32; 3]", wrapper = "VertexNormal")]
+    Normal,
     #[sem(name = "a_Src", repr = "[f32; 4]", wrapper = "InstanceSource")]
     InstanceSource,
     #[sem(name = "a_Color", repr = "[f32; 4]", wrapper = "InstanceColor")]

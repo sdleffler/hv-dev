@@ -114,6 +114,15 @@ impl From<[f32; 4]> for Color {
     }
 }
 
+impl From<[f32; 3]> for Color {
+    /// Turns an `[R, G, B] array of `f32`'s into a `Color` with no format changes and assuming
+    /// alpha is `1.0`.
+    /// All inputs should be in the range `[0.0-1.0]`.
+    fn from(val: [f32; 3]) -> Self {
+        Color::new(val[0], val[1], val[2], 1.0)
+    }
+}
+
 impl From<(f32, f32, f32)> for Color {
     /// Convert a `(R, G, B)` tuple of `f32`'s in the range `[0.0-1.0]` into a `Color`,
     /// with a value of 1.0 to for the alpha element (ie, no transparency.)
@@ -148,6 +157,14 @@ impl From<Color> for (u8, u8, u8) {
     fn from(color: Color) -> Self {
         let (r, g, b, _) = color.into();
         (r, g, b)
+    }
+}
+
+impl From<Color> for [f32; 3] {
+    /// Convert a `Color` into an `[R, G, B]` array of `f32`'s in the range of `[0.0-1.0]`, ignoring
+    /// alpha.
+    fn from(color: Color) -> Self {
+        [color.r, color.g, color.b]
     }
 }
 
@@ -238,6 +255,12 @@ impl From<LinearColor> for Color {
             b: f(c.b),
             a: c.a,
         }
+    }
+}
+
+impl From<LinearColor> for [f32; 3] {
+    fn from(color: LinearColor) -> Self {
+        [color.r, color.g, color.b]
     }
 }
 
