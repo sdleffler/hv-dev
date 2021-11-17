@@ -24,6 +24,7 @@ use luminance::{
     texture::Dim2,
     UniformInterface, Vertex,
 };
+use std::ops;
 use thunderdome::{Arena, Index};
 
 #[derive(Clone, Copy, Debug, Vertex)]
@@ -86,6 +87,27 @@ where
     enable_lighting: bool,
 }
 
+impl<B> StaticWireframeTess<B>
+where
+    B: TessBackend<Vertex, u16, (), Interleaved>,
+{
+    pub fn tess(&self) -> &Tess<B, Vertex, u16, (), Interleaved> {
+        &self.tess
+    }
+
+    pub fn tess_mut(&mut self) -> &mut Tess<B, Vertex, u16, (), Interleaved> {
+        &mut self.tess
+    }
+
+    pub fn is_lighting_enabled(&self) -> bool {
+        self.enable_lighting
+    }
+
+    pub fn set_lighting_enabled(&mut self, enabled: bool) {
+        self.enable_lighting = enabled;
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct WireframeInstance {
     /// The color of this instance.
@@ -102,6 +124,32 @@ where
     tess: Tess<B, Vertex, u16, Instance, Interleaved>,
     enable_lighting: bool,
     instance_list: Vec<WireframeInstance>,
+}
+
+impl<B> DynamicWireframeTess<B>
+where
+    B: TessBackend<Vertex, u16, Instance, Interleaved>,
+    B: BufferBackend<Matrix4<f32>>,
+{
+    pub fn tess(&self) -> &Tess<B, Vertex, u16, Instance, Interleaved> {
+        &self.tess
+    }
+
+    pub fn tess_mut(&mut self) -> &mut Tess<B, Vertex, u16, Instance, Interleaved> {
+        &mut self.tess
+    }
+
+    pub fn is_lighting_enabled(&self) -> bool {
+        self.enable_lighting
+    }
+
+    pub fn set_lighting_enabled(&mut self, enabled: bool) {
+        self.enable_lighting = enabled;
+    }
+
+    pub fn queue_instance(&mut self, instance: WireframeInstance) {
+        self.instance_list.push(instance);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -264,6 +312,42 @@ where
         DynamicWireframeTessId(self.dynamic_tess.insert(dynamic_tess))
     }
 
+    pub fn get_static_tess(&self, id: StaticWireframeTessId) -> Option<&StaticWireframeTess<B>> {
+        self.static_tess.get(id.0)
+    }
+
+    pub fn get_dynamic_tess(&self, id: DynamicWireframeTessId) -> Option<&DynamicWireframeTess<B>> {
+        self.dynamic_tess.get(id.0)
+    }
+
+    pub fn get_static_tess_mut(
+        &mut self,
+        id: StaticWireframeTessId,
+    ) -> Option<&mut StaticWireframeTess<B>> {
+        self.static_tess.get_mut(id.0)
+    }
+
+    pub fn get_dynamic_tess_mut(
+        &mut self,
+        id: DynamicWireframeTessId,
+    ) -> Option<&mut DynamicWireframeTess<B>> {
+        self.dynamic_tess.get_mut(id.0)
+    }
+
+    pub fn remove_static_tess(
+        &mut self,
+        id: StaticWireframeTessId,
+    ) -> Option<Tess<B, Vertex, u16, (), Interleaved>> {
+        self.static_tess.remove(id.0).map(|wt| wt.tess)
+    }
+
+    pub fn remove_dynamic_tess(
+        &mut self,
+        id: DynamicWireframeTessId,
+    ) -> Option<Tess<B, Vertex, u16, Instance, Interleaved>> {
+        self.dynamic_tess.remove(id.0).map(|wt| wt.tess)
+    }
+
     pub fn clear_draw_queue(&mut self) {
         self.static_list.clear();
         for (_, dw) in self.dynamic_tess.iter_mut() {
@@ -284,9 +368,7 @@ where
         dynamic_tess_id: DynamicWireframeTessId,
         instance: WireframeInstance,
     ) {
-        self.dynamic_tess[dynamic_tess_id.0]
-            .instance_list
-            .push(instance);
+        self.dynamic_tess[dynamic_tess_id.0].queue_instance(instance);
     }
 
     pub fn set_projection(&mut self, matrix: &Matrix4<f32>) {
@@ -311,6 +393,46 @@ where
 
     pub fn set_light_ambient_color(&mut self, ambient: LinearColor) {
         self.light_ambient_color = ambient;
+    }
+}
+
+impl<B> ops::Index<StaticWireframeTessId> for WireframeRenderer<B>
+where
+    B: WireframeBackend,
+{
+    type Output = StaticWireframeTess<B>;
+
+    fn index(&self, index: StaticWireframeTessId) -> &Self::Output {
+        &self.static_tess[index.0]
+    }
+}
+
+impl<B> ops::IndexMut<StaticWireframeTessId> for WireframeRenderer<B>
+where
+    B: WireframeBackend,
+{
+    fn index_mut(&mut self, index: StaticWireframeTessId) -> &mut Self::Output {
+        &mut self.static_tess[index.0]
+    }
+}
+
+impl<B> ops::Index<DynamicWireframeTessId> for WireframeRenderer<B>
+where
+    B: WireframeBackend,
+{
+    type Output = DynamicWireframeTess<B>;
+
+    fn index(&self, index: DynamicWireframeTessId) -> &Self::Output {
+        &self.dynamic_tess[index.0]
+    }
+}
+
+impl<B> ops::IndexMut<DynamicWireframeTessId> for WireframeRenderer<B>
+where
+    B: WireframeBackend,
+{
+    fn index_mut(&mut self, index: DynamicWireframeTessId) -> &mut Self::Output {
+        &mut self.dynamic_tess[index.0]
     }
 }
 
@@ -346,12 +468,14 @@ where
                 program_interface.set(&uni.light_direction, self.light_direction.into());
 
                 render_gate.render(&render_state, |mut tess_gate| {
-                    for &(static_tess_id, instance) in &self.static_list {
+                    let queued_static_instances = self.static_list.iter();
+                    for (static_tess, instance) in queued_static_instances
+                        .filter_map(|(id, inst)| self.static_tess.get(id.0).map(|t| (t, inst)))
+                    {
                         program_interface.set(&uni.tx, instance.tx.into());
                         program_interface.set(&uni.mvp, (view_projection * instance.tx).into());
                         program_interface.set(&uni.color, instance.color.into());
 
-                        let static_tess = &self.static_tess[static_tess_id.0];
                         if static_tess.enable_lighting {
                             program_interface
                                 .set(&uni.light_diffuse_color, self.light_diffuse_color.into());
@@ -367,8 +491,7 @@ where
                                 .set(&uni.light_ambient_color, LinearColor::WHITE.into());
                         }
 
-                        let tess = &self.static_tess[static_tess_id.0].tess;
-                        let tess_view = TessView::whole(tess);
+                        let tess_view = TessView::whole(&static_tess.tess);
                         tess_gate.render(tess_view)?;
                     }
 
