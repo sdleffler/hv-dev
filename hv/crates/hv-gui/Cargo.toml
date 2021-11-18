@@ -1,0 +1,8 @@
+[package]
+name = "hv-gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+egui = "0.15.0"
+hv-input = { path = "../hv-input" }

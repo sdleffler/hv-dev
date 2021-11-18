@@ -23,6 +23,7 @@ ecs-derive = { version = "0.7.0", path = "crates/hv-ecs-derive", package = "hv-e
 elastic = { version = "0.3.0", path = "crates/hv-elastic", package = "hv-elastic", features = ["hv-ecs"] }
 fs = { version = "0.1.0", path = "crates/hv-filesystem", package = "hv-filesystem" }
 guarded_borrow = { version = "0.1.0", path = "crates/hv-guarded-borrow", package = "hv-guarded-borrow", features = ["std", "hv-ecs"] }
+gui = { version = "0.1.0", path = "crates/hv-gui", package = "hv-gui" }
 lua = { version = "0.6.6", path = "../hv-lua", package = "hv-lua", features = ["hv-reexport", "nalgebra", "send", "macros"] }
 math = { version = "0.1.0", path = "crates/hv-math", package = "hv-math" }
 petgraph = "0.6.0"

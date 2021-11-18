@@ -7,6 +7,8 @@ use crate::render::{Color, LinearColor};
 pub enum VertexSemantics {
     #[sem(name = "a_Pos", repr = "[f32; 3]", wrapper = "VertexPosition")]
     Position,
+    #[sem(name = "a_Pos2", repr = "[f32; 2]", wrapper = "VertexPosition2")]
+    Position2,
     #[sem(name = "a_Uv", repr = "[f32; 2]", wrapper = "VertexUv")]
     Uv,
     #[sem(name = "a_VertColor", repr = "[f32; 4]", wrapper = "VertexColor")]
@@ -27,6 +29,18 @@ impl From<Vector3<f32>> for VertexPosition {
 
 impl From<VertexPosition> for Vector3<f32> {
     fn from(pos: VertexPosition) -> Self {
+        (*pos).into()
+    }
+}
+
+impl From<Vector2<f32>> for VertexPosition2 {
+    fn from(v: Vector2<f32>) -> Self {
+        Self::new(v.into())
+    }
+}
+
+impl From<VertexPosition2> for Vector2<f32> {
+    fn from(pos: VertexPosition2) -> Self {
         (*pos).into()
     }
 }

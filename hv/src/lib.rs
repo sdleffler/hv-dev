@@ -6,6 +6,7 @@ pub extern crate anyhow as error;
 pub mod ecs;
 
 pub extern crate fs;
+pub extern crate gui;
 
 pub mod lua {
     pub use lua::hv::*;

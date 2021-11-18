@@ -1,12 +1,15 @@
 use std::ops::ControlFlow;
 
 use crate::{
-    event_loop::{Event, EventLoop, GenericEvent, MainLoopContext},
+    event_loop::{EventLoop, MainLoopContext},
     window::WindowKind,
 };
 use glfw::Context;
 use hv::{
-    input::{GenericAxis, GenericButton, InputEvent, Key, ScrollAxis},
+    input::{
+        GenericAxis, GenericButton, GenericWindowEvent, InputEvent, Key, ScrollAxis,
+        WindowEvent as Event,
+    },
     prelude::*,
     resources::Resources,
 };
@@ -30,13 +33,13 @@ pub fn run(
     title: &str,
     window_kind: WindowKind,
     resources: &mut Resources,
-    event_loop: &mut impl EventLoop<GL33Context, Event = GenericEvent>,
+    event_loop: &mut impl EventLoop<GL33Context, Event = GenericWindowEvent>,
 ) -> Result<()> {
     let GlfwSurface {
         events_rx,
         mut context,
     } = GlfwSurface::new_gl33(title, WindowOpt::default().set_dim(window_kind.into()))?;
-    let mut events_buf: Vec<GenericEvent> = Vec::new();
+    let mut events_buf: Vec<GenericWindowEvent> = Vec::new();
 
     event_loop.init(resources, &mut context)?;
 
@@ -58,14 +61,15 @@ pub fn run(
                     w.try_into().unwrap(),
                     h.try_into().unwrap(),
                 )),
-                glfw::WindowEvent::MouseButton(button, action, _modifiers) => {
+                glfw::WindowEvent::MouseButton(button, action, modifiers) => {
+                    let keymods = modifiers.into();
                     let (state, repeat) = match action {
                         glfw::Action::Press => (true, false),
                         glfw::Action::Repeat => (true, true),
                         glfw::Action::Release => (false, false),
                     };
                     Event::Mapped(InputEvent::Button {
-                        button: GenericButton::Mouse(button.into()),
+                        button: GenericButton::Mouse(button.into(), keymods),
                         state,
                         repeat,
                     })
@@ -85,19 +89,34 @@ pub fn run(
                     )));
                     continue;
                 }
-                glfw::WindowEvent::Key(key, _scancode, action, _modifiers) => {
+                glfw::WindowEvent::Key(key, _scancode, action, modifiers) => {
                     let (state, repeat) = match action {
                         glfw::Action::Press => (true, false),
                         glfw::Action::Repeat => (true, true),
                         glfw::Action::Release => (false, false),
                     };
-                    Event::Mapped(InputEvent::Button {
+                    let keymods = modifiers.into();
+                    events_buf.push(Event::Mapped(InputEvent::Button {
                         // glfw key presses are pre-translated (unlike SDL) so they match our
-                        // definition of "scancode".
-                        button: GenericButton::ScanCode(Key::from(key)),
+                        // definition of "scancode". So each one will emit two events - scancode and
+                        // keycode. Some things will listen only for keycodes and only for
+                        // scancodes; it's GLFW's fault that it conflates them such that it thinks
+                        // they're the same thing.
+                        button: GenericButton::KeyCode(Key::from(key), keymods),
                         state,
                         repeat,
-                    })
+                    }));
+                    events_buf.push(Event::Mapped(InputEvent::Button {
+                        // glfw key presses are pre-translated (unlike SDL) so they match our
+                        // definition of "scancode". So each one will emit two events - scancode and
+                        // keycode. Some things will listen only for keycodes and only for
+                        // scancodes; it's GLFW's fault that it conflates them such that it thinks
+                        // they're the same thing.
+                        button: GenericButton::ScanCode(Key::from(key), keymods),
+                        state,
+                        repeat,
+                    }));
+                    continue;
                 }
                 glfw::WindowEvent::Char(c) => Event::Text(c),
                 // Currently ignore the custom unicode input event (glfwSetCharModsCallback)

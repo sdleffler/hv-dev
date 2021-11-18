@@ -31,7 +31,7 @@
  * SOFTWARE.
  */
 
-use std::hash::Hash;
+use std::{hash::Hash, path::PathBuf};
 
 use hashbrown::HashMap;
 use hv_alchemy::Type;
@@ -188,7 +188,9 @@ pub enum Key {
     Unknown,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct KeyMods {
     pub shift: bool,
     pub ctrl: bool,
@@ -385,10 +387,10 @@ pub enum GenericAxis {
 
 #[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
 pub enum GenericButton {
-    KeyCode(Key),
-    ScanCode(Key),
+    KeyCode(Key, KeyMods),
+    ScanCode(Key, KeyMods),
     Gamepad(GamepadButton),
-    Mouse(MouseButton),
+    Mouse(MouseButton, KeyMods),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -862,6 +864,49 @@ where
         self.mouse.delta = Vector2::zeros();
     }
 }
+
+pub type GenericInputState = InputState<GenericAxis, GenericButton>;
+
+/// Possible events coming in from whatever is hosting this program. Normally this will be a window
+/// manager - hence `WindowEvent`, and which is why this enum contains so many window-centric types.
+/// On some platforms (like a console) we expect many of these not to be fired.
+#[derive(Debug, Clone)]
+pub enum WindowEvent<Axes, Buttons>
+where
+    Axes: Mappable,
+    Buttons: Mappable,
+{
+    /// An input event mapped to the parameterized axis/button types.
+    Mapped(InputEvent<Axes, Buttons>),
+    /// An input event corresponding to a user's attempt to input text. Unlike a character input
+    /// this is processed w/ whatever modifiers, input adapters, etc. are external to the program.
+    Text(char),
+    /// Notification of a change in content scale (for example a window being moved from a low-DPI
+    /// to a high-DPI monitor, or vice versa) if applicable.
+    ContentScale(Vector2<f32>),
+    /// Notification of a change in the backbuffer size.
+    FramebufferSize(Vector2<u32>),
+    /// Notification of the cursor entering (true) or leaving (false) the window, if applicable.
+    WindowCursorEnter(bool),
+    /// Notification of acquisition or loss of focus.
+    WindowFocus(bool),
+    /// Notification of a change in the position of the window, if applicable.
+    WindowPos(Point2<u32>),
+    /// Notification of a change in the size of the window, if applicable.
+    WindowSize(Vector2<u32>),
+    /// Notification of minimization (being "iconified.")
+    WindowMinimize(bool),
+    /// Notification of maximization.
+    WindowMaximize(bool),
+    /// Notification that the window contents have been "damaged" and need to be refreshed.
+    WindowRefresh,
+    /// Notification that the window has been requested to be closed.
+    WindowClose,
+    /// Notification that the window has had one or more files dropped into it.
+    WindowFileDrop(Vec<PathBuf>),
+}
+
+pub type GenericWindowEvent = WindowEvent<GenericAxis, GenericButton>;
 
 impl<Axes, Buttons> UserData for InputEvent<Axes, Buttons>
 where
