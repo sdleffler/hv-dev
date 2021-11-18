@@ -1,10 +1,6 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    marker::PhantomData,
-};
+use std::{collections::BTreeSet, marker::PhantomData};
 
 use hv::{math, prelude::*};
-use luminance::tess::{Mode, Tess};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]

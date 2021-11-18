@@ -71,7 +71,7 @@ impl From<Vector3<f32>> for Vertex {
 }
 
 #[derive(Clone, Copy, Debug, Vertex)]
-#[vertex(sem = "VertexSemantics", instanced = true)]
+#[vertex(sem = "VertexSemantics", instanced = "true")]
 pub struct Instance {
     #[vertex(normalized = true)]
     pub color: InstanceColor,
@@ -494,7 +494,6 @@ where
             FaceCullingOrder::CCW,
             FaceCullingMode::Back,
         ));
-        // let render_state = RenderState::default();
 
         let view_projection = self.projection * self.view;
 
@@ -554,15 +553,6 @@ where
                             continue;
                         }
 
-                        let mut instances = dynamic_tess.tess.instances_mut().unwrap();
-                        let mut txs = self.tx_buffer.slice_mut().unwrap();
-                        for (i, instance) in dynamic_tess.instance_list.iter().enumerate() {
-                            instances[i].color = InstanceColor::new(instance.color.into());
-                            txs[i] = instance.tx;
-                        }
-                        drop(txs);
-                        drop(instances);
-
                         if dynamic_tess.enable_lighting {
                             program_interface
                                 .set(&uni.light_diffuse_color, self.light_diffuse_color.into());
@@ -578,15 +568,24 @@ where
                                 .set(&uni.light_ambient_color, LinearColor::WHITE.into());
                         }
 
-                        let txs_binding = pipeline.bind_buffer(&mut self.tx_buffer)?;
-                        program_interface.set(&uni.instance_txs, txs_binding.binding());
+                        for instance_batch in dynamic_tess.instance_list.chunks(TX_BUFFER_SIZE) {
+                            let mut instances = dynamic_tess.tess.instances_mut().unwrap();
+                            let mut txs = self.tx_buffer.slice_mut().unwrap();
+                            for (i, instance) in instance_batch.iter().enumerate() {
+                                instances[i].color = InstanceColor::new(instance.color.into());
+                                txs[i] = instance.tx;
+                            }
+                            drop(txs);
+                            drop(instances);
 
-                        let tess_view = TessView::inst_whole(
-                            &dynamic_tess.tess,
-                            dynamic_tess.instance_list.len(),
-                        );
+                            let txs_binding = pipeline.bind_buffer(&mut self.tx_buffer)?;
+                            program_interface.set(&uni.instance_txs, txs_binding.binding());
 
-                        tess_gate.render(tess_view)?;
+                            let tess_view =
+                                TessView::inst_whole(&dynamic_tess.tess, instance_batch.len());
+
+                            tess_gate.render(tess_view)?;
+                        }
                     }
 
                     Ok(())

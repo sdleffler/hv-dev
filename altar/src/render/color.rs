@@ -17,15 +17,18 @@ pub struct Color {
 }
 
 impl Color {
-    pub const ZEROS: Color = Color::new(0.0, 0.0, 0.0, 0.0);
-    pub const WHITE: Color = Color::new(1.0, 1.0, 1.0, 1.0);
     pub const BLACK: Color = Color::new(0.0, 0.0, 0.0, 1.0);
-    pub const RED: Color = Color::new(1.0, 0.0, 0.0, 1.0);
-    pub const GREEN: Color = Color::new(0.0, 1.0, 0.0, 1.0);
     pub const BLUE: Color = Color::new(0.0, 0.0, 1.0, 1.0);
-    pub const YELLOW: Color = Color::new(1.0, 1.0, 0.0, 1.0);
-    pub const MAGENTA: Color = Color::new(1.0, 0.0, 1.0, 1.0);
     pub const CYAN: Color = Color::new(0.0, 1.0, 1.0, 1.0);
+    pub const GREEN: Color = Color::new(0.0, 1.0, 0.0, 1.0);
+    pub const INDIGO: Color = Color::new(75.0 / 255.0, 0.0, 130.0 / 255.0, 1.0);
+    pub const MAGENTA: Color = Color::new(1.0, 0.0, 1.0, 1.0);
+    pub const ORANGE: Color = Color::new(1.0, 0.5, 0.0, 1.0);
+    pub const RED: Color = Color::new(1.0, 0.0, 0.0, 1.0);
+    pub const VIOLET: Color = Color::new(0.5, 0.0, 1.0, 1.0);
+    pub const WHITE: Color = Color::new(1.0, 1.0, 1.0, 1.0);
+    pub const YELLOW: Color = Color::new(1.0, 1.0, 0.0, 1.0);
+    pub const ZEROS: Color = Color::new(0.0, 0.0, 0.0, 0.0);
 
     /// Create a new `Color` from four `f32`'s in the range `[0.0-1.0]`
     pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
