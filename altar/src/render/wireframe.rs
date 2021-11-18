@@ -1,4 +1,8 @@
-use crate::render::{pipeline::semantics::*, Color, LinearColor, Transform};
+use crate::render::{
+    mesh::{HasNormal, HasPosition},
+    pipeline::semantics::*,
+    Color, LinearColor, Transform,
+};
 use hv::{
     ecs::{Or, PreparedQuery, SystemContext},
     prelude::*,
@@ -27,13 +31,43 @@ use luminance::{
 use std::ops;
 use thunderdome::{Arena, Index};
 
-#[derive(Clone, Copy, Debug, Vertex)]
+#[derive(Clone, Copy, Debug, Vertex, PartialEq)]
 #[vertex(sem = "VertexSemantics")]
 pub struct Vertex {
     pub position: VertexPosition,
     #[vertex(normalized = true)]
     pub color: VertexColor,
     pub normal: VertexNormal,
+}
+
+impl HasPosition<Vector3<f32>> for Vertex {
+    fn get_position(&self) -> Vector3<f32> {
+        self.position.into()
+    }
+
+    fn set_position(&mut self, position: Vector3<f32>) {
+        self.position = position.into();
+    }
+}
+
+impl HasNormal for Vertex {
+    fn get_normal(&self) -> Vector3<f32> {
+        self.normal.into()
+    }
+
+    fn set_normal(&mut self, normal: Vector3<f32>) {
+        self.normal = normal.into();
+    }
+}
+
+impl From<Vector3<f32>> for Vertex {
+    fn from(v: Vector3<f32>) -> Self {
+        Self {
+            position: v.into(),
+            color: LinearColor::WHITE.into(),
+            normal: Vector3::zeros().into(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Vertex)]
@@ -391,6 +425,10 @@ where
         self.light_diffuse_color = diffuse;
     }
 
+    pub fn set_light_backlight_color(&mut self, back: LinearColor) {
+        self.light_back_color = back;
+    }
+
     pub fn set_light_ambient_color(&mut self, ambient: LinearColor) {
         self.light_ambient_color = ambient;
     }
@@ -510,6 +548,12 @@ where
 
                 render_gate.render(&render_state, |mut tess_gate| {
                     for (_, dynamic_tess) in self.dynamic_tess.iter_mut() {
+                        if dynamic_tess.instance_list.is_empty() {
+                            // For some reason, Luminance still wants to render if there are no
+                            // instances.
+                            continue;
+                        }
+
                         let mut instances = dynamic_tess.tess.instances_mut().unwrap();
                         let mut txs = self.tx_buffer.slice_mut().unwrap();
                         for (i, instance) in dynamic_tess.instance_list.iter().enumerate() {

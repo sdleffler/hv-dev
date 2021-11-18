@@ -1,6 +1,7 @@
 use hv::prelude::*;
 
 pub mod color;
+pub mod mesh;
 pub mod pipeline;
 pub mod wireframe;
 
