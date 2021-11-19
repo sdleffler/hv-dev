@@ -239,8 +239,8 @@ impl<'t> Console<'t> {
         let panel_rect = panel_ui.available_rect_before_wrap();
         let mut panel_ui = panel_ui.child_ui(panel_rect, Layout::bottom_up(Align::Min));
 
-        ctx.debug_painter()
-            .debug_rect(panel_rect, Color32::RED, "panel_rect");
+        // ctx.debug_painter()
+        //     .debug_rect(panel_rect, Color32::RED, "panel_rect");
 
         panel_ui.expand_to_include_rect(panel_ui.max_rect()); // Expand frame to include it all
         self.show(&mut panel_ui)
@@ -441,14 +441,14 @@ impl<'t> Console<'t> {
         // );
         // let history_painter = ui.painter_at(history_clip);
 
-        {
-            let mut p = ui.painter_at(ui.clip_rect());
-            p.debug_rect(buffer_rect, Color32::RED, "buffer_rect");
-            // p.debug_rect(buffer_clip, Color32::BLUE, "buffer_clip");
-            p.debug_rect(history_rect, Color32::RED, "history_rect");
-            // p.debug_rect(history_clip, Color32::BLUE, "history_clip");
-            // p.debug_rect(viewport, Color32::GOLD, "viewport");
-        }
+        // {
+        //     let mut p = ui.painter_at(ui.clip_rect());
+        //     p.debug_rect(buffer_rect, Color32::RED, "buffer_rect");
+        //     // p.debug_rect(buffer_clip, Color32::BLUE, "buffer_clip");
+        //     p.debug_rect(history_rect, Color32::RED, "history_rect");
+        //     // p.debug_rect(history_clip, Color32::BLUE, "history_clip");
+        //     // p.debug_rect(viewport, Color32::GOLD, "viewport");
+        // }
 
         if interactive {
             if let Some(pointer_pos) = ui.input().pointer.interact_pos() {
