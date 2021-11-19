@@ -262,20 +262,21 @@ impl<'t> Console<'t> {
         let mut content_ui = ui.child_ui(max_rect, *ui.layout());
         let mut output = self.show_content(&mut content_ui);
         let id = output.response.id;
+        let buffer_id = output.buffer_response.id;
         let frame_rect = output.response.rect.expand2(margin);
         ui.allocate_space(frame_rect.size());
         if interactive {
             output.response |= ui.interact(frame_rect, id, Sense::click());
         }
-        if output.response.clicked() && !output.response.lost_focus() {
-            ui.memory().request_focus(output.response.id);
+        if output.buffer_response.clicked() && !output.buffer_response.lost_focus() {
+            ui.memory().request_focus(buffer_id);
         }
 
         if frame {
             let visuals = ui.style().interact(&output.response);
             let frame_rect = frame_rect.expand(visuals.expansion);
             let shape = if is_mutable {
-                if output.response.has_focus() {
+                if output.buffer_response.has_focus() {
                     epaint::RectShape {
                         rect: frame_rect,
                         corner_radius: visuals.corner_radius,
@@ -412,7 +413,11 @@ impl<'t> Console<'t> {
         // dragging select text, or scroll the enclosing `ScrollArea` (if any)?
         // Since currently copying selected text in not supported on `egui_web`,
         // we prioritize touch-scrolling:
-        let allow_drag_to_select = !ui.input().any_touches() || ui.memory().has_focus(id);
+        let buffer_or_history_has_focus = {
+            let memory = ui.memory();
+            memory.has_focus(buffer_id) || memory.has_focus(history_id)
+        };
+        let allow_drag_to_select = !ui.input().any_touches() || buffer_or_history_has_focus;
 
         let sense = if interactive {
             if allow_drag_to_select {
@@ -592,13 +597,8 @@ impl<'t> Console<'t> {
 
         let mut cursor_range = None;
         let prev_cursor_range = state.cursor_range(&*history_galley, &*buffer_galley);
-        let memory = ui.memory();
-        let buffer_or_history_has_focus =
-            memory.has_focus(buffer_id) || memory.has_focus(history_id);
-        drop(memory);
-        if buffer_or_history_has_focus && interactive {
-            // Private API.
-            ui.memory().lock_focus(id, lock_focus);
+        if ui.memory().has_focus(buffer_id) && interactive {
+            ui.memory().lock_focus(buffer_id, lock_focus);
 
             let default_cursor_range = if cursor_at_end {
                 Section::Buffer(CursorRange::one(buffer_galley.end()))
@@ -740,6 +740,8 @@ impl<'t> Console<'t> {
 
         ConsoleOutput {
             response: combined_response,
+            history_response,
+            buffer_response,
             history_galley,
             buffer_galley,
             state,
@@ -761,7 +763,7 @@ fn events(
     history_galley: &mut Arc<Galley>,
     buffer_galley: &mut Arc<Galley>,
     layouter: &mut dyn FnMut(&Ui, &str, f32) -> Arc<Galley>,
-    buffer_id: Id,
+    focus_id: Id,
     wrap_width: f32,
     default_cursor_range: Section<CursorRange>,
 ) -> (bool, Option<String>, Section<CursorRange>) {
@@ -823,12 +825,12 @@ fn events(
                 key: Key::Tab,
                 pressed: true,
                 modifiers,
-            } if ui.memory().has_lock_focus(buffer_id) => {
+            } if ui.memory().has_lock_focus(focus_id) => {
                 if let Section::Buffer(cursor_range) = cursor_range {
                     let mut ccursor = delete_selected(buffer, &cursor_range);
                     if modifiers.shift {
                         // TODO: support removing indentation over a selection?
-                        decrease_identation(&mut ccursor, buffer);
+                        decrease_indentation(&mut ccursor, buffer);
                     } else {
                         insert_text(&mut ccursor, buffer, "\t");
                     }
@@ -852,6 +854,10 @@ fn events(
                     let command = buffer.take();
                     history.replace(&format!("{}\n> {}", history.as_str(), command));
                     submitted = Some(command);
+
+                    // Submitting a command is a change even if it doesn't result in a changed
+                    // cursor range.
+                    any_change = true;
 
                     None
                 } else if let Section::Buffer(cursor_range) = cursor_range {
@@ -1376,7 +1382,7 @@ fn find_line_start(text: &str, current_index: CCursor) -> CCursor {
     }
 }
 
-fn decrease_identation(ccursor: &mut CCursor, text: &mut dyn TextBuffer) {
+fn decrease_indentation(ccursor: &mut CCursor, text: &mut dyn TextBuffer) {
     let line_start = find_line_start(text.as_ref(), *ccursor);
 
     let remove_len = if text.as_ref()[line_start.index..].starts_with('\t') {

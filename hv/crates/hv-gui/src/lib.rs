@@ -102,7 +102,7 @@ impl GuiInputState {
                 Text(c) => {
                     // Egui does not want to receive enter key text events. We send those from
                     // mapped enter key presses. So we skip JUST enter key events.
-                    if c != '\n' {
+                    if c != '\n' || c != '\t' {
                         self.raw_input_state.events.push(Event::Text(c.to_string()))
                     }
                 }
@@ -161,7 +161,7 @@ fn to_egui_key(key: hv_input::Key) -> Option<egui::Key> {
         Hk::Up => Ek::ArrowUp,
 
         Hk::Escape => Ek::Escape,
-        Hk::Tab => Ek::Escape,
+        Hk::Tab => Ek::Tab,
         Hk::Backspace => Ek::Backspace,
         Hk::Enter => Ek::Enter,
         Hk::Space => Ek::Space,

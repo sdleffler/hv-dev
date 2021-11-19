@@ -5,6 +5,12 @@ pub struct ConsoleOutput {
     /// The interaction response.
     pub response: egui::Response,
 
+    /// The interaction response just on the history buffer.
+    pub history_response: egui::Response,
+
+    /// The interaction response just on the edit buffer.
+    pub buffer_response: egui::Response,
+
     /// How the "history" text was displayed.
     pub history_galley: Arc<egui::Galley>,
 
