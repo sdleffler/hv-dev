@@ -1,8 +1,8 @@
 [package]
-name = "hv-gui"
+name = "hv-console"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 egui = { git = "https://github.com/sdleffler/egui", rev = "26d7" }
-hv-input = { path = "../hv-input" }
+hv-lua = { path = "../../../hv-lua" }

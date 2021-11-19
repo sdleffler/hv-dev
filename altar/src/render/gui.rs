@@ -17,7 +17,6 @@ use luminance::{
     },
     blending::{Blending, Equation, Factor},
     context::GraphicsContext,
-    depth_test::DepthWrite,
     pipeline::{Pipeline, TextureBinding},
     pixel::{NormUnsigned, SRGBA8UI},
     render_gate::RenderGate,
@@ -26,7 +25,7 @@ use luminance::{
     shader::{Program, ProgramInterface, Uniform},
     shading_gate::ShadingGate,
     tess::{Interleaved, Mode, Tess, TessBuilder, TessView},
-    texture::{Dim2, GenMipmaps, MagFilter, Sampler, Texture},
+    texture::{Dim2, GenMipmaps, Sampler, Texture},
     Semantics, UniformInterface, Vertex,
 };
 
@@ -257,7 +256,7 @@ where
         uni: &Uniforms,
         render_gate: &mut RenderGate<B>,
         clip_rect: &gui::Rect,
-        mesh: &gui::paint::Mesh16,
+        mesh: &gui::epaint::Mesh16,
     ) -> Result<()> {
         assert!(mesh.is_valid());
 

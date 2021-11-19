@@ -271,8 +271,7 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 [[package]]
 name = "egui"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c8d416a3343cbfc6f4d17bb1cba46b4d7efecb9ee541967763e0b5e04e5fae7"
+source = "git+https://github.com/sdleffler/egui?rev=26d7#26d7ce46160d98a6a5285906030568d7dbfb05b9"
 dependencies = [
  "ahash",
  "epaint",
@@ -288,14 +287,12 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 [[package]]
 name = "emath"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24a1aaa922d55da6a2bf32957c3d153e7fb9d52ed8d69777a75092240172eb6e"
+source = "git+https://github.com/sdleffler/egui?rev=26d7#26d7ce46160d98a6a5285906030568d7dbfb05b9"
 
 [[package]]
 name = "epaint"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16bb4d3b8bbbd132c99d2a5efec8567e8b6d09b742f758ae6cf1e4b104fe0231"
+source = "git+https://github.com/sdleffler/egui?rev=26d7#26d7ce46160d98a6a5285906030568d7dbfb05b9"
 dependencies = [
  "ab_glyph",
  "ahash",
@@ -417,6 +414,7 @@ dependencies = [
  "anyhow",
  "hecs",
  "hv-alchemy",
+ "hv-console",
  "hv-ecs-derive",
  "hv-elastic",
  "hv-filesystem",
@@ -481,6 +479,14 @@ version = "0.1.0"
 dependencies = [
  "hv-guarded-borrow",
  "hv-lease-tracker",
+]
+
+[[package]]
+name = "hv-console"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "hv-lua",
 ]
 
 [[package]]

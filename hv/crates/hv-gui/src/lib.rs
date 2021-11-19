@@ -45,12 +45,14 @@ impl GuiInputState {
 
                     match input_event {
                         InputEvent::Axis(axis, state) => match axis {
-                            GenericAxis::Mouse(ScrollAxis::Horizontal) => {
-                                self.raw_input_state.scroll_delta.x += state
-                            }
-                            GenericAxis::Mouse(ScrollAxis::Vertical) => {
-                                self.raw_input_state.scroll_delta.y += state
-                            }
+                            GenericAxis::Mouse(ScrollAxis::Horizontal) => self
+                                .raw_input_state
+                                .events
+                                .push(Event::Scroll(Vec2::new(state * self.content_scale, 0.))),
+                            GenericAxis::Mouse(ScrollAxis::Vertical) => self
+                                .raw_input_state
+                                .events
+                                .push(Event::Scroll(Vec2::new(0., state * self.content_scale))),
                             _ => {}
                         },
                         InputEvent::Button { button, state, .. } => match button {
@@ -134,7 +136,10 @@ impl GuiInputState {
                 WindowSize(size) => {
                     self.raw_input_state.screen_rect = Some(Rect::from_min_size(
                         Pos2::ZERO,
-                        Vec2::new(size.x as f32, size.y as f32),
+                        Vec2::new(
+                            size.x as f32 / self.content_scale,
+                            size.y as f32 / self.content_scale,
+                        ),
                     ));
                 }
                 WindowPos(_) | WindowMinimize(_) | WindowMaximize(_) | WindowRefresh
