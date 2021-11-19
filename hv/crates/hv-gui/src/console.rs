@@ -21,7 +21,7 @@ pub fn syntax_highlighter<'a>(
     language: &'a str,
 ) -> impl FnMut(&egui::Ui, &str, f32) -> Arc<Galley> + 'a {
     |ui: &egui::Ui, string: &str, wrap_width: f32| {
-        let mut layout_job = crate::syntax_highlight::highlight(ui.ctx(), theme, string, language);
+        let mut layout_job = self::syntax_highlight::highlight(ui.ctx(), theme, string, language);
         layout_job.wrap_width = wrap_width;
         ui.fonts().layout_job(layout_job)
     }

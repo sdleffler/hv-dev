@@ -5,4 +5,6 @@ edition = "2021"
 
 [dependencies]
 egui = { git = "https://github.com/sdleffler/egui", rev = "26d7" }
+hv-lua = { path = "../../../hv-lua" }
+syntect = "4.6.0"
 hv-input = { path = "../hv-input" }

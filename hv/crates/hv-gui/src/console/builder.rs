@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
 use egui::epaint::text::{cursor::*, Galley, LayoutJob};
-
 use egui::{output::OutputEvent, *};
 
-use crate::state::Section;
-
-use super::{CCursorRange, ConsoleOutput, ConsoleState, CursorRange};
+use super::{state::Section, CCursorRange, ConsoleOutput, ConsoleState, CursorRange};
 
 /// A text region that the user can edit the contents of.
 ///

@@ -2,7 +2,6 @@
 
 pub extern crate alchemy;
 pub extern crate anyhow as error;
-pub extern crate console;
 
 pub mod ecs;
 

@@ -18,7 +18,6 @@ parry3d = ["lua/parry3d"]
 [dependencies]
 alchemy = { version = "0.1.0", path = "crates/hv-alchemy", package = "hv-alchemy" }
 anyhow = "1.0.44"
-console = { version = "0.1.0", path = "crates/hv-console", package = "hv-console" } 
 ecs = { version = "0.6.5", path = "../hv-ecs", package = "hecs" }
 ecs-derive = { version = "0.7.0", path = "crates/hv-ecs-derive", package = "hv-ecs-derive" }
 elastic = { version = "0.3.0", path = "crates/hv-elastic", package = "hv-elastic", features = ["hv-ecs"] }
@@ -42,7 +41,6 @@ members = [
     "crates/hv-atom",
     "crates/hv-boxed",
     "crates/hv-cell",
-    "crates/hv-console",
     "crates/hv-ecs-derive",
     "crates/hv-elastic",
     "crates/hv-filesystem",

@@ -1,9 +1,0 @@
-[package]
-name = "hv-console"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-egui = { git = "https://github.com/sdleffler/egui", rev = "26d7" }
-hv-lua = { path = "../../../hv-lua" }
-syntect = "4.6.0"

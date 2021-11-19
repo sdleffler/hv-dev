@@ -435,7 +435,6 @@ dependencies = [
  "anyhow",
  "hecs",
  "hv-alchemy",
- "hv-console",
  "hv-ecs-derive",
  "hv-elastic",
  "hv-filesystem",
@@ -503,15 +502,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hv-console"
-version = "0.1.0"
-dependencies = [
- "egui",
- "hv-lua",
- "syntect",
-]
-
-[[package]]
 name = "hv-ecs-derive"
 version = "0.7.0"
 dependencies = [
@@ -557,6 +547,8 @@ version = "0.1.0"
 dependencies = [
  "egui",
  "hv-input",
+ "hv-lua",
+ "syntect",
 ]
 
 [[package]]
