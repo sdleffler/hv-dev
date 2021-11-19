@@ -1,11 +1,6 @@
-use std::{ops::ControlFlow, path::PathBuf};
+use std::ops::ControlFlow;
 
-use hv::{
-    input::{GenericAxis, GenericButton, InputEvent, Mappable},
-    prelude::*,
-    resources::Resources,
-    timer::TimeContext,
-};
+use hv::{prelude::*, resources::Resources, timer::TimeContext};
 use luminance::context::GraphicsContext;
 
 use crate::scene::SceneStack;

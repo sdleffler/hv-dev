@@ -32,8 +32,15 @@ pub struct ScriptResources {
     map: ArcCell<HashMap<TypeId, Box<dyn AlchemicalAny + Send + Sync>>>,
 }
 
+impl Default for ScriptResources {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ScriptResources {
-    fn new() -> Self {
+    /// Create an empty [`ScriptResources`] object, capable of loaning data to Lua.
+    pub fn new() -> Self {
         Self {
             map: ArcCell::default(),
         }
@@ -189,6 +196,11 @@ impl ScriptContext {
     /// Get the [`ScriptResources`] object.
     pub fn resources(&self) -> &ScriptResources {
         &self.resources
+    }
+
+    /// Get the environment table used by this [`ScriptContext`].
+    pub fn env(&self) -> &LuaRegistryKey {
+        &self.env
     }
 }
 

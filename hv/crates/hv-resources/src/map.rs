@@ -145,6 +145,9 @@ impl Resources {
     }
 }
 
+/// A wrapper over a [`Resources`] which permits only `Send` resources.
+///
+/// You can convert a regular [`Resources`] into this, but you cannot convert it back!
 #[derive(Default)]
 pub struct SendResources {
     wrapped: Resources,
