@@ -9,6 +9,7 @@ pub struct GuiInputState {
     event_queue: Vec<GenericWindowEvent>,
     hv_input_state: GenericInputState,
     raw_input_state: RawInput,
+    content_scale: f32,
 }
 
 impl Default for GuiInputState {
@@ -24,6 +25,7 @@ impl GuiInputState {
             event_queue: Vec::new(),
             hv_input_state: GenericInputState::new(),
             raw_input_state: RawInput::default(),
+            content_scale: 1.,
         }
     }
 
@@ -74,7 +76,10 @@ impl GuiInputState {
                             GenericButton::Mouse(button, mods) => {
                                 if let Some(ep) = to_egui_mb(button) {
                                     let mouse_pos = self.hv_input_state.mouse_position();
-                                    let pos = Pos2::new(mouse_pos.x, mouse_pos.y);
+                                    let pos = Pos2::new(
+                                        mouse_pos.x / self.content_scale,
+                                        mouse_pos.y / self.content_scale,
+                                    );
                                     self.raw_input_state.events.push(Event::PointerButton {
                                         pos,
                                         button: ep,
@@ -86,7 +91,8 @@ impl GuiInputState {
                             _ => {}
                         },
                         InputEvent::Cursor(pos) => {
-                            let pos = Pos2::new(pos.x, pos.y);
+                            let pos =
+                                Pos2::new(pos.x / self.content_scale, pos.y / self.content_scale);
                             self.raw_input_state.events.push(Event::PointerMoved(pos));
                         }
                     }
@@ -102,6 +108,7 @@ impl GuiInputState {
                     // TODO: *properly* warn if v.x != v.y.
                     assert_eq!(v.x, v.y, "weird content scale");
                     self.raw_input_state.pixels_per_point = Some(v.x);
+                    self.content_scale = v.x;
                 }
                 WindowCursorEnter(entered) => {
                     if !entered {
@@ -123,8 +130,15 @@ impl GuiInputState {
                             bytes: None,
                         }));
                 }
-                FramebufferSize(_) | WindowPos(_) | WindowSize(_) | WindowMinimize(_)
-                | WindowMaximize(_) | WindowRefresh | WindowClose => {}
+                FramebufferSize(_) => {}
+                WindowSize(size) => {
+                    self.raw_input_state.screen_rect = Some(Rect::from_min_size(
+                        Pos2::ZERO,
+                        Vec2::new(size.x as f32, size.y as f32),
+                    ));
+                }
+                WindowPos(_) | WindowMinimize(_) | WindowMaximize(_) | WindowRefresh
+                | WindowClose => {}
             }
         }
 

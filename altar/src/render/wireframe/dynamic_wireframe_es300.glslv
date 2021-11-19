@@ -1,8 +1,8 @@
 in mediump vec3 a_Pos;
-in mediump vec4 a_VertColor;
+in mediump vec4 a_Color;
 in mediump vec3 a_Normal;
 
-in mediump vec4 a_Color;
+in mediump vec4 a_InstanceColor;
 
 uniform u_InstanceTxs {
     // The max number of instances we can render at once, which matches the
@@ -19,7 +19,7 @@ out mediump vec3 v_Pos;
 
 void main() {
     mat4 tx = u_Txs[gl_InstanceID];
-    v_Color = a_Color * a_VertColor;
+    v_Color = a_InstanceColor * a_Color;
     vec4 model_pos = tx * vec4(a_Pos, 1.0);
     gl_Position = u_MVP * model_pos;
     v_Normal = (tx * vec4(a_Normal, 0.0)).xyz;

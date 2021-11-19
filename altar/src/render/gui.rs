@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::render::{pipeline::semantics::*, Color, LinearColor};
 use hv::{
     gui::{self, epaint::Mesh16, ClippedMesh, Rect},
     prelude::*,
@@ -18,36 +17,46 @@ use luminance::{
     },
     blending::{Blending, Equation, Factor},
     context::GraphicsContext,
+    depth_test::DepthWrite,
     pipeline::{Pipeline, TextureBinding},
-    pixel::{NormRGBA8UI, NormUnsigned},
+    pixel::{NormUnsigned, SRGBA8UI},
     render_gate::RenderGate,
     render_state::RenderState,
     scissor::ScissorRegion,
     shader::{Program, ProgramInterface, Uniform},
     shading_gate::ShadingGate,
     tess::{Interleaved, Mode, Tess, TessBuilder, TessView},
-    texture::{Dim2, GenMipmaps, Sampler, Texture},
-    UniformInterface, Vertex,
+    texture::{Dim2, GenMipmaps, MagFilter, Sampler, Texture},
+    Semantics, UniformInterface, Vertex,
 };
 
 const VERTEX_SRC: &str = include_str!("gui/gui_es300.glslv");
 const FRAGMENT_SRC: &str = include_str!("gui/gui_es300.glslf");
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Semantics)]
+pub enum VertexSemantics {
+    #[sem(name = "a_Pos", repr = "[f32; 2]", wrapper = "VertexPosition")]
+    Position,
+    #[sem(name = "a_Uv", repr = "[f32; 2]", wrapper = "VertexUv")]
+    Uv,
+    #[sem(name = "a_Color", repr = "[u8; 4]", wrapper = "VertexColor")]
+    Color,
+}
+
 #[derive(Clone, Copy, Debug, Vertex, PartialEq)]
 #[vertex(sem = "VertexSemantics")]
 pub struct Vertex {
-    pub position: VertexPosition2,
+    pub position: VertexPosition,
     pub uv: VertexUv,
-    #[vertex(normalized = true)]
     pub color: VertexColor,
 }
 
 impl Default for Vertex {
     fn default() -> Self {
         Vertex {
-            position: Vector2::zeros().into(),
+            position: VertexPosition::new([0., 0.]),
             uv: VertexUv::new([0., 0.]),
-            color: VertexColor::new([1., 1., 1., 1.]),
+            color: VertexColor::new([255, 255, 255, 255]),
         }
     }
 }
@@ -73,8 +82,8 @@ pub trait GuiBackend:
     // + InstanceSliceBackend<Vertex, u16, Instance, Interleaved, Instance>
     + BufferSliceBackend<Matrix4<f32>>
     + PipelineBuffer<Matrix4<f32>>
-    + TextureBackend<Dim2, NormRGBA8UI>
-    + PipelineTexture<Dim2, NormRGBA8UI>
+    + TextureBackend<Dim2, SRGBA8UI>
+    + PipelineTexture<Dim2, SRGBA8UI>
     + VertexSlice<Vertex, u16, (), Interleaved, Vertex>
     + IndexSlice<Vertex, u16, (), Interleaved>
 {
@@ -93,8 +102,8 @@ impl<B: ?Sized> GuiBackend for B where
         // + InstanceSliceBackend<Vertex, u16, Instance, Interleaved, Instance>
         + BufferSliceBackend<Matrix4<f32>>
         + PipelineBuffer<Matrix4<f32>>
-        + TextureBackend<Dim2, NormRGBA8UI>
-        + PipelineTexture<Dim2, NormRGBA8UI>
+        + TextureBackend<Dim2, SRGBA8UI>
+        + PipelineTexture<Dim2, SRGBA8UI>
         + VertexSlice<Vertex, u16, (), Interleaved, Vertex>
         + IndexSlice<Vertex, u16, (), Interleaved>
 {
@@ -108,7 +117,7 @@ where
     target_size_in_pixels: Vector2<f32>,
     target_size_in_points: Vector2<f32>,
     dpi_scale: f32,
-    textures: HashMap<gui::TextureId, Texture<B, Dim2, NormRGBA8UI>>,
+    textures: HashMap<gui::TextureId, Texture<B, Dim2, SRGBA8UI>>,
     tess: Tess<B, Vertex, u16, (), Interleaved>,
     shader: Option<Program<B, VertexSemantics, (), Uniforms>>,
     meshes: Vec<(Rect, Mesh16)>,
@@ -135,8 +144,13 @@ where
             .from_strings(VERTEX_SRC, None, None, FRAGMENT_SRC)?
             .ignore_warnings();
         let mut textures = HashMap::new();
-        let initial_font_texture =
-            ctx.new_texture([0, 0], 0, Sampler::default(), GenMipmaps::No, &[])?;
+        let initial_font_texture = ctx.new_texture(
+            [1, 1],
+            0,
+            Sampler::default(),
+            GenMipmaps::No,
+            &[[255, 255, 255, 255]],
+        )?;
         textures.insert(gui::TextureId::Egui, initial_font_texture);
 
         Ok(Self {
@@ -157,6 +171,8 @@ where
         texture: &gui::Texture,
         meshes: Vec<ClippedMesh>,
     ) -> Result<()> {
+        self.meshes.clear();
+
         if texture.version != self.font_texture_version {
             self.rebuild_font_texture(texture)?;
             self.font_texture_version = texture.version;
@@ -251,11 +267,10 @@ where
             .iter_mut()
             .zip(&mesh.vertices)
         {
-            let [r, g, b, a] = src.color.to_array();
             *dst = Vertex {
-                position: Vector2::new(src.pos.x, src.pos.y).into(),
-                uv: Vector2::new(src.uv.x, src.uv.y).into(),
-                color: LinearColor::from(Color::from_rgba(r, g, b, a)).into(),
+                position: VertexPosition::new([src.pos.x, src.pos.y]),
+                uv: VertexUv::new([src.uv.x, src.uv.y]),
+                color: VertexColor::new(src.color.to_array()),
             };
         }
 
@@ -267,15 +282,14 @@ where
 
         let width_in_pixels = self.target_size_in_pixels.x;
         let height_in_pixels = self.target_size_in_pixels.y;
-        let pixels_per_point = self.dpi_scale;
 
         // From https://github.com/emilk/egui/blob/master/egui_glium/src/painter.rs#L233
 
         // Transform clip rect to physical pixels:
-        let clip_min_x = pixels_per_point * clip_rect.min.x;
-        let clip_min_y = pixels_per_point * clip_rect.min.y;
-        let clip_max_x = pixels_per_point * clip_rect.max.x;
-        let clip_max_y = pixels_per_point * clip_rect.max.y;
+        let clip_min_x = clip_rect.min.x * self.dpi_scale;
+        let clip_min_y = clip_rect.min.y * self.dpi_scale;
+        let clip_max_x = clip_rect.max.x * self.dpi_scale;
+        let clip_max_y = clip_rect.max.y * self.dpi_scale;
 
         // Make sure clip rect can fit withing an `u32`:
         let clip_min_x = clip_min_x.clamp(0.0, width_in_pixels as f32);
@@ -296,11 +310,21 @@ where
                     width: clip_max_x - clip_min_x,
                     height: clip_max_y - clip_min_y,
                 })
-                .set_blending(Blending {
-                    equation: Equation::Additive,
-                    src: Factor::One,
-                    dst: Factor::SrcAlphaComplement,
-                }),
+                .set_blending_separate(
+                    Blending {
+                        equation: Equation::Additive,
+                        src: Factor::One,
+                        dst: Factor::SrcAlphaComplement,
+                    },
+                    Blending {
+                        equation: Equation::Additive,
+                        src: Factor::DstAlphaComplement,
+                        dst: Factor::One,
+                    },
+                )
+                .set_depth_test(None)
+                // .set_depth_write(DepthWrite::Off)
+                .set_face_culling(None),
             |mut tess_gate| tess_gate.render(TessView::sub(&self.tess, index_count)?),
         )
     }
