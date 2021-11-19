@@ -114,7 +114,7 @@ where
     B: GuiBackend,
 {
     font_texture_version: u64,
-    target_size_in_pixels: Vector2<f32>,
+    target_size_in_pixels: Vector2<u32>,
     target_size_in_points: Vector2<f32>,
     dpi_scale: f32,
     textures: HashMap<gui::TextureId, Texture<B, Dim2, SRGBA8UI>>,
@@ -131,7 +131,7 @@ where
 {
     pub fn new(
         ctx: &mut impl GraphicsContext<Backend = B>,
-        target_size: Vector2<f32>,
+        target_size: Vector2<u32>,
         dpi_scale: f32,
     ) -> Result<Self> {
         let tess = TessBuilder::build(
@@ -157,7 +157,7 @@ where
         Ok(Self {
             font_texture_version: 0,
             target_size_in_pixels: target_size,
-            target_size_in_points: target_size / dpi_scale,
+            target_size_in_points: target_size.cast::<f32>() / dpi_scale,
             dpi_scale,
             textures,
             tess,
@@ -292,7 +292,7 @@ where
         let clip_max_x = clip_rect.max.x * self.dpi_scale;
         let clip_max_y = clip_rect.max.y * self.dpi_scale;
 
-        // Make sure clip rect can fit withing an `u32`:
+        // Make sure clip rect can fit within a `u32`:
         let clip_min_x = clip_min_x.clamp(0.0, width_in_pixels as f32);
         let clip_min_y = clip_min_y.clamp(0.0, height_in_pixels as f32);
         let clip_max_x = clip_max_x.clamp(clip_min_x, width_in_pixels as f32);
@@ -307,7 +307,7 @@ where
             &RenderState::default()
                 .set_scissor(ScissorRegion {
                     x: clip_min_x,
-                    y: clip_min_y,
+                    y: height_in_pixels - clip_max_y,
                     width: clip_max_x - clip_min_x,
                     height: clip_max_y - clip_min_y,
                 })
