@@ -137,7 +137,8 @@ where
         let tess = TessBuilder::build(
             TessBuilder::new(ctx)
                 .set_vertices(vec![Vertex::default(); 1024])
-                .set_indices(vec![0; 1024]),
+                .set_indices(vec![0; 1024])
+                .set_mode(Mode::Triangle),
         )?;
         let shader = ctx
             .new_shader_program()
