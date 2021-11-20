@@ -7,9 +7,9 @@ use hv::{
 use luminance::{
     backend::{
         framebuffer::Framebuffer as FramebufferBackend,
-        pipeline::{Pipeline as PipelineBackend, PipelineShaderData, PipelineTexture},
+        pipeline::{Pipeline as PipelineBackend, PipelineTexture},
         render_gate::RenderGate as RenderGateBackend,
-        shader::{Shader as ShaderBackend, ShaderData as ShaderDataBackend, Uniformable},
+        shader::{Shader as ShaderBackend, Uniformable},
         tess::{IndexSlice, Tess as TessBackend, VertexSlice},
         tess_gate::TessGate as TessGateBackend,
         texture::Texture as TextureBackend,

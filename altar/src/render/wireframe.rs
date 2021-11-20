@@ -309,6 +309,7 @@ where
     line_batches: Vec<usize>,
     // Current position in the chunk of LINE_BUFFER_SIZE vertices.
     line_pos: usize,
+    line_batch_counter: usize,
 
     tx_buffer: ShaderData<B, Mat44<f32>>,
 
@@ -373,7 +374,8 @@ where
         // Note: no data; this `Tess` is for attributeless rendering of lines.
         let line_tess = TessBuilder::build(
             TessBuilder::new(ctx)
-                .set_render_vertex_nb(LINE_BUFFER_SIZE)
+                // In any one batch we may have up to `6 * LINE_BUFFER_SIZE` vertices.
+                .set_render_vertex_nb(6 * LINE_BUFFER_SIZE)
                 .set_mode(Mode::Triangle),
         )?;
 
@@ -389,6 +391,7 @@ where
             line_commands: Vec::new(),
             line_batches: Vec::new(),
             line_pos: 0,
+            line_batch_counter: 0,
             tx_buffer,
             line_positions_halfway: vec![Vec4([0.; 4]); LINE_BUFFER_SIZE],
             line_colors_halfway: vec![Vec4([0.; 4]); LINE_BUFFER_SIZE],
@@ -501,6 +504,7 @@ where
         self.line_commands.clear();
         self.line_batches.clear();
         self.line_pos = 0;
+        self.line_batch_counter = 0;
     }
 
     pub fn queue_draw_static(
@@ -526,6 +530,15 @@ where
             .extend([Vec4(a.pos.push(1.).into()), Vec4(b.pos.push(1.).into())]);
         self.line_colors
             .extend([Vec4(a.color.into()), Vec4(b.color.into())]);
+
+        if self.line_pos + 4 >= LINE_BUFFER_SIZE {
+            self.line_batches.push(self.line_batch_counter);
+            self.line_batch_counter = 0;
+            self.line_pos = 0;
+        }
+
+        self.line_batch_counter += 1;
+        self.line_pos += 4;
         self.line_commands.push(LineCommand { start, len: 2 });
     }
 
@@ -580,6 +593,10 @@ where
 
     pub fn set_target_size(&mut self, target_size: Vector2<f32>) {
         self.target_size = target_size;
+    }
+
+    pub fn set_line_thickness(&mut self, thickness: f32) {
+        self.line_thickness = thickness;
     }
 }
 
@@ -757,7 +774,7 @@ where
                 program_interface.set(&uni.thickness, self.line_thickness);
                 program_interface.set(&uni.resolution, Vec2(self.target_size.into()));
 
-                render_gate.render(&render_state, |mut tess_gate| {
+                render_gate.render(&render_state.set_face_culling(None), |mut tess_gate| {
                     let mut commands = self.line_commands.iter().copied();
                     // The final `usize::MAX` on the end here is to drain any last commands that
                     // weren't chunked. There should be less than a full chunk (since if there were
@@ -787,22 +804,22 @@ where
                             // start and end caps are copies of the elements immediately after and
                             // before them, respectively.
                             self.line_positions_halfway[vertex_index] =
-                                self.line_positions[command.start + 1];
+                                self.line_positions[command.start];
                             self.line_positions_halfway
                                 [vertex_index + 1..vertex_index + 1 + command.len]
                                 .copy_from_slice(
                                     &self.line_positions[command.start..][..command.len],
                                 );
                             self.line_positions_halfway[vertex_index + n_vertices - 1] =
-                                self.line_positions[command.start + command.len - 2];
+                                self.line_positions[command.start + command.len - 1];
 
                             self.line_colors_halfway[vertex_index] =
-                                self.line_colors[command.start + 1];
+                                self.line_colors[command.start];
                             self.line_colors_halfway
                                 [vertex_index + 1..vertex_index + 1 + command.len]
                                 .copy_from_slice(&self.line_colors[command.start..][..command.len]);
                             self.line_colors_halfway[vertex_index + n_vertices - 1] =
-                                self.line_colors[command.start + command.len - 2];
+                                self.line_colors[command.start + command.len - 1];
 
                             // Now that we have the vertices in, we need to deal with the line
                             // indices. These are simpler; they're just the range

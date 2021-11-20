@@ -5,12 +5,12 @@
 
 uniform u_Positions
 {
-    vec4 a_Position[1024];
+    mediump vec4 a_Position[1024];
 };
 
 uniform u_Colors
 {
-    vec4 a_Color[1024];
+    mediump vec4 a_Color[1024];
 };
 
 uniform u_Indices
@@ -32,13 +32,12 @@ void main()
 {
     int line_i = a_Index[gl_VertexID / 6];
     int tri_i  = gl_VertexID % 6;
-    int va_i;
 
     vec4 va[4];
     for (int i=0; i<4; ++i)
     {
         va[i] = u_MVP * a_Position[line_i+i];
-        va[i].xyz /= va[i].w;
+        va[i].xy /= va[i].w;
         va[i].xy = (va[i].xy + 1.0) * 0.5 * u_Resolution;
     }
 
@@ -48,26 +47,30 @@ void main()
     vec4 pos;
     if (tri_i == 0 || tri_i == 1 || tri_i == 3)
     {
-        vec2 v_pred  = normalize(va[1].xy - va[0].xy);
+        vec2 v_pred = va[1].xy - va[0].xy;
+        float pred_l = length(v_pred);
+        v_pred = pred_l > 0.1 ? v_pred / pred_l : vec2(0);
         vec2 v_miter = normalize(nv_line + vec2(-v_pred.y, v_pred.x));
 
         pos = va[1];
-        va_i = 1;
-        pos.xy += v_miter * u_Thickness * (tri_i == 1 ? -0.5 : 0.5) / dot(v_miter, nv_line);
+        pos.xy += v_miter * u_Thickness * (tri_i == 1 ? -0.5 : 0.5) / (dot(v_miter, nv_line) * pos.w);
+        v_Color = a_Color[line_i+1];
+        v_ViewPos = (u_View * a_Position[line_i+1]).xyz;
     }
     else
     {
-        vec2 v_succ  = normalize(va[3].xy - va[2].xy);
+        vec2 v_succ = va[3].xy - va[2].xy;
+        float succ_l = length(v_succ);
+        v_succ = succ_l > 0.1 ? v_succ / succ_l : vec2(0);
         vec2 v_miter = normalize(nv_line + vec2(-v_succ.y, v_succ.x));
 
         pos = va[2];
-        va_i = 2;
-        pos.xy += v_miter * u_Thickness * (tri_i == 5 ? 0.5 : -0.5) / dot(v_miter, nv_line);
+        pos.xy += v_miter * u_Thickness * (tri_i == 5 ? 0.5 : -0.5) / (dot(v_miter, nv_line) * pos.w);
+        v_Color = a_Color[line_i+2];
+        v_ViewPos = (u_View * a_Position[line_i+2]).xyz;
     }
 
     pos.xy = pos.xy / u_Resolution * 2.0 - 1.0;
-    pos.xyz *= pos.w;
+    pos.xy *= pos.w;
     gl_Position = pos;
-    v_Color = a_Color[line_i+va_i];
-    v_ViewPos = (u_View * a_Position[line_i+va_i]).xyz;
 }

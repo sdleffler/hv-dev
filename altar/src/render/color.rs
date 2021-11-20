@@ -87,6 +87,10 @@ impl Color {
 
         u32::from_be_bytes([0, r, g, b])
     }
+
+    pub fn with_alpha(self, alpha: f32) -> Self {
+        Self { a: alpha, ..self }
+    }
 }
 
 impl From<(u8, u8, u8, u8)> for Color {
