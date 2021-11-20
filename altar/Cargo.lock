@@ -797,8 +797,6 @@ dependencies = [
 [[package]]
 name = "luminance"
 version = "0.44.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53f17426227044c3fde0f81117f16234fce327200d00c6157c273ed6f1875891"
 dependencies = [
  "luminance-derive",
 ]
@@ -806,8 +804,6 @@ dependencies = [
 [[package]]
 name = "luminance-derive"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97db4ceb9146d9aacead014908de3d0cd391bf042b50e63e1ab00e14c3a8709e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -817,11 +813,10 @@ dependencies = [
 [[package]]
 name = "luminance-gl"
 version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf778578a4afbd0d61c6d807bc4ab88b502f40383bd1fa1ad9bf6bd31dade8b8"
 dependencies = [
  "gl",
  "luminance",
+ "luminance-std140",
 ]
 
 [[package]]
@@ -835,6 +830,13 @@ dependencies = [
  "luminance",
  "luminance-gl",
  "luminance-windowing",
+]
+
+[[package]]
+name = "luminance-std140"
+version = "0.1.0"
+dependencies = [
+ "luminance",
 ]
 
 [[package]]
@@ -1703,3 +1705,11 @@ dependencies = [
  "thiserror",
  "time 0.1.43",
 ]
+
+[[patch.unused]]
+name = "luminance-front"
+version = "0.4.0"
+
+[[patch.unused]]
+name = "luminance-glyph"
+version = "0.2.0"

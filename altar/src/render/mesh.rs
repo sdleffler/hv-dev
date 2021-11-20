@@ -18,6 +18,18 @@ impl Edge {
 
 pub type TriangleMesh<V> = IndexedMesh<V, Triangle>;
 
+pub type TriangleStripMesh<V> = IndexedMesh<V, TriangleStrip>;
+
+pub type TriangleFanMesh<V> = IndexedMesh<V, TriangleFan>;
+
+pub type LineMesh<V> = IndexedMesh<V, Line>;
+
+pub type LineStripMesh<V> = IndexedMesh<V, LineStrip>;
+
+pub type LineLoopMesh<V> = IndexedMesh<V, LineLoop>;
+
+pub type PointMesh<V> = IndexedMesh<V, Point>;
+
 pub enum Triangle {}
 pub enum TriangleStrip {}
 pub enum TriangleFan {}
@@ -82,9 +94,19 @@ impl<V, P: PrimitiveMode> IndexedMesh<V, P> {
     }
 }
 
+impl<V> IndexedMesh<V, Line> {
+    pub fn line_count(&self) -> usize {
+        self.indices.len() / 2
+    }
+
+    pub fn push_line(&mut self, a: u16, b: u16) {
+        self.indices.extend([a, b]);
+    }
+}
+
 impl<V> IndexedMesh<V, Triangle> {
     /// How many triangles will we get by drawing this mesh?
-    pub fn triangles_count(&self) -> usize {
+    pub fn triangle_count(&self) -> usize {
         self.indices.len() / 3
     }
 

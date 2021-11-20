@@ -59,6 +59,14 @@ members = [
     ".",
 ]
 
+[patch.crates-io]
+luminance = { path = "../../luminance-rs/luminance" }
+luminance-gl = { path = "../../luminance-rs/luminance-gl" }
+luminance-front = { path = "../../luminance-rs/luminance-front" }
+
+[patch."https://github.com/sdleffler/luminance-glyph"]
+luminance-glyph = { path = "../../luminance-glyph" }
+
 [profile.dev]
 # Rust iterators are absolutely horrific without any optimizations, and we like them a lot.
 opt-level = 1

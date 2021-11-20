@@ -5,6 +5,7 @@ use serde::*;
 ///
 /// For convenience, [`WHITE`](constant.WHITE.html) and [`BLACK`](constant.BLACK.html) are provided.
 #[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[repr(C)]
 pub struct Color {
     /// Red component
     pub r: f32,
@@ -175,6 +176,12 @@ impl From<Color> for [f32; 4] {
     /// Convert a `Color` into an `[R, G, B, A]` array of `f32`'s in the range of `[0.0-1.0]`.
     fn from(color: Color) -> Self {
         [color.r, color.g, color.b, color.a]
+    }
+}
+
+impl From<Color> for Vector4<f32> {
+    fn from(color: Color) -> Self {
+        Vector4::new(color.r, color.g, color.b, color.a)
     }
 }
 

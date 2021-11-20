@@ -9,22 +9,23 @@ use hv::{
 };
 use luminance::{
     backend::{
-        buffer::{Buffer as BufferBackend, BufferSlice as BufferSliceBackend},
         framebuffer::Framebuffer as FramebufferBackend,
-        pipeline::{Pipeline as PipelineBackend, PipelineBuffer},
+        pipeline::{Pipeline as PipelineBackend, PipelineShaderData},
         render_gate::RenderGate as RenderGateBackend,
-        shader::{Shader as ShaderBackend, Uniformable},
+        shader::{Shader as ShaderBackend, ShaderData as ShaderDataBackend, Uniformable},
         tess::{InstanceSlice as InstanceSliceBackend, Tess as TessBackend},
         tess_gate::TessGate as TessGateBackend,
     },
-    buffer::Buffer,
     context::GraphicsContext,
     face_culling::{FaceCulling, FaceCullingMode, FaceCullingOrder},
-    pipeline::{BufferBinding, Pipeline, PipelineError},
+    pipeline::{Pipeline, PipelineError, ShaderDataBinding},
     render_state::RenderState,
-    shader::{Program, Uniform},
+    shader::{
+        types::{Mat44, Vec2, Vec3, Vec4},
+        Program, ShaderData, Uniform,
+    },
     shading_gate::ShadingGate,
-    tess::{Interleaved, Tess, TessView},
+    tess::{Interleaved, Mode, Tess, TessBuilder, TessView},
     texture::Dim2,
     UniformInterface, Vertex,
 };
@@ -88,34 +89,46 @@ impl Default for Instance {
 #[derive(Debug, UniformInterface)]
 pub struct Uniforms {
     #[uniform(unbound, name = "u_Tx")]
-    pub tx: Uniform<[[f32; 4]; 4]>,
+    pub tx: Uniform<Mat44<f32>>,
     #[uniform(unbound, name = "u_View")]
-    pub view: Uniform<[[f32; 4]; 4]>,
+    pub view: Uniform<Mat44<f32>>,
     #[uniform(unbound, name = "u_MVP")]
-    pub mvp: Uniform<[[f32; 4]; 4]>,
+    pub mvp: Uniform<Mat44<f32>>,
     #[uniform(unbound, name = "u_Color")]
-    pub color: Uniform<[f32; 4]>,
+    pub color: Uniform<Vec4<f32>>,
     #[uniform(unbound, name = "u_FogDistance")]
     pub fog_distance: Uniform<f32>,
     #[uniform(unbound, name = "u_LightDirection")]
-    pub light_direction: Uniform<[f32; 3]>,
+    pub light_direction: Uniform<Vec3<f32>>,
     #[uniform(unbound, name = "u_LightDiffuseColor")]
-    pub light_diffuse_color: Uniform<[f32; 3]>,
+    pub light_diffuse_color: Uniform<Vec3<f32>>,
     #[uniform(unbound, name = "u_LightBackColor")]
-    pub light_back_color: Uniform<[f32; 3]>,
+    pub light_back_color: Uniform<Vec3<f32>>,
     #[uniform(unbound, name = "u_LightAmbientColor")]
-    pub light_ambient_color: Uniform<[f32; 3]>,
+    pub light_ambient_color: Uniform<Vec3<f32>>,
     #[uniform(unbound, name = "u_InstanceTxs")]
-    pub instance_txs: Uniform<BufferBinding<Matrix4<f32>>>,
+    pub instance_txs: Uniform<ShaderDataBinding<Mat44<f32>>>,
+    #[uniform(unbound, name = "u_Thickness")]
+    pub thickness: Uniform<f32>,
+    #[uniform(unbound, name = "u_Resolution")]
+    pub resolution: Uniform<Vec2<f32>>,
+    #[uniform(unbound, name = "u_Positions")]
+    pub positions: Uniform<ShaderDataBinding<Vec4<f32>>>,
+    #[uniform(unbound, name = "u_Colors")]
+    pub colors: Uniform<ShaderDataBinding<Vec4<f32>>>,
+    #[uniform(unbound, name = "u_Indices")]
+    pub indices: Uniform<ShaderDataBinding<u32>>,
 }
 
 pub const STATIC_VERTEX_SRC: &str = include_str!("wireframe/static_wireframe_es300.glslv");
 pub const DYNAMIC_VERTEX_SRC: &str = include_str!("wireframe/dynamic_wireframe_es300.glslv");
 pub const FRAGMENT_SRC: &str = include_str!("wireframe/wireframe_es300.glslf");
+pub const LINE_VERTEX_SRC: &str = include_str!("wireframe/line_wireframe_es300.glslv");
+pub const LINE_FRAGMENT_SRC: &str = include_str!("wireframe/line_wireframe_es300.glslf");
 
 pub struct StaticWireframeTess<B: ?Sized>
 where
-    B: TessBackend<Vertex, u16, (), Interleaved>,
+    B: WireframeBackend,
 {
     tess: Tess<B, Vertex, u16, (), Interleaved>,
     enable_lighting: bool,
@@ -123,7 +136,7 @@ where
 
 impl<B> StaticWireframeTess<B>
 where
-    B: TessBackend<Vertex, u16, (), Interleaved>,
+    B: WireframeBackend,
 {
     pub fn tess(&self) -> &Tess<B, Vertex, u16, (), Interleaved> {
         &self.tess
@@ -152,8 +165,7 @@ pub struct WireframeInstance {
 
 pub struct DynamicWireframeTess<B: ?Sized>
 where
-    B: TessBackend<Vertex, u16, Instance, Interleaved>,
-    B: BufferBackend<Matrix4<f32>>,
+    B: WireframeBackend,
 {
     tess: Tess<B, Vertex, u16, Instance, Interleaved>,
     enable_lighting: bool,
@@ -162,8 +174,7 @@ where
 
 impl<B> DynamicWireframeTess<B>
 where
-    B: TessBackend<Vertex, u16, Instance, Interleaved>,
-    B: BufferBackend<Matrix4<f32>>,
+    B: WireframeBackend,
 {
     pub fn tess(&self) -> &Tess<B, Vertex, u16, Instance, Interleaved> {
         &self.tess
@@ -204,72 +215,139 @@ pub struct DynamicWireframe {
     pub tess_id: DynamicWireframeTessId,
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct LineVertex {
+    pub pos: Vector3<f32>,
+    pub color: Color,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LineCommand {
+    start: usize,
+    len: usize,
+}
+
 pub trait WireframeBackend:
     TessBackend<Vertex, u16, (), Interleaved>
     + TessBackend<Vertex, u16, Instance, Interleaved>
+    + TessBackend<(), u16, (), Interleaved>
     + ShaderBackend
     + PipelineBackend<Dim2>
     + FramebufferBackend<Dim2>
     + RenderGateBackend
     + TessGateBackend<Vertex, u16, (), Interleaved>
     + TessGateBackend<Vertex, u16, Instance, Interleaved>
-    + BufferBackend<Matrix4<f32>>
-    + InstanceSliceBackend<Vertex, u16, Instance, Interleaved, Instance>
-    + BufferSliceBackend<Matrix4<f32>>
-    + PipelineBuffer<Matrix4<f32>>
+    + TessGateBackend<(), u16, (), Interleaved>
+    + ShaderDataBackend<Mat44<f32>>
+    + ShaderDataBackend<Vec4<f32>>
+    + ShaderDataBackend<u32>
+    + for<'a> InstanceSliceBackend<'a, Vertex, u16, Instance, Interleaved, Instance>
+    + PipelineShaderData<Mat44<f32>>
+    + PipelineShaderData<Vec4<f32>>
+    + PipelineShaderData<u32>
+    + for<'a> Uniformable<'a, f32, Target = f32>
+    + for<'a> Uniformable<'a, Vec2<f32>, Target = Vec2<f32>>
+    + for<'a> Uniformable<'a, Vec3<f32>, Target = Vec3<f32>>
+    + for<'a> Uniformable<'a, Vec4<f32>, Target = Vec4<f32>>
+    + for<'a> Uniformable<'a, Mat44<f32>, Target = Mat44<f32>>
+    + for<'a> Uniformable<'a, ShaderDataBinding<Vec4<f32>>, Target = ShaderDataBinding<Vec4<f32>>>
+    + for<'a> Uniformable<'a, ShaderDataBinding<Mat44<f32>>, Target = ShaderDataBinding<Mat44<f32>>>
+    + for<'a> Uniformable<'a, ShaderDataBinding<u32>, Target = ShaderDataBinding<u32>>
 {
 }
 
 impl<B: ?Sized> WireframeBackend for B where
     B: TessBackend<Vertex, u16, (), Interleaved>
         + TessBackend<Vertex, u16, Instance, Interleaved>
+        + TessBackend<(), u16, (), Interleaved>
         + ShaderBackend
         + FramebufferBackend<Dim2>
         + PipelineBackend<Dim2>
         + RenderGateBackend
         + TessGateBackend<Vertex, u16, (), Interleaved>
         + TessGateBackend<Vertex, u16, Instance, Interleaved>
-        + BufferBackend<Matrix4<f32>>
-        + InstanceSliceBackend<Vertex, u16, Instance, Interleaved, Instance>
-        + BufferSliceBackend<Matrix4<f32>>
-        + PipelineBuffer<Matrix4<f32>>
+        + TessGateBackend<(), u16, (), Interleaved>
+        + ShaderDataBackend<Mat44<f32>>
+        + ShaderDataBackend<Vec4<f32>>
+        + ShaderDataBackend<u32>
+        + for<'a> InstanceSliceBackend<'a, Vertex, u16, Instance, Interleaved, Instance>
+        + PipelineShaderData<Mat44<f32>>
+        + PipelineShaderData<Vec4<f32>>
+        + PipelineShaderData<u32>
+        + for<'a> Uniformable<'a, f32, Target = f32>
+        + for<'a> Uniformable<'a, Vec2<f32>, Target = Vec2<f32>>
+        + for<'a> Uniformable<'a, Vec3<f32>, Target = Vec3<f32>>
+        + for<'a> Uniformable<'a, Vec4<f32>, Target = Vec4<f32>>
+        + for<'a> Uniformable<'a, Mat44<f32>, Target = Mat44<f32>>
+        + for<'a> Uniformable<'a, ShaderDataBinding<Vec4<f32>>, Target = ShaderDataBinding<Vec4<f32>>>
+        + for<'a> Uniformable<
+            'a,
+            ShaderDataBinding<Mat44<f32>>,
+            Target = ShaderDataBinding<Mat44<f32>>,
+        > + for<'a> Uniformable<'a, ShaderDataBinding<u32>, Target = ShaderDataBinding<u32>>
 {
 }
 
-pub struct WireframeRenderer<B: ?Sized>
+pub struct WireframeRenderer<B>
 where
     B: WireframeBackend,
 {
     static_shader: Program<B, VertexSemantics, (), Uniforms>,
     dynamic_shader: Program<B, VertexSemantics, (), Uniforms>,
+    line_shader: Program<B, VertexSemantics, (), Uniforms>,
+
     static_tess: Arena<StaticWireframeTess<B>>,
     dynamic_tess: Arena<DynamicWireframeTess<B>>,
+
     static_list: Vec<(StaticWireframeTessId, WireframeInstance)>,
-    tx_buffer: Buffer<B, Matrix4<f32>>,
+
+    line_positions: Vec<Vec4<f32>>,
+    line_colors: Vec<Vec4<f32>>,
+    line_commands: Vec<LineCommand>,
+    // Indicates cutoffs of < LINE_BUFFER_SIZE vertices.
+    line_batches: Vec<usize>,
+    // Current position in the chunk of LINE_BUFFER_SIZE vertices.
+    line_pos: usize,
+
+    tx_buffer: ShaderData<B, Mat44<f32>>,
+
+    line_positions_halfway: Vec<Vec4<f32>>,
+    line_colors_halfway: Vec<Vec4<f32>>,
+    line_indices_halfway: Vec<u32>,
+
+    line_position_buffer: ShaderData<B, Vec4<f32>>,
+    line_color_buffer: ShaderData<B, Vec4<f32>>,
+    line_index_buffer: ShaderData<B, u32>,
+    line_tess: Tess<B, (), u16, (), Interleaved>,
+
     projection: Matrix4<f32>,
     view: Matrix4<f32>,
+
     fog_distance: f32,
     light_direction: Vector3<f32>,
     light_diffuse_color: LinearColor,
     light_back_color: LinearColor,
     light_ambient_color: LinearColor,
+
+    line_thickness: f32,
+    target_size: Vector2<f32>,
 }
 
 // Max number of instances of a dynamic tess we ever expect to render at once.
 //
 // Needs to match the size of `u_Txs` in our dynamic tess vertex shader.
 const TX_BUFFER_SIZE: usize = 1024;
+const LINE_BUFFER_SIZE: usize = 1024;
 
-impl<B: ?Sized> WireframeRenderer<B>
+impl<B> WireframeRenderer<B>
 where
     B: WireframeBackend,
-    f32: Uniformable<B>,
-    [f32; 3]: Uniformable<B>,
-    [f32; 4]: Uniformable<B>,
-    [[f32; 4]; 4]: Uniformable<B>,
-    BufferBinding<Matrix4<f32>>: Uniformable<B>,
 {
-    pub fn new(ctx: &mut impl GraphicsContext<Backend = B>) -> Result<Self> {
+    pub fn new(
+        ctx: &mut impl GraphicsContext<Backend = B>,
+        target_size: Vector2<f32>,
+    ) -> Result<Self> {
         let static_shader = ctx
             .new_shader_program()
             .from_strings(STATIC_VERTEX_SRC, None, None, FRAGMENT_SRC)
@@ -280,16 +358,45 @@ where
             .from_strings(DYNAMIC_VERTEX_SRC, None, None, FRAGMENT_SRC)
             .with_context(|| "while building dynamic wireframe vertex shader")?
             .ignore_warnings();
+        let line_shader = ctx
+            .new_shader_program()
+            .from_strings(LINE_VERTEX_SRC, None, None, LINE_FRAGMENT_SRC)
+            .with_context(|| "while building line wireframe vertex shader")?
+            .ignore_warnings();
 
-        let tx_buffer = ctx.new_buffer(TX_BUFFER_SIZE)?;
+        let tx_buffer = ctx.new_shader_data(vec![Mat44([[0.; 4]; 4]); TX_BUFFER_SIZE])?;
+
+        let line_position_buffer = ctx.new_shader_data(vec![Vec4([0.; 4]); LINE_BUFFER_SIZE])?;
+        let line_color_buffer = ctx.new_shader_data(vec![Vec4([0.; 4]); LINE_BUFFER_SIZE])?;
+        let line_index_buffer = ctx.new_shader_data(vec![0u32; LINE_BUFFER_SIZE])?;
+
+        // Note: no data; this `Tess` is for attributeless rendering of lines.
+        let line_tess = TessBuilder::build(
+            TessBuilder::new(ctx)
+                .set_render_vertex_nb(LINE_BUFFER_SIZE)
+                .set_mode(Mode::Triangle),
+        )?;
 
         Ok(Self {
             static_shader,
             dynamic_shader,
+            line_shader,
             static_tess: Arena::new(),
             dynamic_tess: Arena::new(),
             static_list: Vec::new(),
+            line_positions: Vec::new(),
+            line_colors: Vec::new(),
+            line_commands: Vec::new(),
+            line_batches: Vec::new(),
+            line_pos: 0,
             tx_buffer,
+            line_positions_halfway: vec![Vec4([0.; 4]); LINE_BUFFER_SIZE],
+            line_colors_halfway: vec![Vec4([0.; 4]); LINE_BUFFER_SIZE],
+            line_indices_halfway: vec![0; LINE_BUFFER_SIZE],
+            line_position_buffer,
+            line_color_buffer,
+            line_index_buffer,
+            line_tess,
             projection: Matrix4::identity(),
             view: Matrix4::identity(),
             fog_distance: 64.,
@@ -312,6 +419,8 @@ where
                 b: 0.1,
                 a: 1.0,
             },
+            line_thickness: 1.0,
+            target_size,
         })
     }
 }
@@ -387,6 +496,11 @@ where
         for (_, dw) in self.dynamic_tess.iter_mut() {
             dw.instance_list.clear();
         }
+        self.line_positions.clear();
+        self.line_colors.clear();
+        self.line_commands.clear();
+        self.line_batches.clear();
+        self.line_pos = 0;
     }
 
     pub fn queue_draw_static(
@@ -404,6 +518,37 @@ where
     ) {
         self.dynamic_tess[dynamic_tess_id.0].queue_instance(instance);
     }
+
+    pub fn queue_draw_line(&mut self, a: LineVertex, b: LineVertex) {
+        // positions and colors are in lockstep
+        let start = self.line_positions.len();
+        self.line_positions
+            .extend([Vec4(a.pos.push(1.).into()), Vec4(b.pos.push(1.).into())]);
+        self.line_colors
+            .extend([Vec4(a.color.into()), Vec4(b.color.into())]);
+        self.line_commands.push(LineCommand { start, len: 2 });
+    }
+
+    // pub fn queue_draw_line_strip(&mut self, vertices: impl IntoIterator<Item = LineVertex>) {
+    //     let start = self.line_vertex_buffer.len().try_into().unwrap();
+    //     let mut vertex_iter = vertices.into_iter();
+    //     let mut current = vertex_iter
+    //         .next()
+    //         .expect("a line strip must have at least two vertices!")
+    //         .to_array();
+    //     self.line_vertices.push(current);
+    //     current = vertex_iter
+    //         .next()
+    //         .expect("a line strip must have at least two vertices!")
+    //         .to_array();
+    //     for next in vertex_iter {
+    //         self.line_vertices.push(current);
+    //         current = next.to_array();
+    //     }
+
+    //     let end = self.line_strip_vertices.len().try_into().unwrap();
+    //     self.push_line_strip(start..end);
+    // }
 
     pub fn set_projection(&mut self, matrix: &Matrix4<f32>) {
         self.projection = *matrix;
@@ -431,6 +576,10 @@ where
 
     pub fn set_light_ambient_color(&mut self, ambient: LinearColor) {
         self.light_ambient_color = ambient;
+    }
+
+    pub fn set_target_size(&mut self, target_size: Vector2<f32>) {
+        self.target_size = target_size;
     }
 }
 
@@ -477,11 +626,6 @@ where
 impl<B> WireframeRenderer<B>
 where
     B: WireframeBackend,
-    f32: Uniformable<B>,
-    [f32; 3]: Uniformable<B>,
-    [f32; 4]: Uniformable<B>,
-    [[f32; 4]; 4]: Uniformable<B>,
-    BufferBinding<Matrix4<f32>>: Uniformable<B>,
 {
     pub fn draw_queued(
         &mut self,
@@ -500,32 +644,38 @@ where
         shading_gate.shade(
             &mut self.static_shader,
             |mut program_interface, uni, mut render_gate| {
-                program_interface.set(&uni.view, self.view.into());
+                program_interface.set(&uni.view, Mat44(self.view.into()));
                 program_interface.set(&uni.fog_distance, self.fog_distance);
-                program_interface.set(&uni.light_direction, self.light_direction.into());
+                program_interface.set(&uni.light_direction, Vec3(self.light_direction.into()));
 
                 render_gate.render(&render_state, |mut tess_gate| {
                     let queued_static_instances = self.static_list.iter();
                     for (static_tess, instance) in queued_static_instances
                         .filter_map(|(id, inst)| self.static_tess.get(id.0).map(|t| (t, inst)))
                     {
-                        program_interface.set(&uni.tx, instance.tx.into());
-                        program_interface.set(&uni.mvp, (view_projection * instance.tx).into());
-                        program_interface.set(&uni.color, instance.color.into());
+                        program_interface.set(&uni.tx, Mat44(instance.tx.into()));
+                        program_interface
+                            .set(&uni.mvp, Mat44((view_projection * instance.tx).into()));
+                        program_interface.set(&uni.color, Vec4(instance.color.into()));
 
                         if static_tess.enable_lighting {
+                            program_interface.set(
+                                &uni.light_diffuse_color,
+                                Vec3(self.light_diffuse_color.into()),
+                            );
                             program_interface
-                                .set(&uni.light_diffuse_color, self.light_diffuse_color.into());
-                            program_interface
-                                .set(&uni.light_back_color, self.light_back_color.into());
-                            program_interface
-                                .set(&uni.light_ambient_color, self.light_ambient_color.into());
+                                .set(&uni.light_back_color, Vec3(self.light_back_color.into()));
+                            program_interface.set(
+                                &uni.light_ambient_color,
+                                Vec3(self.light_ambient_color.into()),
+                            );
                         } else {
                             program_interface
-                                .set(&uni.light_diffuse_color, LinearColor::BLACK.into());
-                            program_interface.set(&uni.light_back_color, LinearColor::BLACK.into());
+                                .set(&uni.light_diffuse_color, Vec3(LinearColor::BLACK.into()));
                             program_interface
-                                .set(&uni.light_ambient_color, LinearColor::WHITE.into());
+                                .set(&uni.light_back_color, Vec3(LinearColor::BLACK.into()));
+                            program_interface
+                                .set(&uni.light_ambient_color, Vec3(LinearColor::WHITE.into()));
                         }
 
                         let tess_view = TessView::whole(&static_tess.tess);
@@ -540,10 +690,10 @@ where
         shading_gate.shade(
             &mut self.dynamic_shader,
             |mut program_interface, uni, mut render_gate| {
-                program_interface.set(&uni.view, self.view.into());
-                program_interface.set(&uni.mvp, view_projection.into());
+                program_interface.set(&uni.view, Mat44(self.view.into()));
+                program_interface.set(&uni.mvp, Mat44(view_projection.into()));
                 program_interface.set(&uni.fog_distance, self.fog_distance);
-                program_interface.set(&uni.light_direction, self.light_direction.into());
+                program_interface.set(&uni.light_direction, Vec3(self.light_direction.into()));
 
                 render_gate.render(&render_state, |mut tess_gate| {
                     for (_, dynamic_tess) in self.dynamic_tess.iter_mut() {
@@ -554,31 +704,34 @@ where
                         }
 
                         if dynamic_tess.enable_lighting {
+                            program_interface.set(
+                                &uni.light_diffuse_color,
+                                Vec3(self.light_diffuse_color.into()),
+                            );
                             program_interface
-                                .set(&uni.light_diffuse_color, self.light_diffuse_color.into());
-                            program_interface
-                                .set(&uni.light_back_color, self.light_back_color.into());
-                            program_interface
-                                .set(&uni.light_ambient_color, self.light_ambient_color.into());
+                                .set(&uni.light_back_color, Vec3(self.light_back_color.into()));
+                            program_interface.set(
+                                &uni.light_ambient_color,
+                                Vec3(self.light_ambient_color.into()),
+                            );
                         } else {
                             program_interface
-                                .set(&uni.light_diffuse_color, LinearColor::BLACK.into());
-                            program_interface.set(&uni.light_back_color, LinearColor::BLACK.into());
+                                .set(&uni.light_diffuse_color, Vec3(LinearColor::BLACK.into()));
                             program_interface
-                                .set(&uni.light_ambient_color, LinearColor::WHITE.into());
+                                .set(&uni.light_back_color, Vec3(LinearColor::BLACK.into()));
+                            program_interface
+                                .set(&uni.light_ambient_color, Vec3(LinearColor::WHITE.into()));
                         }
 
                         for instance_batch in dynamic_tess.instance_list.chunks(TX_BUFFER_SIZE) {
                             let mut instances = dynamic_tess.tess.instances_mut().unwrap();
-                            let mut txs = self.tx_buffer.slice_mut().unwrap();
                             for (i, instance) in instance_batch.iter().enumerate() {
                                 instances[i].color = InstanceColor::new(instance.color.into());
-                                txs[i] = instance.tx;
+                                self.tx_buffer.set(i, Mat44(instance.tx.into())).unwrap();
                             }
-                            drop(txs);
                             drop(instances);
 
-                            let txs_binding = pipeline.bind_buffer(&mut self.tx_buffer)?;
+                            let txs_binding = pipeline.bind_shader_data(&mut self.tx_buffer)?;
                             program_interface.set(&uni.instance_txs, txs_binding.binding());
 
                             let tess_view =
@@ -586,6 +739,110 @@ where
 
                             tess_gate.render(tess_view)?;
                         }
+                    }
+
+                    Ok(())
+                })?;
+
+                Ok(())
+            },
+        )?;
+
+        shading_gate.shade(
+            &mut self.line_shader,
+            |mut program_interface, uni, mut render_gate| {
+                program_interface.set(&uni.view, Mat44(self.view.into()));
+                program_interface.set(&uni.mvp, Mat44(view_projection.into()));
+                program_interface.set(&uni.fog_distance, self.fog_distance);
+                program_interface.set(&uni.thickness, self.line_thickness);
+                program_interface.set(&uni.resolution, Vec2(self.target_size.into()));
+
+                render_gate.render(&render_state, |mut tess_gate| {
+                    let mut commands = self.line_commands.iter().copied();
+                    // The final `usize::MAX` on the end here is to drain any last commands that
+                    // weren't chunked. There should be less than a full chunk (since if there were
+                    // more they would already have caused a chunk to happen.)
+                    let batches = self.line_batches.iter().copied().chain(Some(usize::MAX));
+                    for batch in batches {
+                        // For each command, we end up with a string of vertices which we
+                        // insert, and a string of indices. For a given command of length N
+                        // (where N must be > 1), we'll end up with N-1 line segments, and thus
+                        // N-1 line indices. We'll *also* end up with N+2 vertices.
+                        //
+                        // The line index corresponds physically to the index of the
+                        // *predecessor* vertex of the line segment it represents; each line
+                        // index is essentially a window of four vertices.
+                        //
+                        // We begin a batch w/ the vertex index at the start of the vertex buffer
+                        // and with the line index in the same position.
+                        let mut vertex_index = 0;
+                        let mut line_index = 0;
+                        for command in commands.by_ref().take(batch) {
+                            let n_segments = command.len - 1;
+                            let n_vertices = command.len + 2;
+
+                            // Begin with the first "cap". Every strip of line segments will be
+                            // "capped" (unless it is a loop, which we do not support yet.) Then,
+                            // copy in all of the "inner" vertices, and finally add the end cap. The
+                            // start and end caps are copies of the elements immediately after and
+                            // before them, respectively.
+                            self.line_positions_halfway[vertex_index] =
+                                self.line_positions[command.start + 1];
+                            self.line_positions_halfway
+                                [vertex_index + 1..vertex_index + 1 + command.len]
+                                .copy_from_slice(
+                                    &self.line_positions[command.start..][..command.len],
+                                );
+                            self.line_positions_halfway[vertex_index + n_vertices - 1] =
+                                self.line_positions[command.start + command.len - 2];
+
+                            self.line_colors_halfway[vertex_index] =
+                                self.line_colors[command.start + 1];
+                            self.line_colors_halfway
+                                [vertex_index + 1..vertex_index + 1 + command.len]
+                                .copy_from_slice(&self.line_colors[command.start..][..command.len]);
+                            self.line_colors_halfway[vertex_index + n_vertices - 1] =
+                                self.line_colors[command.start + command.len - 2];
+
+                            // Now that we have the vertices in, we need to deal with the line
+                            // indices. These are simpler; they're just the range
+                            // `vertex_index..vertex_index + n_segments`, and we can just plop them
+                            // right into the index buffer at `line_index..line_index + n_segments`.
+                            self.line_indices_halfway[line_index..line_index + n_segments]
+                                .iter_mut()
+                                .zip(vertex_index..vertex_index + n_segments)
+                                .for_each(|(dst, idx)| *dst = idx as u32);
+
+                            // We're done copying data - update the current vertices/segment
+                            // indices.
+                            vertex_index += n_vertices;
+                            line_index += n_segments;
+                        }
+
+                        self.line_position_buffer
+                            .replace(self.line_positions_halfway.iter().copied())
+                            .unwrap();
+                        self.line_color_buffer
+                            .replace(self.line_colors_halfway.iter().copied())
+                            .unwrap();
+                        self.line_index_buffer
+                            .replace(self.line_indices_halfway.iter().copied())
+                            .unwrap();
+
+                        let bound_positions =
+                            pipeline.bind_shader_data(&mut self.line_position_buffer)?;
+                        let bound_colors =
+                            pipeline.bind_shader_data(&mut self.line_color_buffer)?;
+                        let bound_indices =
+                            pipeline.bind_shader_data(&mut self.line_index_buffer)?;
+
+                        program_interface.set(&uni.positions, bound_positions.binding());
+                        program_interface.set(&uni.colors, bound_colors.binding());
+                        program_interface.set(&uni.indices, bound_indices.binding());
+
+                        // Attributeless render, go!!
+                        let view = TessView::sub(&self.line_tess, 6 * line_index).unwrap();
+                        tess_gate.render(view)?;
                     }
 
                     Ok(())

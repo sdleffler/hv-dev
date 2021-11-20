@@ -6,11 +6,10 @@ use hv::{
 };
 use luminance::{
     backend::{
-        buffer::{Buffer as BufferBackend, BufferSlice as BufferSliceBackend},
         framebuffer::Framebuffer as FramebufferBackend,
-        pipeline::{Pipeline as PipelineBackend, PipelineBuffer, PipelineTexture},
+        pipeline::{Pipeline as PipelineBackend, PipelineShaderData, PipelineTexture},
         render_gate::RenderGate as RenderGateBackend,
-        shader::{Shader as ShaderBackend, Uniformable},
+        shader::{Shader as ShaderBackend, ShaderData as ShaderDataBackend, Uniformable},
         tess::{IndexSlice, Tess as TessBackend, VertexSlice},
         tess_gate::TessGate as TessGateBackend,
         texture::Texture as TextureBackend,
@@ -22,7 +21,7 @@ use luminance::{
     render_gate::RenderGate,
     render_state::RenderState,
     scissor::ScissorRegion,
-    shader::{Program, ProgramInterface, Uniform},
+    shader::{self, Program, ProgramInterface, Uniform},
     shading_gate::ShadingGate,
     tess::{Interleaved, Mode, Tess, TessBuilder, TessView},
     texture::{Dim2, GenMipmaps, Sampler, Texture},
@@ -63,48 +62,48 @@ impl Default for Vertex {
 #[derive(Debug, UniformInterface)]
 pub struct Uniforms {
     #[uniform(unbound, name = "u_TargetSize")]
-    pub target_size: Uniform<[f32; 2]>,
+    pub target_size: Uniform<shader::types::Vec2<f32>>,
     #[uniform(unbound, name = "u_Texture")]
     pub texture: Uniform<TextureBinding<Dim2, NormUnsigned>>,
 }
 
 pub trait GuiBackend:
     TessBackend<Vertex, u16, (), Interleaved>
-    // + TessBackend<Vertex, u16, Instance, Interleaved>
     + ShaderBackend
     + PipelineBackend<Dim2>
     + FramebufferBackend<Dim2>
     + RenderGateBackend
     + TessGateBackend<Vertex, u16, (), Interleaved>
-    // + TessGateBackend<Vertex, u16, Instance, Interleaved>
-    + BufferBackend<Matrix4<f32>>
-    // + InstanceSliceBackend<Vertex, u16, Instance, Interleaved, Instance>
-    + BufferSliceBackend<Matrix4<f32>>
-    + PipelineBuffer<Matrix4<f32>>
     + TextureBackend<Dim2, SRGBA8UI>
     + PipelineTexture<Dim2, SRGBA8UI>
-    + VertexSlice<Vertex, u16, (), Interleaved, Vertex>
-    + IndexSlice<Vertex, u16, (), Interleaved>
+    + for<'a> VertexSlice<'a, Vertex, u16, (), Interleaved, Vertex>
+    + for<'a> IndexSlice<'a, Vertex, u16, (), Interleaved>
+    + for<'a> Uniformable<'a, shader::types::Vec2<f32>, Target = shader::types::Vec2<f32>>
+    + for<'a> Uniformable<
+        'a,
+        TextureBinding<Dim2, NormUnsigned>,
+        Target = TextureBinding<Dim2, NormUnsigned>,
+    >
 {
 }
 
 impl<B: ?Sized> GuiBackend for B where
     B: TessBackend<Vertex, u16, (), Interleaved>
-        // + TessBackend<Vertex, u16, Instance, Interleaved>
         + ShaderBackend
         + FramebufferBackend<Dim2>
         + PipelineBackend<Dim2>
         + RenderGateBackend
         + TessGateBackend<Vertex, u16, (), Interleaved>
-        // + TessGateBackend<Vertex, u16, Instance, Interleaved>
-        + BufferBackend<Matrix4<f32>>
-        // + InstanceSliceBackend<Vertex, u16, Instance, Interleaved, Instance>
-        + BufferSliceBackend<Matrix4<f32>>
-        + PipelineBuffer<Matrix4<f32>>
         + TextureBackend<Dim2, SRGBA8UI>
         + PipelineTexture<Dim2, SRGBA8UI>
-        + VertexSlice<Vertex, u16, (), Interleaved, Vertex>
-        + IndexSlice<Vertex, u16, (), Interleaved>
+        + for<'a> VertexSlice<'a, Vertex, u16, (), Interleaved, Vertex>
+        + for<'a> IndexSlice<'a, Vertex, u16, (), Interleaved>
+        + for<'a> Uniformable<'a, shader::types::Vec2<f32>, Target = shader::types::Vec2<f32>>
+        + for<'a> Uniformable<
+            'a,
+            TextureBinding<Dim2, NormUnsigned>,
+            Target = TextureBinding<Dim2, NormUnsigned>,
+        >
 {
 }
 
@@ -125,8 +124,6 @@ where
 impl<B> GuiRenderer<B>
 where
     B: GuiBackend,
-    [f32; 2]: Uniformable<B>,
-    TextureBinding<Dim2, NormUnsigned>: Uniformable<B>,
 {
     pub fn new(
         ctx: &mut impl GraphicsContext<Backend = B>,
@@ -225,7 +222,10 @@ where
         let meshes = std::mem::take(&mut self.meshes);
 
         let result = shading_gate.shade(&mut shader, |mut interface, uni, mut render_gate| {
-            interface.set(&uni.target_size, self.target_size_in_points.into());
+            interface.set(
+                &uni.target_size,
+                shader::types::Vec2(self.target_size_in_points.into()),
+            );
 
             for (clip_rect, mesh) in &meshes {
                 self.draw_mesh(
