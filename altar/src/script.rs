@@ -8,7 +8,7 @@ use std::{
 };
 
 use hv::{
-    alchemy::{AlchemicalAny, AlchemicalAnyExt},
+    alchemy::AlchemicalAny,
     bump::{Bump, Owned},
     prelude::*,
     resources::{self, Resources},
@@ -20,7 +20,16 @@ use hv::{
 
 struct ScriptResource {
     inner: Box<dyn AlchemicalAny + Send + Sync>,
-    loanable: for<'a> fn(&'a Resources, &'a Bump) -> Result<Owned<'a, dyn ErasedLoan<'a> + 'a>>,
+    #[allow(clippy::type_complexity)]
+    loanable: Box<
+        dyn for<'a, 'lua, 'g> Fn(
+            &'lua Lua,
+            &'a LuaTable<'lua>,
+            &'g Resources,
+            &'g Bump,
+            &'a mut Vec<Owned<'g, dyn ErasedLoan<'g> + 'g>, &'g Bump>,
+        ) -> Result<()>,
+    >,
     name: String,
 }
 
@@ -31,49 +40,87 @@ impl fmt::Debug for ScriptResource {
 }
 
 impl ScriptResource {
-    fn with_mut<T: 'static + Send + Sync>(elastic: Elastic<StretchedMut<T>>) -> Self {
-        fn loan_mut<'a, T: 'static>(
-            resources: &'a Resources,
-            alloc: &'a Bump,
-        ) -> Result<Owned<'a, dyn ErasedLoan<'a> + 'a>> {
-            let guard = resources.get_mut::<T>()?;
-            let owned = Owned::new_in(guard, alloc);
-            // We have to do a pointer cast here since `Owned` can't deal with `CoerceUnsized`.
-            let raw = Owned::into_raw(owned) as *mut dyn ErasedLoan<'a>;
-            Ok(unsafe { Owned::from_raw(raw) })
-        }
-
-        Self {
-            inner: Box::new(elastic),
-            loanable: loan_mut::<T>,
-            name: std::any::type_name::<T>().to_owned(),
-        }
-    }
-
-    fn with_ref<T: 'static + Send + Sync>(elastic: Elastic<StretchedRef<T>>) -> Self {
-        fn loan_ref<'a, T: 'static>(
-            resources: &'a Resources,
-            alloc: &'a Bump,
-        ) -> Result<Owned<'a, dyn ErasedLoan<'a> + 'a>> {
+    fn with_ref<T, F>(elastic: Elastic<StretchedRef<T>>, on_loan: F) -> Self
+    where
+        T: 'static + Send + Sync,
+        F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        fn loan_ref<'a, 'g, 'lua, T: 'static>(
+            on_loan: &'a impl for<'t, 'lua2> Fn(&'t T, &'lua2 Lua, &'t LuaTable<'lua2>) -> Result<()>,
+            lua: &'lua Lua,
+            env: &'a LuaTable<'lua>,
+            resources: &'g Resources,
+            alloc: &'g Bump,
+            loans: &'a mut Vec<Owned<'g, dyn ErasedLoan<'g> + 'g>, &'g Bump>,
+        ) -> Result<()> {
             let guard = resources.get::<T>()?;
+            on_loan(&guard, lua, env)?;
             let owned = Owned::new_in(guard, alloc);
             // We have to do a pointer cast here since `Owned` can't deal with `CoerceUnsized`.
-            let raw = Owned::into_raw(owned) as *mut dyn ErasedLoan<'a>;
-            Ok(unsafe { Owned::from_raw(raw) })
+            let raw = Owned::into_raw(owned) as *mut (dyn ErasedLoan<'g> + 'g);
+            let owned = unsafe { <Owned<'g, _>>::from_raw(raw) };
+            loans.push(owned);
+            Ok(())
         }
 
         Self {
             inner: Box::new(elastic),
-            loanable: loan_ref::<T>,
+            loanable: Box::new(move |lua, env, resources, alloc, loans| {
+                loan_ref(&on_loan, lua, env, resources, alloc, loans)
+            }),
             name: std::any::type_name::<T>().to_owned(),
         }
     }
 
-    fn with_arc_ref<T: 'static + Send + Sync>(elastic: Elastic<StretchedRef<T>>) -> Self {
-        fn loan_arc_ref<'a, T: 'static>(
-            resources: &'a Resources,
-            alloc: &'a Bump,
-        ) -> Result<Owned<'a, dyn ErasedLoan<'a> + 'a>> {
+    fn with_mut<T, F>(elastic: Elastic<StretchedMut<T>>, on_loan: F) -> Self
+    where
+        T: 'static + Send + Sync,
+        F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        fn loan_mut<'a, 'g, 'lua, T: 'static>(
+            on_loan: &'a impl for<'t, 'lua2> Fn(
+                &'t mut T,
+                &'lua2 Lua,
+                &'t LuaTable<'lua2>,
+            ) -> Result<()>,
+            lua: &'lua Lua,
+            env: &'a LuaTable<'lua>,
+            resources: &'g Resources,
+            alloc: &'g Bump,
+            loans: &'a mut Vec<Owned<'g, dyn ErasedLoan<'g> + 'g>, &'g Bump>,
+        ) -> Result<()> {
+            let mut guard = resources.get_mut::<T>()?;
+            on_loan(&mut guard, lua, env)?;
+            let owned = Owned::new_in(guard, alloc);
+            // We have to do a pointer cast here since `Owned` can't deal with `CoerceUnsized`.
+            let raw = Owned::into_raw(owned) as *mut (dyn ErasedLoan<'g> + 'g);
+            let cast = unsafe { <Owned<'g, _>>::from_raw(raw) };
+            loans.push(cast);
+            Ok(())
+        }
+
+        Self {
+            inner: Box::new(elastic),
+            loanable: Box::new(move |lua, env, resources, alloc, loans| {
+                loan_mut(&on_loan, lua, env, resources, alloc, loans)
+            }),
+            name: std::any::type_name::<T>().to_owned(),
+        }
+    }
+
+    fn with_arc_ref<T, F>(elastic: Elastic<StretchedRef<T>>, on_loan: F) -> Self
+    where
+        T: 'static + Send + Sync,
+        F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        fn loan_arc_ref<'a, 'g, 'lua, T: 'static>(
+            on_loan: &'a impl for<'t, 'lua2> Fn(&'t T, &'lua2 Lua, &'t LuaTable<'lua2>) -> Result<()>,
+            lua: &'lua Lua,
+            env: &'a LuaTable<'lua>,
+            resources: &'g Resources,
+            alloc: &'g Bump,
+            loans: &'a mut Vec<Owned<'g, dyn ErasedLoan<'g> + 'g>, &'g Bump>,
+        ) -> Result<()> {
             let guard = resources.get::<Elastic<StretchedRef<T>>>()?;
             let owned = Owned::new_in(
                 guard
@@ -81,49 +128,71 @@ impl ScriptResource {
                     .ok_or_else(|| anyhow!("failed to mutably borrow elastic"))?,
                 alloc,
             );
-            let raw = Owned::into_raw(owned) as *mut dyn ErasedLoan<'a>;
-            Ok(unsafe { Owned::from_raw(raw) })
+            on_loan(&owned, lua, env)?;
+            // We have to do a pointer cast here since `Owned` can't deal with `CoerceUnsized`.
+            let raw = Owned::into_raw(owned) as *mut (dyn ErasedLoan<'g> + 'g);
+            let cast = unsafe { <Owned<'g, dyn ErasedLoan<'g> + 'g>>::from_raw(raw) };
+            loans.push(cast);
+            Ok(())
         }
 
         Self {
             inner: Box::new(elastic),
-            loanable: loan_arc_ref::<T>,
+            loanable: Box::new(move |lua, env, resources, alloc, loans| {
+                loan_arc_ref(&on_loan, lua, env, resources, alloc, loans)
+            }),
             name: std::any::type_name::<T>().to_owned(),
         }
     }
 
-    fn with_arc_mut<T: 'static + Send + Sync>(elastic: Elastic<StretchedMut<T>>) -> Self {
-        fn loan_arc_mut<'a, T: 'static>(
-            resources: &'a Resources,
-            alloc: &'a Bump,
-        ) -> Result<Owned<'a, dyn ErasedLoan<'a> + 'a>> {
+    fn with_arc_mut<T, F>(elastic: Elastic<StretchedMut<T>>, on_loan: F) -> Self
+    where
+        T: 'static + Send + Sync,
+        F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        fn loan_arc_mut<'a, 'g, 'lua, T: 'static>(
+            on_loan: &'a impl for<'t, 'lua2> Fn(
+                &'t mut T,
+                &'lua2 Lua,
+                &'t LuaTable<'lua2>,
+            ) -> Result<()>,
+            lua: &'lua Lua,
+            env: &'a LuaTable<'lua>,
+            resources: &'g Resources,
+            alloc: &'g Bump,
+            loans: &'a mut Vec<Owned<'g, dyn ErasedLoan<'g> + 'g>, &'g Bump>,
+        ) -> Result<()> {
             let guard = resources.get::<Elastic<StretchedMut<T>>>()?;
-            let owned = Owned::new_in(
+            let mut owned = Owned::new_in(
                 guard
                     .borrow_arc_mut(|t| &mut **t)
                     .ok_or_else(|| anyhow!("failed to mutably borrow elastic"))?,
                 alloc,
             );
-            let raw = Owned::into_raw(owned) as *mut dyn ErasedLoan<'a>;
-            Ok(unsafe { Owned::from_raw(raw) })
+            on_loan(&mut owned, lua, env)?;
+            // We have to do a pointer cast here since `Owned` can't deal with `CoerceUnsized`.
+            let raw = Owned::into_raw(owned) as *mut (dyn ErasedLoan<'g> + 'g);
+            let owned = unsafe { <Owned<'g, _>>::from_raw(raw) };
+            loans.push(owned);
+            Ok(())
         }
 
         Self {
             inner: Box::new(elastic),
-            loanable: loan_arc_mut::<T>,
+            loanable: Box::new(move |lua, env, resources, alloc, loans| {
+                loan_arc_mut(&on_loan, lua, env, resources, alloc, loans)
+            }),
             name: std::any::type_name::<T>().to_owned(),
         }
     }
 }
 
-trait ErasedLoan<'a> {
+trait ErasedLoan<'a>: 'a {
     fn erased_loan<'b>(
         &'b mut self,
         guard: &mut ScopeGuard<'b>,
         map: &HashMap<TypeId, ScriptResource>,
-    ) -> Result<()>
-    where
-        'a: 'b;
+    ) -> Result<()>;
 }
 
 impl<'a, T: 'static + AlchemicalAny> ErasedLoan<'a> for resources::Ref<'a, T> {
@@ -131,10 +200,7 @@ impl<'a, T: 'static + AlchemicalAny> ErasedLoan<'a> for resources::Ref<'a, T> {
         &'b mut self,
         guard: &mut ScopeGuard<'b>,
         map: &HashMap<TypeId, ScriptResource>,
-    ) -> Result<()>
-    where
-        'a: 'b,
-    {
+    ) -> Result<()> {
         let elastic = (*map.get(&TypeId::of::<T>()).unwrap().inner)
             .downcast_ref::<Elastic<StretchedRef<T>>>()
             .unwrap();
@@ -149,10 +215,7 @@ impl<'a, T: 'static + AlchemicalAny> ErasedLoan<'a> for resources::RefMut<'a, T>
         &'b mut self,
         guard: &mut ScopeGuard<'b>,
         map: &HashMap<TypeId, ScriptResource>,
-    ) -> Result<()>
-    where
-        'a: 'b,
-    {
+    ) -> Result<()> {
         let elastic = (*map.get(&TypeId::of::<T>()).unwrap().inner)
             .downcast_ref::<Elastic<StretchedMut<T>>>()
             .unwrap();
@@ -162,15 +225,12 @@ impl<'a, T: 'static + AlchemicalAny> ErasedLoan<'a> for resources::RefMut<'a, T>
     }
 }
 
-impl<'a, U, T: 'static + AlchemicalAny> ErasedLoan<'a> for ArcRef<T, U> {
+impl<'a, U: 'static, T: 'static + AlchemicalAny> ErasedLoan<'a> for ArcRef<T, U> {
     fn erased_loan<'b>(
         &'b mut self,
         guard: &mut ScopeGuard<'b>,
         map: &HashMap<TypeId, ScriptResource>,
-    ) -> Result<()>
-    where
-        'a: 'b,
-    {
+    ) -> Result<()> {
         let elastic = (*map.get(&TypeId::of::<T>()).unwrap().inner)
             .downcast_ref::<Elastic<StretchedRef<T>>>()
             .unwrap();
@@ -180,15 +240,12 @@ impl<'a, U, T: 'static + AlchemicalAny> ErasedLoan<'a> for ArcRef<T, U> {
     }
 }
 
-impl<'a, U, T: 'static + AlchemicalAny> ErasedLoan<'a> for ArcRefMut<T, U> {
+impl<'a, U: 'static, T: 'static + AlchemicalAny> ErasedLoan<'a> for ArcRefMut<T, U> {
     fn erased_loan<'b>(
         &'b mut self,
         guard: &mut ScopeGuard<'b>,
         map: &HashMap<TypeId, ScriptResource>,
-    ) -> Result<()>
-    where
-        'a: 'b,
-    {
+    ) -> Result<()> {
         let elastic = (*map.get(&TypeId::of::<T>()).unwrap().inner)
             .downcast_ref::<Elastic<StretchedMut<T>>>()
             .unwrap();
@@ -299,13 +356,7 @@ impl ScriptContext {
         &mut self,
         elastic: Elastic<StretchedRef<T>>,
     ) {
-        let replaced = self
-            .map
-            .insert(TypeId::of::<T>(), ScriptResource::with_ref::<T>(elastic));
-        assert!(
-            replaced.is_none(),
-            "already a resource of this type in the map!"
-        );
+        self.insert_ref_with_callback(elastic, |_, _, _| Ok(()));
     }
 
     /// Register a resource type as being a mutably accessible resource.
@@ -319,13 +370,7 @@ impl ScriptContext {
         &mut self,
         elastic: Elastic<StretchedMut<T>>,
     ) {
-        let replaced = self
-            .map
-            .insert(TypeId::of::<T>(), ScriptResource::with_mut::<T>(elastic));
-        assert!(
-            replaced.is_none(),
-            "already a resource of this type in the map!"
-        );
+        self.insert_mut_with_callback(elastic, |_, _, _| Ok(()));
     }
 
     /// Register a resource type as being an immutably accessible resource, which must be immutably
@@ -340,14 +385,7 @@ impl ScriptContext {
         &mut self,
         elastic: Elastic<StretchedRef<T>>,
     ) {
-        let replaced = self.map.insert(
-            TypeId::of::<T>(),
-            ScriptResource::with_arc_ref::<T>(elastic),
-        );
-        assert!(
-            replaced.is_none(),
-            "already a resource of this type in the map!"
-        );
+        self.insert_reborrowed_ref_with_callback(elastic, |_, _, _| Ok(()));
     }
 
     /// Register a resource type as being a mutably accessible resource, which must be mutably
@@ -362,14 +400,7 @@ impl ScriptContext {
         &mut self,
         elastic: Elastic<StretchedMut<T>>,
     ) {
-        let replaced = self.map.insert(
-            TypeId::of::<T>(),
-            ScriptResource::with_arc_mut::<T>(elastic),
-        );
-        assert!(
-            replaced.is_none(),
-            "already a resource of this type in the map!"
-        );
+        self.insert_reborrowed_mut_with_callback(elastic, |_, _, _| Ok(()));
     }
 
     /// Register a resource type as being an immutably accessible resource, returning the registered
@@ -496,6 +527,172 @@ impl ScriptContext {
         Ok(())
     }
 
+    pub fn insert_ref_with_callback<T, F>(&mut self, elastic: Elastic<StretchedRef<T>>, on_loan: F)
+    where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let replaced = self.map.insert(
+            TypeId::of::<T>(),
+            ScriptResource::with_ref(elastic, on_loan),
+        );
+        assert!(
+            replaced.is_none(),
+            "already a resource of this type in the map!"
+        );
+    }
+
+    pub fn insert_mut_with_callback<T, F>(&mut self, elastic: Elastic<StretchedMut<T>>, on_loan: F)
+    where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let replaced = self.map.insert(
+            TypeId::of::<T>(),
+            ScriptResource::with_mut(elastic, on_loan),
+        );
+        assert!(
+            replaced.is_none(),
+            "already a resource of this type in the map!"
+        );
+    }
+
+    pub fn insert_reborrowed_ref_with_callback<T, F>(
+        &mut self,
+        elastic: Elastic<StretchedRef<T>>,
+        on_loan: F,
+    ) where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let replaced = self.map.insert(
+            TypeId::of::<T>(),
+            ScriptResource::with_arc_ref(elastic, on_loan),
+        );
+        assert!(
+            replaced.is_none(),
+            "already a resource of this type in the map!"
+        );
+    }
+
+    pub fn insert_reborrowed_mut_with_callback<T, F>(
+        &mut self,
+        elastic: Elastic<StretchedMut<T>>,
+        on_loan: F,
+    ) where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let replaced = self.map.insert(
+            TypeId::of::<T>(),
+            ScriptResource::with_arc_mut(elastic, on_loan),
+        );
+        assert!(
+            replaced.is_none(),
+            "already a resource of this type in the map!"
+        );
+    }
+
+    pub fn register_ref_with_callback<T, F>(&mut self, on_loan: F) -> Elastic<StretchedRef<T>>
+    where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let elastic = Elastic::new();
+        self.insert_ref_with_callback(elastic.clone(), on_loan);
+        elastic
+    }
+
+    pub fn register_mut_with_callback<T, F>(&mut self, on_loan: F) -> Elastic<StretchedMut<T>>
+    where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let elastic = Elastic::new();
+        self.insert_mut_with_callback(elastic.clone(), on_loan);
+        elastic
+    }
+
+    pub fn register_reborrowed_ref_with_callback<T, F>(
+        &mut self,
+        on_loan: F,
+    ) -> Elastic<StretchedRef<T>>
+    where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let elastic = Elastic::new();
+        self.insert_reborrowed_ref_with_callback(elastic.clone(), on_loan);
+        elastic
+    }
+
+    pub fn register_reborrowed_mut_with_callback<T, F>(
+        &mut self,
+        on_loan: F,
+    ) -> Elastic<StretchedMut<T>>
+    where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let elastic = Elastic::new();
+        self.insert_reborrowed_mut_with_callback(elastic.clone(), on_loan);
+        elastic
+    }
+
+    pub fn set_ref_with_callback<T, F>(&mut self, lua: &Lua, name: &str, on_loan: F) -> Result<()>
+    where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let elastic = self.register_ref_with_callback(on_loan);
+        let table: LuaTable = lua.registry_value(&self.env)?;
+        table.set(name, elastic)?;
+        Ok(())
+    }
+
+    pub fn set_mut_with_callback<T, F>(&mut self, lua: &Lua, name: &str, on_loan: F) -> Result<()>
+    where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let elastic = self.register_mut_with_callback(on_loan);
+        let table: LuaTable = lua.registry_value(&self.env)?;
+        table.set(name, elastic)?;
+        Ok(())
+    }
+
+    pub fn set_reborrowed_ref_with_callback<T, F>(
+        &mut self,
+        lua: &Lua,
+        name: &str,
+        on_loan: F,
+    ) -> Result<()>
+    where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let elastic = self.register_reborrowed_ref_with_callback(on_loan);
+        let table: LuaTable = lua.registry_value(&self.env)?;
+        table.set(name, elastic)?;
+        Ok(())
+    }
+
+    pub fn set_reborrowed_mut_with_callback<T, F>(
+        &mut self,
+        lua: &Lua,
+        name: &str,
+        on_loan: F,
+    ) -> Result<()>
+    where
+        T: LuaUserData + Send + Sync + 'static,
+        F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
+    {
+        let elastic = self.register_reborrowed_mut_with_callback(on_loan);
+        let table: LuaTable = lua.registry_value(&self.env)?;
+        table.set(name, elastic)?;
+        Ok(())
+    }
+
     /// Borrow a set of resources from a [`Resources`] and loan it out to matching resources
     /// registered with this context, and then call the given thunk, passing in the environment
     /// table of this script context (if it exists.)
@@ -508,6 +705,7 @@ impl ScriptContext {
         resources: &Resources,
         f: impl FnOnce(LuaTable<'lua>) -> R,
     ) -> Result<R> {
+        let env = lua.registry_value(&self.env)?;
         let mut erased_loanables = Vec::with_capacity_in(self.map.len(), &self.bump_arena);
         for ty in resource_set.types.iter() {
             let resource = match self.map.get(ty) {
@@ -520,15 +718,20 @@ impl ScriptContext {
                 }
             };
 
-            match (resource.loanable)(resources, &self.bump_arena) {
-                Ok(loanable) => erased_loanables.push(loanable),
-                Err(error) => tracing::error!(
+            if let Err(error) = (resource.loanable)(
+                lua,
+                &env,
+                resources,
+                &self.bump_arena,
+                &mut erased_loanables,
+            ) {
+                tracing::error!(
                     name = %resource.name,
                     ?error,
                     "failed to borrow resource {}: {:?}",
                     resource.name,
                     error,
-                ),
+                );
             }
         }
 
@@ -537,7 +740,7 @@ impl ScriptContext {
                 loanable.erased_loan(guard, &self.map)?;
             }
 
-            Ok(f(lua.registry_value(&self.env)?))
+            Ok(f(env))
         });
 
         drop(erased_loanables);
@@ -559,17 +762,23 @@ impl ScriptContext {
         resources: &Resources,
         f: impl FnOnce(LuaTable<'lua>) -> R,
     ) -> Result<R> {
+        let env = lua.registry_value(&self.env)?;
         let mut erased_loanables = Vec::with_capacity_in(self.map.len(), &self.bump_arena);
         for resource in self.map.values() {
-            match (resource.loanable)(resources, &self.bump_arena) {
-                Ok(loanable) => erased_loanables.push(loanable),
-                Err(error) => tracing::error!(
+            if let Err(error) = (resource.loanable)(
+                lua,
+                &env,
+                resources,
+                &self.bump_arena,
+                &mut erased_loanables,
+            ) {
+                tracing::error!(
                     name = %resource.name,
                     ?error,
                     "failed to borrow resource {}: {:?}",
                     resource.name,
                     error,
-                ),
+                );
             }
         }
 
@@ -578,7 +787,7 @@ impl ScriptContext {
                 loanable.erased_loan(guard, &self.map)?;
             }
 
-            Ok(f(lua.registry_value(&self.env)?))
+            Ok(f(env))
         });
 
         drop(erased_loanables);

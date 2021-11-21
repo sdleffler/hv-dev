@@ -614,8 +614,10 @@ dependencies = [
 name = "hv-math"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "hv-alchemy",
  "nalgebra",
+ "nalgebra-glm",
  "serde",
 ]
 
@@ -908,6 +910,18 @@ dependencies = [
  "serde",
  "simba",
  "typenum",
+]
+
+[[package]]
+name = "nalgebra-glm"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cec137f377549720ff9fbbcd1413a12bbb03b4feea3192cee987e8493158748"
+dependencies = [
+ "approx",
+ "nalgebra",
+ "num-traits",
+ "simba",
 ]
 
 [[package]]
@@ -1707,9 +1721,9 @@ dependencies = [
 ]
 
 [[patch.unused]]
-name = "luminance-front"
-version = "0.4.0"
-
-[[patch.unused]]
 name = "luminance-glyph"
 version = "0.2.0"
+
+[[patch.unused]]
+name = "luminance-front"
+version = "0.4.0"

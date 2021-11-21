@@ -12,5 +12,5 @@ keywords = ["allocator", "arena", "sync", "reference"]
 categories = ["no-std", "concurrency", "memory-management"]
 
 [dependencies]
-bumpalo = { version = "3.8.0", features = ["allocator_api", "boxed"] }
+bumpalo = { version = "3.8.0", features = ["allocator_api", "boxed", "collections"] }
 spin = "0.9.2"

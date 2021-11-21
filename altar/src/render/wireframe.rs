@@ -322,8 +322,9 @@ where
     line_index_buffer: ShaderData<B, u32>,
     line_tess: Tess<B, (), u16, (), Interleaved>,
 
-    projection: Matrix4<f32>,
-    view: Matrix4<f32>,
+    pub projection: Matrix4<f32>,
+    pub view: Matrix4<f32>,
+    pub target_size: Vector2<f32>,
 
     fog_distance: f32,
     light_direction: Vector3<f32>,
@@ -332,7 +333,6 @@ where
     light_ambient_color: LinearColor,
 
     line_thickness: f32,
-    target_size: Vector2<f32>,
 }
 
 // Max number of instances of a dynamic tess we ever expect to render at once.
@@ -562,14 +562,6 @@ where
     //     let end = self.line_strip_vertices.len().try_into().unwrap();
     //     self.push_line_strip(start..end);
     // }
-
-    pub fn set_projection(&mut self, matrix: &Matrix4<f32>) {
-        self.projection = *matrix;
-    }
-
-    pub fn set_view(&mut self, matrix: &Matrix4<f32>) {
-        self.view = *matrix;
-    }
 
     pub fn set_fog_distance(&mut self, fog_distance: f32) {
         self.fog_distance = fog_distance;

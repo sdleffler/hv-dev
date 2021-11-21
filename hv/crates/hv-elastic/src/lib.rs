@@ -212,9 +212,14 @@ impl<'a, T: Stretchable<'a>> Drop for ElasticGuard<'a, T> {
 /// the owning thread will panic, and potentially end up dropping the borrowed value, while it is
 /// being accessed by another thread. We may need to use an [`RwLock`] and block instead/use
 /// something which supports poisoning... alternatively, report the error and directly abort.
-#[derive(Debug)]
 pub struct Elastic<T: Stretched> {
     slot: ArcCell<Option<T>>,
+}
+
+impl<T: Stretched> fmt::Debug for Elastic<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Elastic {{ ... }}")
+    }
 }
 
 impl<T: Stretched> Clone for Elastic<T> {

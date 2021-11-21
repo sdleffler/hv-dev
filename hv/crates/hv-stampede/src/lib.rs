@@ -15,7 +15,9 @@ use spin::Mutex;
 
 extern crate alloc;
 
-pub use bumpalo::{boxed::Box as Owned, AllocOrInitError, Bump, ChunkIter, ChunkRawIter};
+pub use bumpalo::{
+    boxed::Box as Owned, collections, format, vec, AllocOrInitError, Bump, ChunkIter, ChunkRawIter,
+};
 
 #[derive(Debug, Default)]
 struct BarcInner<T: ?Sized> {

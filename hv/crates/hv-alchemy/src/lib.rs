@@ -226,7 +226,8 @@ pub trait CloneProxy {
 
 impl<T: Clone> CloneProxy for T {
     unsafe fn clone_into_ptr(&self, ptr: *mut u8) {
-        (&mut *ptr.cast::<T>()).clone_from(self);
+        let dst = ptr.cast::<T>();
+        core::ptr::write(dst, self.clone());
     }
 
     unsafe fn clone_fn(self: *const T) -> fn() {
@@ -243,7 +244,7 @@ pub trait CopyProxy {
 
 impl<T: Copy> CopyProxy for T {
     unsafe fn copy_into_ptr(&self, ptr: *mut u8) {
-        *ptr.cast::<T>() = *self;
+        core::ptr::write(ptr.cast::<T>(), *self);
     }
 }
 
@@ -1077,17 +1078,16 @@ impl<T: Any> AlchemicalAny for T {
     }
 }
 
-/// An object-unsafe extension trait which provides
-pub trait AlchemicalAnyExt: AlchemicalAny {
+impl dyn AlchemicalAny {
     /// Try to cast this `&dyn AlchemicalAny` to some other trait object `U`.
-    fn dyncast_ref<U: Alchemy + ?Sized>(&self) -> Option<&U> {
+    pub fn dyncast_ref<U: Alchemy + ?Sized>(&self) -> Option<&U> {
         let type_table = (*self).type_table();
         let downcast_alchemy = type_table.get::<U>()?;
         unsafe { Some(&*downcast_alchemy.to_dyn_object_ptr::<U>((self as *const Self).cast())) }
     }
 
     /// Try to cast this `&mut dyn AlchemicalAny` to some other trait object `U`.
-    fn dyncast_mut<U: Alchemy + ?Sized>(&mut self) -> Option<&mut U> {
+    pub fn dyncast_mut<U: Alchemy + ?Sized>(&mut self) -> Option<&mut U> {
         let type_table = (*self).type_table();
         let downcast_alchemy = type_table.get::<U>()?;
         unsafe {
@@ -1096,7 +1096,7 @@ pub trait AlchemicalAnyExt: AlchemicalAny {
     }
 
     /// Try to cast this `Box<dyn AlchemicalAny>` to some other trait object `U`.
-    fn dyncast<U: Alchemy + ?Sized>(self: Box<Self>) -> Option<Box<U>> {
+    pub fn dyncast<U: Alchemy + ?Sized>(self: Box<Self>) -> Option<Box<U>> {
         let type_table = (*self).type_table();
         let downcast_alchemy = type_table.get::<U>()?;
         unsafe {
@@ -1108,19 +1108,19 @@ pub trait AlchemicalAnyExt: AlchemicalAny {
     }
 
     /// Try to cast this `&dyn AlchemicalAny` to some type `T`.
-    fn downcast_ref<T: Any>(&self) -> Option<&T> {
+    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
         let tt = (*self).type_table();
         (tt.id == TypeId::of::<T>()).then(|| unsafe { &*(self as *const _ as *const T) })
     }
 
     /// Try to cast this `&mut dyn AlchemicalAny` to some type `T`.
-    fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
+    pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
         let tt = (*self).type_table();
         (tt.id == TypeId::of::<T>()).then(|| unsafe { &mut *(self as *mut _ as *mut T) })
     }
 
     /// Try to cast this `Box<dyn AlchemicalAny>` to some type `T`.
-    fn downcast<T: Any>(self: Box<Self>) -> Option<Box<T>> {
+    pub fn downcast<T: Any>(self: Box<Self>) -> Option<Box<T>> {
         let tt = (*self).type_table();
         (tt.id == TypeId::of::<T>())
             .then(|| unsafe { Box::from_raw(Box::into_raw(self) as *mut T) })
@@ -1128,8 +1128,8 @@ pub trait AlchemicalAnyExt: AlchemicalAny {
 
     /// Try to copy this value into a `Box<dyn AlchemicalAny>`. If it succeeds, a copy is created
     /// and the original type is not moved (because it implements [`Copy`].)
-    fn try_copy(&self) -> Option<Box<dyn AlchemicalAny>> {
-        let at = self.type_table();
+    pub fn try_copy(&self) -> Option<Box<Self>> {
+        let at = (*self).type_table();
         let as_alchemical_copy = at.get::<dyn CopyProxy>()?;
         unsafe {
             let ptr = alloc::alloc::alloc(at.layout);
@@ -1144,14 +1144,14 @@ pub trait AlchemicalAnyExt: AlchemicalAny {
 
     /// Try to clone this value into a `Box<dyn AlchemicalAny>`. If it succeeds, a clone is created
     /// and the original type is not moved (because it implements [`Clone`].)
-    fn try_clone(&self) -> Option<Box<dyn AlchemicalAny>> {
-        let at = self.type_table();
+    pub fn try_clone(&self) -> Option<Box<Self>> {
+        let at = (*self).type_table();
         let as_alchemical_clone = at.get::<dyn CloneProxy>()?;
         unsafe {
             let ptr = alloc::alloc::alloc(at.layout);
-            (*as_alchemical_clone
-                .to_dyn_object_ptr::<dyn CloneProxy>((self as *const Self).cast()))
-            .clone_into_ptr(ptr);
+            let alchemical_clone_ptr = as_alchemical_clone
+                .to_dyn_object_ptr::<dyn CloneProxy>((self as *const Self).cast());
+            (*alchemical_clone_ptr).clone_into_ptr(ptr);
             let recast_ptr = at
                 .alchemical_any
                 .to_dyn_object_mut_ptr::<dyn AlchemicalAny>(ptr as *mut _);
@@ -1160,7 +1160,173 @@ pub trait AlchemicalAnyExt: AlchemicalAny {
     }
 }
 
-impl<T: AlchemicalAny + ?Sized> AlchemicalAnyExt for T {}
+impl dyn AlchemicalAny + Send {
+    /// Try to cast this `&dyn AlchemicalAny` to some other trait object `U`.
+    pub fn dyncast_ref<U: Alchemy + ?Sized>(&self) -> Option<&U> {
+        let type_table = (*self).type_table();
+        let downcast_alchemy = type_table.get::<U>()?;
+        unsafe { Some(&*downcast_alchemy.to_dyn_object_ptr::<U>((self as *const Self).cast())) }
+    }
+
+    /// Try to cast this `&mut dyn AlchemicalAny` to some other trait object `U`.
+    pub fn dyncast_mut<U: Alchemy + ?Sized>(&mut self) -> Option<&mut U> {
+        let type_table = (*self).type_table();
+        let downcast_alchemy = type_table.get::<U>()?;
+        unsafe {
+            Some(&mut *downcast_alchemy.to_dyn_object_mut_ptr::<U>((self as *mut Self).cast()))
+        }
+    }
+
+    /// Try to cast this `Box<dyn AlchemicalAny>` to some other trait object `U`.
+    pub fn dyncast<U: Alchemy + ?Sized>(self: Box<Self>) -> Option<Box<U>> {
+        let type_table = (*self).type_table();
+        let downcast_alchemy = type_table.get::<U>()?;
+        unsafe {
+            let ptr = Box::into_raw(self);
+            Some(Box::from_raw(
+                downcast_alchemy.to_dyn_object_mut_ptr::<U>(ptr as *mut _),
+            ))
+        }
+    }
+
+    /// Try to cast this `&dyn AlchemicalAny` to some type `T`.
+    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
+        let tt = (*self).type_table();
+        (tt.id == TypeId::of::<T>()).then(|| unsafe { &*(self as *const _ as *const T) })
+    }
+
+    /// Try to cast this `&mut dyn AlchemicalAny` to some type `T`.
+    pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
+        let tt = (*self).type_table();
+        (tt.id == TypeId::of::<T>()).then(|| unsafe { &mut *(self as *mut _ as *mut T) })
+    }
+
+    /// Try to cast this `Box<dyn AlchemicalAny>` to some type `T`.
+    pub fn downcast<T: Any>(self: Box<Self>) -> Option<Box<T>> {
+        let tt = (*self).type_table();
+        (tt.id == TypeId::of::<T>())
+            .then(|| unsafe { Box::from_raw(Box::into_raw(self) as *mut T) })
+    }
+
+    /// Try to copy this value into a `Box<dyn AlchemicalAny>`. If it succeeds, a copy is created
+    /// and the original type is not moved (because it implements [`Copy`].)
+    pub fn try_copy(&self) -> Option<Box<Self>> {
+        let at = (*self).type_table();
+        let as_alchemical_copy = at.get::<dyn CopyProxy>()?;
+        unsafe {
+            let ptr = alloc::alloc::alloc(at.layout);
+            (*as_alchemical_copy.to_dyn_object_ptr::<dyn CopyProxy>((self as *const Self).cast()))
+                .copy_into_ptr(ptr);
+            let recast_ptr = at
+                .alchemical_any
+                .to_dyn_object_mut_ptr::<dyn AlchemicalAny>(ptr as *mut _)
+                as *mut Self;
+            Some(Box::from_raw(recast_ptr))
+        }
+    }
+
+    /// Try to clone this value into a `Box<dyn AlchemicalAny>`. If it succeeds, a clone is created
+    /// and the original type is not moved (because it implements [`Clone`].)
+    pub fn try_clone(&self) -> Option<Box<Self>> {
+        let at = (*self).type_table();
+        let as_alchemical_clone = at.get::<dyn CloneProxy>()?;
+        unsafe {
+            let ptr = alloc::alloc::alloc(at.layout);
+            (*as_alchemical_clone
+                .to_dyn_object_ptr::<dyn CloneProxy>((self as *const Self).cast()))
+            .clone_into_ptr(ptr);
+            let recast_ptr = at
+                .alchemical_any
+                .to_dyn_object_mut_ptr::<dyn AlchemicalAny>(ptr as *mut _)
+                as *mut Self;
+            Some(Box::from_raw(recast_ptr))
+        }
+    }
+}
+
+impl dyn AlchemicalAny + Send + Sync {
+    /// Try to cast this `&dyn AlchemicalAny` to some other trait object `U`.
+    pub fn dyncast_ref<U: Alchemy + ?Sized>(&self) -> Option<&U> {
+        let type_table = (*self).type_table();
+        let downcast_alchemy = type_table.get::<U>()?;
+        unsafe { Some(&*downcast_alchemy.to_dyn_object_ptr::<U>((self as *const Self).cast())) }
+    }
+
+    /// Try to cast this `&mut dyn AlchemicalAny` to some other trait object `U`.
+    pub fn dyncast_mut<U: Alchemy + ?Sized>(&mut self) -> Option<&mut U> {
+        let type_table = (*self).type_table();
+        let downcast_alchemy = type_table.get::<U>()?;
+        unsafe {
+            Some(&mut *downcast_alchemy.to_dyn_object_mut_ptr::<U>((self as *mut Self).cast()))
+        }
+    }
+
+    /// Try to cast this `Box<dyn AlchemicalAny>` to some other trait object `U`.
+    pub fn dyncast<U: Alchemy + ?Sized>(self: Box<Self>) -> Option<Box<U>> {
+        let type_table = (*self).type_table();
+        let downcast_alchemy = type_table.get::<U>()?;
+        unsafe {
+            let ptr = Box::into_raw(self);
+            Some(Box::from_raw(
+                downcast_alchemy.to_dyn_object_mut_ptr::<U>(ptr as *mut _),
+            ))
+        }
+    }
+
+    /// Try to cast this `&dyn AlchemicalAny` to some type `T`.
+    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
+        let tt = (*self).type_table();
+        (tt.id == TypeId::of::<T>()).then(|| unsafe { &*(self as *const _ as *const T) })
+    }
+
+    /// Try to cast this `&mut dyn AlchemicalAny` to some type `T`.
+    pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
+        let tt = (*self).type_table();
+        (tt.id == TypeId::of::<T>()).then(|| unsafe { &mut *(self as *mut _ as *mut T) })
+    }
+
+    /// Try to cast this `Box<dyn AlchemicalAny>` to some type `T`.
+    pub fn downcast<T: Any>(self: Box<Self>) -> Option<Box<T>> {
+        let tt = (*self).type_table();
+        (tt.id == TypeId::of::<T>())
+            .then(|| unsafe { Box::from_raw(Box::into_raw(self) as *mut T) })
+    }
+
+    /// Try to copy this value into a `Box<dyn AlchemicalAny>`. If it succeeds, a copy is created
+    /// and the original type is not moved (because it implements [`Copy`].)
+    pub fn try_copy(&self) -> Option<Box<Self>> {
+        let at = (*self).type_table();
+        let as_alchemical_copy = at.get::<dyn CopyProxy>()?;
+        unsafe {
+            let ptr = alloc::alloc::alloc(at.layout);
+            (*as_alchemical_copy.to_dyn_object_ptr::<dyn CopyProxy>((self as *const Self).cast()))
+                .copy_into_ptr(ptr);
+            let recast_ptr = at
+                .alchemical_any
+                .to_dyn_object_mut_ptr::<dyn AlchemicalAny>(ptr as *mut _)
+                as *mut Self;
+            Some(Box::from_raw(recast_ptr))
+        }
+    }
+
+    /// Try to clone this value into a `Box<dyn AlchemicalAny>`. If it succeeds, a clone is created
+    /// and the original type is not moved (because it implements [`Clone`].)
+    pub fn try_clone(&self) -> Option<Box<Self>> {
+        let at = (*self).type_table();
+        let as_alchemical_clone = at.get::<dyn CloneProxy>()?;
+        unsafe {
+            let ptr = alloc::alloc::alloc(at.layout);
+            (*as_alchemical_clone
+                .to_dyn_object_ptr::<dyn CloneProxy>((self as *const Self).cast()))
+            .clone_into_ptr(ptr);
+            let recast_ptr = at
+                .alchemical_any
+                .to_dyn_object_mut_ptr::<dyn AlchemicalAny>(ptr as *mut _)
+                as *mut Self;
+            Some(Box::from_raw(recast_ptr))
+        }
+    }
+}
 
 /// Returns true if the values were moved.
 ///
