@@ -849,7 +849,11 @@ fn events(
                     state.undoer = Default::default();
                     // Clear the buffer.
                     let command = buffer.take();
-                    history.replace(&format!("{}\n> {}", history.as_str(), command));
+                    history.replace(&format!(
+                        "{}\n> {}",
+                        history.as_str().trim_end(),
+                        command.trim_end()
+                    ));
                     submitted = Some(command);
 
                     // Submitting a command is a change even if it doesn't result in a changed
