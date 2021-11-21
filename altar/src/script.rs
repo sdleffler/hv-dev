@@ -316,6 +316,17 @@ pub struct ScriptResourceSet {
 ///   key, and registers the [`Elastic`] while immediately inserting it into the script context's
 ///   environment table. Useful for when you just need to shove something into Lua quickly and don't
 ///   care about getting a really careful API going.
+///
+/// Wow! That's 12 ways to register a type. Oh wait, there's more! Every single one of those ways
+/// has an additional `_with_callback` version. Under the hood, they call out to their
+/// `_with_callback` counterpart with an empty callback (`|_, _, _| Ok(())`.) This callback allows
+/// you to supply resources taken from the script context's environment table into a given resource
+/// when it is loaned to the context. This is useful for, say, if you have a reborrowed `World` and
+/// also a `Camera` resource, and you want to give that `Camera` an `Elastic<StretchedMut<World>>`
+/// so that you can tell it to look at an entity instead of a point; in this "on loan callback", you
+/// can do something like `|this, _lua, env| { this.world = env.get("world")?; Ok(()) }`, and then
+/// you'll be able to borrow the loaned-in world from inside your `Camera`, maybe even in a
+/// `LuaUserData` impl.
 #[derive(Debug)]
 pub struct ScriptContext {
     scope_arena: ScopeArena,
@@ -527,6 +538,7 @@ impl ScriptContext {
         Ok(())
     }
 
+    /// `insert_ref` with an on-loan callback.
     pub fn insert_ref_with_callback<T, F>(&mut self, elastic: Elastic<StretchedRef<T>>, on_loan: F)
     where
         T: LuaUserData + Send + Sync + 'static,
@@ -542,6 +554,7 @@ impl ScriptContext {
         );
     }
 
+    /// `insert_mut` with an on-loan callback.
     pub fn insert_mut_with_callback<T, F>(&mut self, elastic: Elastic<StretchedMut<T>>, on_loan: F)
     where
         T: LuaUserData + Send + Sync + 'static,
@@ -557,6 +570,7 @@ impl ScriptContext {
         );
     }
 
+    /// `insert_reborrowed_ref` with an on-loan callback.
     pub fn insert_reborrowed_ref_with_callback<T, F>(
         &mut self,
         elastic: Elastic<StretchedRef<T>>,
@@ -575,6 +589,7 @@ impl ScriptContext {
         );
     }
 
+    /// `insert_reborrowed_mut` with an on-loan callback.
     pub fn insert_reborrowed_mut_with_callback<T, F>(
         &mut self,
         elastic: Elastic<StretchedMut<T>>,
@@ -593,6 +608,7 @@ impl ScriptContext {
         );
     }
 
+    /// `register_ref` with an on-loan callback.
     pub fn register_ref_with_callback<T, F>(&mut self, on_loan: F) -> Elastic<StretchedRef<T>>
     where
         T: LuaUserData + Send + Sync + 'static,
@@ -603,6 +619,7 @@ impl ScriptContext {
         elastic
     }
 
+    /// `register_mut` with an on-loan callback.
     pub fn register_mut_with_callback<T, F>(&mut self, on_loan: F) -> Elastic<StretchedMut<T>>
     where
         T: LuaUserData + Send + Sync + 'static,
@@ -613,6 +630,7 @@ impl ScriptContext {
         elastic
     }
 
+    /// `register_reborrowed_ref` with an on-loan callback.
     pub fn register_reborrowed_ref_with_callback<T, F>(
         &mut self,
         on_loan: F,
@@ -626,6 +644,7 @@ impl ScriptContext {
         elastic
     }
 
+    /// `register_reborrowed_mut` with an on-loan callback.
     pub fn register_reborrowed_mut_with_callback<T, F>(
         &mut self,
         on_loan: F,
@@ -639,6 +658,7 @@ impl ScriptContext {
         elastic
     }
 
+    /// `set_ref` with an on-loan callback.
     pub fn set_ref_with_callback<T, F>(&mut self, lua: &Lua, name: &str, on_loan: F) -> Result<()>
     where
         T: LuaUserData + Send + Sync + 'static,
@@ -650,6 +670,7 @@ impl ScriptContext {
         Ok(())
     }
 
+    /// `set_mut` with an on-loan callback.
     pub fn set_mut_with_callback<T, F>(&mut self, lua: &Lua, name: &str, on_loan: F) -> Result<()>
     where
         T: LuaUserData + Send + Sync + 'static,
@@ -661,6 +682,7 @@ impl ScriptContext {
         Ok(())
     }
 
+    /// `set_reborrowed_ref` with an on-loan callback.
     pub fn set_reborrowed_ref_with_callback<T, F>(
         &mut self,
         lua: &Lua,
@@ -677,6 +699,7 @@ impl ScriptContext {
         Ok(())
     }
 
+    /// `set_reborrowed_mut` with an on-loan callback.
     pub fn set_reborrowed_mut_with_callback<T, F>(
         &mut self,
         lua: &Lua,
