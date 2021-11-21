@@ -12,17 +12,21 @@ use hv::{
     bump::{Bump, Owned},
     prelude::*,
     resources::{self, Resources},
-    sync::elastic::{Elastic, ScopeArena, ScopeGuard, StretchedMut, StretchedRef},
+    sync::{
+        cell::{ArcRef, ArcRefMut},
+        elastic::{Elastic, ScopeArena, ScopeGuard, StretchedMut, StretchedRef},
+    },
 };
 
 struct ScriptResource {
     inner: Box<dyn AlchemicalAny + Send + Sync>,
     loanable: for<'a> fn(&'a Resources, &'a Bump) -> Result<Owned<'a, dyn ErasedLoan<'a> + 'a>>,
+    name: String,
 }
 
 impl fmt::Debug for ScriptResource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ScriptResource {{ .. }}")
+        write!(f, "ScriptResource {{ name: {} }}", self.name)
     }
 }
 
@@ -42,6 +46,7 @@ impl ScriptResource {
         Self {
             inner: Box::new(elastic),
             loanable: loan_mut::<T>,
+            name: std::any::type_name::<T>().to_owned(),
         }
     }
 
@@ -60,6 +65,53 @@ impl ScriptResource {
         Self {
             inner: Box::new(elastic),
             loanable: loan_ref::<T>,
+            name: std::any::type_name::<T>().to_owned(),
+        }
+    }
+
+    fn with_arc_ref<T: 'static + Send + Sync>(elastic: Elastic<StretchedRef<T>>) -> Self {
+        fn loan_arc_ref<'a, T: 'static>(
+            resources: &'a Resources,
+            alloc: &'a Bump,
+        ) -> Result<Owned<'a, dyn ErasedLoan<'a> + 'a>> {
+            let guard = resources.get::<Elastic<StretchedRef<T>>>()?;
+            let owned = Owned::new_in(
+                guard
+                    .borrow_arc(|t| &**t)
+                    .ok_or_else(|| anyhow!("failed to mutably borrow elastic"))?,
+                alloc,
+            );
+            let raw = Owned::into_raw(owned) as *mut dyn ErasedLoan<'a>;
+            Ok(unsafe { Owned::from_raw(raw) })
+        }
+
+        Self {
+            inner: Box::new(elastic),
+            loanable: loan_arc_ref::<T>,
+            name: std::any::type_name::<T>().to_owned(),
+        }
+    }
+
+    fn with_arc_mut<T: 'static + Send + Sync>(elastic: Elastic<StretchedMut<T>>) -> Self {
+        fn loan_arc_mut<'a, T: 'static>(
+            resources: &'a Resources,
+            alloc: &'a Bump,
+        ) -> Result<Owned<'a, dyn ErasedLoan<'a> + 'a>> {
+            let guard = resources.get::<Elastic<StretchedMut<T>>>()?;
+            let owned = Owned::new_in(
+                guard
+                    .borrow_arc_mut(|t| &mut **t)
+                    .ok_or_else(|| anyhow!("failed to mutably borrow elastic"))?,
+                alloc,
+            );
+            let raw = Owned::into_raw(owned) as *mut dyn ErasedLoan<'a>;
+            Ok(unsafe { Owned::from_raw(raw) })
+        }
+
+        Self {
+            inner: Box::new(elastic),
+            loanable: loan_arc_mut::<T>,
+            name: std::any::type_name::<T>().to_owned(),
         }
     }
 }
@@ -110,6 +162,42 @@ impl<'a, T: 'static + AlchemicalAny> ErasedLoan<'a> for resources::RefMut<'a, T>
     }
 }
 
+impl<'a, U, T: 'static + AlchemicalAny> ErasedLoan<'a> for ArcRef<T, U> {
+    fn erased_loan<'b>(
+        &'b mut self,
+        guard: &mut ScopeGuard<'b>,
+        map: &HashMap<TypeId, ScriptResource>,
+    ) -> Result<()>
+    where
+        'a: 'b,
+    {
+        let elastic = (*map.get(&TypeId::of::<T>()).unwrap().inner)
+            .downcast_ref::<Elastic<StretchedRef<T>>>()
+            .unwrap();
+        guard.loan(elastic, &**self);
+
+        Ok(())
+    }
+}
+
+impl<'a, U, T: 'static + AlchemicalAny> ErasedLoan<'a> for ArcRefMut<T, U> {
+    fn erased_loan<'b>(
+        &'b mut self,
+        guard: &mut ScopeGuard<'b>,
+        map: &HashMap<TypeId, ScriptResource>,
+    ) -> Result<()>
+    where
+        'a: 'b,
+    {
+        let elastic = (*map.get(&TypeId::of::<T>()).unwrap().inner)
+            .downcast_ref::<Elastic<StretchedMut<T>>>()
+            .unwrap();
+        guard.loan(elastic, &mut **self);
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ScriptResourceSetBuilder {
     types: HashSet<TypeId>,
@@ -137,6 +225,40 @@ pub struct ScriptResourceSet {
     types: Box<[TypeId]>,
 }
 
+/// A resource context for executing Lua scripts.
+///
+/// `ScriptContext` provides functionality for automatically handling "loaning" of references from a
+/// [`Resources`] registry into Lua. It does this by keeping track of a number of [`Elastic`]s and
+/// stretching the lifetimes of inserted resources such that they can be temporarily lent as Lua
+/// userdata. There are four main ways you can register a resource w/ a `ScriptContext`:
+///
+/// - Mutably and directly; when the `ScriptContext` needs this value, it will call
+///   [`Resources::get_mut`] on the [`Resources`], and loan the reference from the resulting
+///   [`RefMut`](resources::RefMut) to Lua, while holding on to the [`RefMut`](resources::RefMut)
+///   for the lifetime of the borrow to ensure that the reference remains valid.
+/// - Immutably and directly; just like the mutable approach, but uses [`Resources::get`] and
+///   [`Ref`](resources::Ref) instea dof their mutable counterparts. The immutable access methods
+///   have a fairly limited use case, as they don't allow Lua to use userdata methods which are
+///   marked mutable; an attempt to use them will cause an error.
+/// - Mutably and indirectly/reborrowed. This is what you need when you can't actually have your
+///   [`Resources`] own the value in question; the mutable approach looks for an
+///   [`Elastic<StretchedMut<T>>`] in the [`Resources`] instead, and uses
+///   [`Elastic::borrow_arc_mut`] to extract an [`ArcRefMut`] which takes the place of the
+///   [`RefMut`](resources::RefMut) guard.
+/// - Immutably and indirectly/reborrowed, just like the mutable/indirect case but using [`ArcRef`]
+///   for an immutable-only access scheme.
+///
+/// That's quite a few. In addition to that, there are three ways each that you can actually
+/// register the type:
+///
+/// - The most basic, the `insert_` family, allows you to insert your own [`Elastic`] in the case
+///   that you already have one that you want this `ScriptContext` to loan to.
+/// - The `register_` family creates the [`Elastic`] for you and then returns it so you can put it
+///   wherever it needs to be.
+/// - The `set_` family is the most convenient, takes a reference to the Lua context and a string
+///   key, and registers the [`Elastic`] while immediately inserting it into the script context's
+///   environment table. Useful for when you just need to shove something into Lua quickly and don't
+///   care about getting a really careful API going.
 #[derive(Debug)]
 pub struct ScriptContext {
     scope_arena: ScopeArena,
@@ -206,6 +328,50 @@ impl ScriptContext {
         );
     }
 
+    /// Register a resource type as being an immutably accessible resource, which must be immutably
+    /// re-borrowed from a stretched type.
+    ///
+    /// Panics if this resource is already registered in the context, whether as mutable or
+    /// immutable.
+    ///
+    /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
+    /// depending on the resource set/resources offered) is to-do, but not currently implemented.
+    pub fn insert_reborrowed_ref<T: LuaUserData + Send + Sync + 'static>(
+        &mut self,
+        elastic: Elastic<StretchedRef<T>>,
+    ) {
+        let replaced = self.map.insert(
+            TypeId::of::<T>(),
+            ScriptResource::with_arc_ref::<T>(elastic),
+        );
+        assert!(
+            replaced.is_none(),
+            "already a resource of this type in the map!"
+        );
+    }
+
+    /// Register a resource type as being a mutably accessible resource, which must be mutably
+    /// re-borrowed from a stretched type.
+    ///
+    /// Panics if this resource is already registered in the context, whether as mutable or
+    /// immutable.
+    ///
+    /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
+    /// depending on the resource set/resources offered) is to-do, but not currently implemented.
+    pub fn insert_reborrowed_mut<T: LuaUserData + Send + Sync + 'static>(
+        &mut self,
+        elastic: Elastic<StretchedMut<T>>,
+    ) {
+        let replaced = self.map.insert(
+            TypeId::of::<T>(),
+            ScriptResource::with_arc_mut::<T>(elastic),
+        );
+        assert!(
+            replaced.is_none(),
+            "already a resource of this type in the map!"
+        );
+    }
+
     /// Register a resource type as being an immutably accessible resource, returning the registered
     /// elastic.
     ///
@@ -235,6 +401,38 @@ impl ScriptContext {
     ) -> Elastic<StretchedMut<T>> {
         let elastic = Elastic::new();
         self.insert_mut(elastic.clone());
+        elastic
+    }
+
+    /// Register a resource type as being a re-borrowed immutably accessible resource, returning the
+    /// registered elastic.
+    ///
+    /// Panics if this resource is already registered in the context, whether as mutable or
+    /// immutable.
+    ///
+    /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
+    /// depending on the resource set/resources offered) is to-do, but not currently implemented.
+    pub fn register_reborrowed_ref<T: LuaUserData + Send + Sync + 'static>(
+        &mut self,
+    ) -> Elastic<StretchedRef<T>> {
+        let elastic = Elastic::new();
+        self.insert_reborrowed_ref(elastic.clone());
+        elastic
+    }
+
+    /// Register a resource type as being a re-borrowed mutably accessible resource, returning the
+    /// registered elastic.
+    ///
+    /// Panics if this resource is already registered in the context, whether as mutable or
+    /// immutable.
+    ///
+    /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
+    /// depending on the resource set/resources offered) is to-do, but not currently implemented.
+    pub fn register_reborrowed_mut<T: LuaUserData + Send + Sync + 'static>(
+        &mut self,
+    ) -> Elastic<StretchedMut<T>> {
+        let elastic = Elastic::new();
+        self.insert_reborrowed_mut(elastic.clone());
         elastic
     }
 
@@ -268,6 +466,36 @@ impl ScriptContext {
         Ok(())
     }
 
+    /// Register a resource type as being immutably accessible via a re-borrow and insert it into
+    /// the value at the key `name` in the environment table.
+    ///
+    /// Panics if this context has no environment table.
+    pub fn set_reborrowed_ref<T: LuaUserData + Send + Sync + 'static>(
+        &mut self,
+        lua: &Lua,
+        name: &str,
+    ) -> Result<()> {
+        let elastic = self.register_reborrowed_ref::<T>();
+        let table: LuaTable = lua.registry_value(&self.env)?;
+        table.set(name, elastic)?;
+        Ok(())
+    }
+
+    /// Register a resource type as being mutably accessible via a re-borrow and insert it into the
+    /// value at the key `name` in the environment table.
+    ///
+    /// Panics if this context has no environment table.
+    pub fn set_reborrowed_mut<T: LuaUserData + Send + Sync + 'static>(
+        &mut self,
+        lua: &Lua,
+        name: &str,
+    ) -> Result<()> {
+        let elastic = self.register_reborrowed_mut::<T>();
+        let table: LuaTable = lua.registry_value(&self.env)?;
+        table.set(name, elastic)?;
+        Ok(())
+    }
+
     /// Borrow a set of resources from a [`Resources`] and loan it out to matching resources
     /// registered with this context, and then call the given thunk, passing in the environment
     /// table of this script context (if it exists.)
@@ -291,7 +519,17 @@ impl ScriptContext {
                     continue;
                 }
             };
-            erased_loanables.push((resource.loanable)(resources, &self.bump_arena)?);
+
+            match (resource.loanable)(resources, &self.bump_arena) {
+                Ok(loanable) => erased_loanables.push(loanable),
+                Err(error) => tracing::error!(
+                    name = %resource.name,
+                    ?error,
+                    "failed to borrow resource {}: {:?}",
+                    resource.name,
+                    error,
+                ),
+            }
         }
 
         let out = self.scope_arena.scope(|guard| {
@@ -323,7 +561,16 @@ impl ScriptContext {
     ) -> Result<R> {
         let mut erased_loanables = Vec::with_capacity_in(self.map.len(), &self.bump_arena);
         for resource in self.map.values() {
-            erased_loanables.push((resource.loanable)(resources, &self.bump_arena)?);
+            match (resource.loanable)(resources, &self.bump_arena) {
+                Ok(loanable) => erased_loanables.push(loanable),
+                Err(error) => tracing::error!(
+                    name = %resource.name,
+                    ?error,
+                    "failed to borrow resource {}: {:?}",
+                    resource.name,
+                    error,
+                ),
+            }
         }
 
         let out = self.scope_arena.scope(|guard| {

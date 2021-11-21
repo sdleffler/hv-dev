@@ -269,7 +269,7 @@ impl<T: Stretched> Elastic<T> {
     /// Attempt to mutably borrow the loaned value, via a reference-counted guard. Returns `None` if
     /// nothing is currently loaned to this [`Elastic`].
     #[track_caller]
-    pub fn borrow_arc_mut<'b, U: 'b, F>(&'b mut self, f: F) -> Option<ArcRefMut<U, Option<T>>>
+    pub fn borrow_arc_mut<'b, U: 'b, F>(&'b self, f: F) -> Option<ArcRefMut<U, Option<T>>>
     where
         F: for<'a> FnOnce(&'a mut T::Parameterized<'a>) -> &'a mut U,
     {
