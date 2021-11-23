@@ -1,14 +1,22 @@
+//! Heavy Console - a simple, easy to use, and robust command line built on Egui, hv-gui, hv-lua,
+//! hv-resources, and hv-script.
+//!
+//! The main type is [`Console`], which stores the state of the main text buffers and command
+//! history, and also provides functionality for queuing and running commands w/ a
+//! [`ScriptContext`].
+
 use std::collections::VecDeque;
 use std::fmt::Write;
 
 use anyhow::*;
-use hv_gui::{
-    console::{CodeTheme, ConsoleWidget},
-    egui,
-};
+use hv_gui::egui;
 use hv_lua::prelude::*;
 use hv_resources::Resources;
 use hv_script::ScriptContext;
+
+pub mod widget;
+
+pub use widget::CodeTheme;
 
 #[derive(Debug)]
 pub struct Console {
@@ -104,9 +112,9 @@ impl Console {
         }
 
         let mut buffer_index_out = self.buffer_index;
-        let mut layouter = hv_gui::console::syntax_highlighter(&self.theme, "lua");
+        let mut layouter = crate::widget::syntax_highlighter(&self.theme, "lua");
 
-        let mut c = ConsoleWidget::new(
+        let mut c = crate::widget::ConsoleWidget::new(
             &mut self.output,
             &mut buffer_index_out,
             &mut self.buffers[0],

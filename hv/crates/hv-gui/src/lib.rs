@@ -6,8 +6,6 @@ use hv_input::{
     ScrollAxis, WindowEvent,
 };
 
-pub mod console;
-
 pub struct GuiInputState {
     time: f32,
     event_queue: Vec<GenericWindowEvent>,

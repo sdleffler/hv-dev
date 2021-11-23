@@ -1,3 +1,4 @@
+use hv_gui::egui;
 use egui::epaint::text::cursor::*;
 
 /// A selected text range (could be a range of length zero).

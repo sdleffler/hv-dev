@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use egui::epaint::text::{cursor::*, Galley, LayoutJob};
 use egui::{output::OutputEvent, *};
+use hv_gui::egui;
 
 use super::{state::Section, CCursorRange, ConsoleOutput, ConsoleState, CursorRange};
 

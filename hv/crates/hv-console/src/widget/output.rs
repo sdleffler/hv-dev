@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use hv_gui::egui;
 
 /// The output from a `TextEdit`.
 pub struct ConsoleOutput {

@@ -1,4 +1,5 @@
 use egui::text::LayoutJob;
+use hv_gui::egui;
 
 /// Memoized Code highlighting
 pub fn highlight(ctx: &egui::Context, theme: &CodeTheme, code: &str, language: &str) -> LayoutJob {
