@@ -5,9 +5,9 @@ Ever needed to access an `&'a T` from a closure which has to be `'static`?
 Know that you could "loan" that `&'a T` for just the times that that closre will run?
 
 If so, then the `Elastic` type is for you! Please use responsibly. `no-std` compatible. Requires
-nightly for features `generic_associated_types`. Do not use during a new moon. During a blood
-moon or solar eclipse, refrigerate any machines which contain the source code for this crate and
-keep them under lock and key.
+nightly for features `generic_associated_types` and `allocator_api`. Do not use during a new moon.
+During a blood moon or solar eclipse, refrigerate any machines which contain the source code for
+this crate and keep them under lock and key.
 
 ## Features
 

@@ -1,39 +1,37 @@
-//! Heavy Elastic - almost-safe abstractions for "stretching" lifetimes (and dealing with what
+//! # Heavy Elastic - almost-safe abstractions for "stretching" lifetimes (and dealing with what
 //! happens when they have to snap back.)
 //!
-//! This crate provides four main abstractions:
+//! This crate provides six main abstractions:
 //! - [`Stretchable<'a>`], a trait indicating that some type with a lifetime `'a` can have that
 //!   lifetime `'a` *removed* (and virtually set to `'static`.)
-//! - [`Stretched`], a marker trait denoting that a type is a stretched version of a
-//!   [`Stretchable<'a>`] type. It is unsafe to implement [`Stretched`]. Read the docs and do so at
-//!   your own risk, or better yet, avoid doing so and use [`StretchedRef`] and [`StretchedMut`]
-//!   instead.
-//! - [`Elastic<T>`], a container for a stretched value (which may be empty.) It acts as an [`Arc`]
-//!   and an [`AtomicRefCell`], by way of [`ArcCell`](hv_cell::ArcCell), and allows "loaning" the
-//!   [`Stretchable`] type corresponding to its `T: Stretched`.
-//! - [`ElasticGuard<'a, T>`], a guard which ensures that some loan to an [`Elastic<T::Stretched>`]
-//!   doesn't outlive its original lifetime. When dropped, it forcibly takes the value back from the
-//!   [`Elastic`] it was loaned from, and panics if doing so is impossible. You can also take the
-//!   value back manually.
+//! - [`Stretched`], an unsafe trait denoting that a type is a stretched version of a
+//!   [`Stretchable<'a>`] type.
+//! - [`Elastic<T>`], a `'static` "slot" which can be temporarily loaned a non-`'static` value.
+//! - [`ScopeGuard`], a collection allocated in a [`ScopeArena`] which gathers [`ElasticGuard`]s and
+//!   ensures that they are not mishandled.
+//! - [`ScopeArena`], an arena allocator specialized for safely allocating [`ScopeGuard`]s.
+//! - [`ElasticGuard<'a, T>`], a guard which takes on the lifetime of loans to an [`Elastic`] and
+//!   handles expiring the loans.
 //!
 //! Requires nightly for `#![feature(generic_associated_types, allocator_api)]`.
 //!
 //! # Why would I want this?
 //!
-//! [`Elastic`] excels at "re-loaning" objects across "`'static` boundaries". For example, the Rust
-//! standard library's [`std::thread::spawn`] function requires that the [`FnOnce`] closure you use
-//! to start a new thread is `Send + 'static`. I'm calling this a "`'static` boundary" because it
-//! effectively partitions your code into two different sets of lifetimes - the lifetimes on the
-//! parent thread, and the lifetimes on the child thread, and you're forced to separate these
-//! because of a `'static` bound on the closure. So what happens if you need to send over a
-//! reference to something which isn't `'static`? Without unsafe abstractions or refactoring to
-//! remove the lifetime (which in some cases won't be possible because the type isn't from your
-//! crate in the first place) you're, generally speaking, screwed. [`Elastic`] lets you get around
-//! this problem by providing a "slot" which can have a value safely and remotely loaned to it.
+//! `Elastic` excels at "re-loaning" objects across "`'static` boundaries" and "`Send` boundaries".
+//! For example, the Rust standard library's [`std::thread::spawn`] function requires that the
+//! `FnOnce` closure you use to start a new thread is `Send + 'static`. I'm calling this a
+//! "`'static` boundary" because it effectively partitions your code into two different sets of
+//! lifetimes - the lifetimes on the parent thread, and the lifetimes on the child thread, and
+//! you're forced to separate these because of a `'static` bound on the closure. So what happens if
+//! you need to send over a reference to something which isn't `'static`? Without unsafe
+//! abstractions or refactoring to remove the lifetime (which in some cases won't be possible
+//! because the type isn't from your crate in the first place) you're, generally speaking, screwed.
+//! `Elastic` lets you get around this problem by providing a "slot" which can have a value safely
+//! and remotely loaned to it.
 //!
-//! ## Using [`Elastic`] for crossing `Send + 'static` boundaries
+//! ## Using `Elastic` for crossing `Send + 'static` boundaries
 //!
-//! Let's first look at the problem without [`Elastic`]:
+//! Let's first look at the problem without `Elastic`:
 //!
 //! ```compile_fail
 //! # use core::cell::RefCell;
@@ -103,16 +101,16 @@
 //! scope_arena.reset();
 //! ```
 //!
-//! ## Using [`Elastic`] for enabling dynamic typing with non-`'static` values
+//! ## Using `Elastic` for enabling dynamic typing with non-`'static` values
 //!
-//! Rust's [`core::any::Any`] trait is an invaluable tool for writing code which doesn't always have
-//! static knowledge of the types involved. However, when it comes to lifetimes, the question of how
-//! to handle dynamic typing is complex and unresolved. Should a `Foo<'a>` have a different type ID
-//! from a `Foo<'static>`? As the thread discussing this is the greatest thread in the history of
-//! forums, locked by a moderator after 12,239 pages of heated debate, (it was not and I am not
-//! aware of any such thread; this is a joke) [`Any`](core::any::Any) has a `'static` bound on it.
-//! Which is very inconvenient if what you want to do is completely *ignore* any lifetimes in your
-//! dynamically typed code by treating them as if they're all equal (and/or `'static`.)
+//! Rust's [`Any`](core::any::Any) trait is an invaluable tool for writing code which doesn't always
+//! have static knowledge of the types involved. However, when it comes to lifetimes, the question
+//! of how to handle dynamic typing is complex and unresolved. Should a `Foo<'a>` have a different
+//! type ID from a `Foo<'static>`? As the thread discussing this is the greatest thread in the
+//! history of forums, locked by a moderator after 12,239 pages of heated debate, (it was not and I
+//! am not aware of any such thread; this is a joke) [`Any`](core::any::Any) has a `'static` bound
+//! on it. Which is very inconvenient if what you want to do is completely *ignore* any lifetimes in
+//! your dynamically typed code by treating them as if they're all equal (and/or `'static`.)
 //!
 //! Elastic can help here. If the type you want to stick into an `Any` is an `&T` or `&mut T`, it's
 //! very straightforward as [`ElasticRef<T>`] and [`ElasticMut<T>`] are both `'static`. If the type
@@ -120,19 +118,19 @@
 //! lifetime manipulation on the type in question, and then manually construct a type which
 //! represents (as plain old data) a lifetime-erased version of that type. Then, manually implement
 //! [`Stretched`] and [`Stretchable`] on it. This is ***highly*** unsafe! Please take special care
-//! to respect the requirements on implementations of [`Stretchable`]. Size and alignment of the
+//! to respect the requirements on implementations of `Stretchable`. Size and alignment of the
 //! stretched type must match. This is pretty much the only requirement though. The
 //! [`impl_stretched_methods`] macro exists to help you safely implement the methods required by
-//! [`Stretched`] once you ensure the lifetimes are correct. Just note that it does this by swinging
+//! `Stretched` once you ensure the lifetimes are correct. Just note that it does this by swinging
 //! a giant hammer named [`core::mem::transmute`], and it does this *by design*, and that **if you
 //! screw up on the lifetime safety requirements you are headed on a one way trip to
 //! Undefinedbehaviortown.**
 //!
-//! # Yes, there are twelve different ways to borrow from an [`Elastic`], and every single one is useful
+//! ## Yes, there are twelve different ways to borrow from an `Elastic`, and every single one is useful
 //!
 //! How may I borrow from thee? Well, let me count the ways:
 //!
-//! ## Dereferenced borrows (the kind you want most of the time)
+//! ### Dereferenced borrows (the kind you want most of the time)
 //!
 //! Eight of the borrow methods are "dereferenced" - they expect you to be stretching references or
 //! smart pointers/guards with lifetimes in them. If you're using [`ElasticRef`]/[`ElasticMut`] or
@@ -155,7 +153,7 @@
 //!   `borrow`/`borrow_mut`/`borrow_arc`/`borrow_arc_mut` methods which don't panic on failure, and
 //!   return `Result` instead.
 //!
-//! ## Parameterized borrows (you're in the deep end, now)
+//! ### Parameterized borrows (you're in the deep end, now)
 //!
 //! The last four methods are what the other eight are all implemented on. These return `Result`
 //! instead of panicking, and provide direct access to whatever [`T::Parameterized<'a>`] is. In the
@@ -200,6 +198,8 @@
 //! [`AtomicRefCell`]: hv_cell::AtomicRefCell
 //! [`AtomicRef<'a, T>`]: hv_cell::AtomicRef
 //! [`ElasticGuard<'a, T>`]: crate::ElasticGuard
+//! [`RefCell::borrow`]: core::cell::RefCell::borrow
+//! [`RefCell::borrow_mut`]: core::cell::RefCell::borrow_mut
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
@@ -343,9 +343,9 @@ pub unsafe trait Stretched: 'static + Sized {
     /// # Safety
     ///
     /// This is highly unsafe, and care must be taken to ensure that the lengthened data is taken
-    /// care of and not discarded before the actual lifetime of the data. Most of the time this
-    /// function is simply implemented as a wrapper around [`core::mem::transmute`]; this should give
-    /// you a hint as to just how wildly unsafe this can be if mishandled.
+    /// care of and not discarded before the actual lifetime of the data. This function should be
+    /// implemented as a wrapper around [`core::mem::transmute`]; this should give you a hint as to
+    /// just how wildly unsafe this can be if mishandled.
     unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self;
 
     /// Shorten the lifetime of a `'static` self to some arbitrary [`Stretched::Parameterized`].
@@ -379,7 +379,11 @@ pub unsafe trait Stretched: 'static + Sized {
     unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a>;
 }
 
-/// A guard representing a loan of some stretchable value to some [`Elastic`].
+/// A guard representing a loan of some stretchable value to some [`Elastic`]. On drop, it expires
+/// the loan, borrowing the elastic's inner slot mutably (panicking if not possible) and
+///
+/// Leaking a value of this type can cause undefined behavior. You normally do not want to
+/// manipulate these directly. Prefer [`ScopeArena`] and [`ScopeGuard`] whenever possible.
 pub struct ElasticGuard<'a, T: Stretchable<'a>> {
     slot: ArcCell<Option<T::Stretched>>,
     _phantom: PhantomData<fn(&'a ())>,
@@ -392,7 +396,8 @@ impl<'a, T: Stretchable<'a>> fmt::Debug for ElasticGuard<'a, T> {
 }
 
 impl<'a, T: Stretchable<'a>> ElasticGuard<'a, T> {
-    /// Revoke the loan and retrieve the loaned value.
+    /// Revoke the loan and retrieve the loaned value. Panicks if the value is currently borrowed
+    /// mutably.
     pub fn take(self) -> T {
         let stretched = self
             .slot
@@ -450,7 +455,9 @@ pub enum BorrowMutError {
 /// safely from contexts which require `'static` (such as dynamic typing with `Any` or the
 /// `hv-alchemy` crate.) The lifetime is preserved by a scope guard, [`ElasticGuard`], which is
 /// provided when a value is loaned and which revokes the loan when it is dropped or has the loaned
-/// value forcibly taken back by [`ElasticGuard::take`].
+/// value forcibly taken back by [`ElasticGuard::take`]. In most cases, you won't actually see these
+/// [`ElasticGuard`]s as they'll be created and stashed away by a [`ScopeGuard`], which you should
+/// be using to perform all your loans.
 ///
 /// [`Elastic<T>`] is thread-safe. However, internally, it uses an
 /// [`AtomicRefCell`](hv_cell::AtomicRefCell), so if you violate borrowing invariants, you will have
@@ -459,11 +466,25 @@ pub enum BorrowMutError {
 ///
 /// # Soundness
 ///
-/// As it comes to soundness, this crate currently will have issues with what might happen if a
-/// thread tries to take back an elastic value from another thread which is currently borrowing it;
-/// the owning thread will panic, and potentially end up dropping the borrowed value, while it is
-/// being accessed by another thread. We may need to use an [`RwLock`] and block instead/use
-/// something which supports poisoning... alternatively, report the error and directly abort.
+/// As long as you fulfill its requirements with respect to its guards, `Elastic` is sound in all
+/// normal modes of operation. However, in the case of a panic across threads, bad things can
+/// happen:
+///
+/// - If an elastic exists on one thread and is being loaned to with a guard on another thread, and
+///   the thread holding the guard panicks, it is unclear what will/should happen to the other
+///   thread. Most likely, the thread holding the guard will attempt to drop the guard, which will
+///   then cause the guard's `Drop` impl to panic, which will then cause an abort (as panicking
+///   during a panick will cause an abort.) However, if the panic *starts* in the guard's `Drop`
+///   impl, and the guard is handling a reference which has been loaned to it, it is possible that
+///   the original owner of the data being borrowed there could be dropped, *while* the other thread
+///   is holding an open borrow on a reference to that data. Since this lib is `no_std`, we cannot
+///   `std::process::abort()`. We may be able to consider this soundness hole plugged by marking
+///   this type `!UnwindSafe` or requiring that stretched types be `UnwindSafe`; this is an open
+///   question.
+///
+/// So in short, unless you're worried about recovering from panicks across threads where the thread
+/// panicking is the one that originally owned the data (and most likely the parent thread),
+/// `Elastic` is thought to be completely sound.
 pub struct Elastic<T: Stretched> {
     slot: ArcCell<Option<T>>,
 }
@@ -947,9 +968,9 @@ impl<T: ?Sized> MakeItDyn for T {}
 /// A guard which allows "stashing" [`ElasticGuard`]s for safe loaning.
 ///
 /// Bare [`Elastic::loan`] is unsafe, because the returned [`ElasticGuard`] *must* be dropped. A
-/// [`ScopeGuard`] provided by [`ScopeArena::scope`] or [`ScopeArena::scope_mut`] allows for
-/// collecting [`ElasticGuard`]s through its *safe* [`ScopeGuard::loan`] method, because the
-/// [`ScopeArena`] ensures that all loans are ended at the end of the scope.
+/// [`ScopeGuard`] provided by [`ScopeArena::scope`] allows for collecting [`ElasticGuard`]s through
+/// its *safe* [`ScopeGuard::loan`] method, because the [`ScopeArena`] ensures that all loans are
+/// ended at the end of the scope.
 ///
 /// As an aside, [`ScopeGuard`] is an excellent example of a type which *cannot* be safely
 /// stretched: the lifetime parameter of the [`ScopeGuard`] corresponds to the accepted lifetime on
@@ -982,11 +1003,9 @@ impl<'a> ScopeGuard<'a> {
 }
 
 /// An [`Elastic`] which is specialized for the task of loaning `&'a T`s. This is a type synonym for
-/// `Elastic<StretchedRef<T>>`, and provides some more convenient methods adapted to dealing with
-/// elastics of immutable references.
+/// `Elastic<StretchedRef<T>>`.
 pub type ElasticRef<T> = Elastic<StretchedRef<T>>;
 
 /// An [`Elastic`] which is specialized for the task of loaning `&'a mut T`s. This is a type synonym
-/// for `Elastic<StretchedMut<T>>`, and provides some more convenient methods adapted to dealing
-/// with elastics of mutable references.
+/// for `Elastic<StretchedMut<T>>`.
 pub type ElasticMut<T> = Elastic<StretchedMut<T>>;
