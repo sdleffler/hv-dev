@@ -32,7 +32,7 @@ sync = { version = "0.1.0", path = "crates/hv-sync", package = "hv-sync" }
 thiserror = "1.0.30"
 input = { version = "0.1.0", path = "crates/hv-input", package = "hv-input" }
 timer = { version = "0.1.0", path = "crates/hv-timer", package = "hv-timer" }
-stampede = { version = "0.1.0", path = "crates/hv-stampede", package = "hv-stampede" }
+stampede = { version = "0.2.0", path = "crates/hv-stampede", package = "hv-stampede" }
 resources = { version = "1.1.0", path = "crates/hv-resources", package = "hv-resources" }
 script = { version = "0.1.0", path = "crates/hv-script", package = "hv-script" }
 yaks = { version = "0.1.0", path = "crates/hv-yaks", package = "hv-yaks" }

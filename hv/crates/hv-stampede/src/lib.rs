@@ -1,16 +1,13 @@
-#![feature(unsize, coerce_unsized, maybe_uninit_slice, maybe_uninit_extra)]
+#![feature(maybe_uninit_slice, maybe_uninit_extra)]
 #![no_std]
 
 use core::{
-    cell::UnsafeCell,
-    marker::Unsize,
     mem::{ManuallyDrop, MaybeUninit},
-    ops::{CoerceUnsized, Deref, DerefMut},
+    ops::{Deref, DerefMut},
     pin::Pin,
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
-use alloc::{boxed::Box, fmt, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 use spin::Mutex;
 
 extern crate alloc;
@@ -18,66 +15,6 @@ extern crate alloc;
 pub use bumpalo::{
     boxed, collections, format, vec, AllocOrInitError, Bump, ChunkIter, ChunkRawIter,
 };
-
-#[derive(Debug, Default)]
-struct BarcInner<T: ?Sized> {
-    count: AtomicUsize,
-    value: UnsafeCell<T>,
-}
-
-impl<T> BarcInner<T> {
-    fn new(value: T) -> Self {
-        Self {
-            count: AtomicUsize::new(0),
-            value: UnsafeCell::new(value),
-        }
-    }
-}
-
-pub struct Barc<'a, T: ?Sized> {
-    inner: &'a BarcInner<T>,
-}
-
-impl<'a, T: fmt::Debug> fmt::Debug for Barc<'a, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<'a, T: ?Sized> Clone for Barc<'a, T> {
-    fn clone(&self) -> Self {
-        self.inner.count.fetch_add(1, Ordering::Relaxed);
-        Self { inner: self.inner }
-    }
-}
-
-impl<'a, T> Barc<'a, T> {
-    pub fn new_in(value: T, bump: &'a Bump) -> Self {
-        Self {
-            inner: bump.alloc(BarcInner::new(value)),
-        }
-    }
-}
-
-impl<'a, T: ?Sized> Deref for Barc<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*(self.inner.value.get() as *const T) }
-    }
-}
-
-impl<'a, T: ?Sized> Drop for Barc<'a, T> {
-    fn drop(&mut self) {
-        if self.inner.count.fetch_sub(1, Ordering::Relaxed) == 0 {
-            unsafe {
-                core::ptr::drop_in_place(self.inner.value.get());
-            }
-        }
-    }
-}
-
-impl<'a, T: Unsize<U>, U: ?Sized> CoerceUnsized<Barc<'a, U>> for Barc<'a, T> {}
 
 pub struct BumpPool {
     // The pool of `Bump`s which can be immediately used.
@@ -127,10 +64,6 @@ impl<'s> PooledBump<'s> {
 
     pub fn alloc_boxed<T>(&self, val: T) -> boxed::Box<'s, T> {
         boxed::Box::new_in(val, unsafe { self.as_bump_unbound() })
-    }
-
-    pub fn alloc_arc<T>(&self, val: T) -> Barc<'s, T> {
-        Barc::new_in(val, unsafe { self.as_bump_unbound() })
     }
 
     pub fn chunk<T>(&self, size: usize) -> Chunk<'s, T> {

@@ -12,7 +12,7 @@ hv-cell = { version = "0.1.0", path = "../hv-cell" }
 hv-elastic = { version = "0.4.0", path = "../hv-elastic" }
 hv-lua = { version = "0.6.6", path = "../../../hv-lua" }
 hv-resources = { version = "1.1.0", path = "../hv-resources" }
-hv-stampede = { version = "0.1.0", path = "../hv-stampede" }
+hv-stampede = { version = "0.2.0", path = "../hv-stampede" }
 tracing = "0.1.29"
 
 [features]
