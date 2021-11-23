@@ -1,3 +1,14 @@
+//! # Heavy Stampede - a friendly herd of `bumpalo`s, with extra features
+//!
+//! This crate builds on and reexports most things from the [`bumpalo`] crate. In implementation and
+//! usage, it is very similar to the `bumpalo-herd` crate, but supports some operations that `Herd`
+//! does not:
+//!
+//! - [`BumpPool`] supports temporarily detaching a [`Bump`] from the pool through
+//!   [`PooledBump::detach`], locking it to the thread it was detached in until it is dropped and
+//!   returned to the pool.
+//! - [`PooledBump::as_bump_unbound`], unsafe access to the managed [`Bump`] inside.
+
 #![feature(maybe_uninit_slice, maybe_uninit_extra)]
 #![no_std]
 
@@ -16,6 +27,10 @@ pub use bumpalo::{
     boxed, collections, format, vec, AllocOrInitError, Bump, ChunkIter, ChunkRawIter,
 };
 
+/// A thread-safe pool of [`Bump`]s (provided as [`PooledBump`]s). Internally, this is two pools;
+/// the "ready" pool of [`Bump`]s which do not yet have any objects tied to their lifetimes, and the
+/// "shunned" pool of [`Bump`]s which were detached using [`PooledBump::detach`] and must not be
+/// allocated from or destroyed until the entire pool is [`.reset()`](BumpPool::reset).
 pub struct BumpPool {
     // The pool of `Bump`s which can be immediately used.
     ready: Mutex<Vec<Pin<Box<Bump>>>>,
@@ -25,6 +40,7 @@ pub struct BumpPool {
 }
 
 impl BumpPool {
+    /// Create an empty [`BumpPool`].
     pub const fn new() -> Self {
         Self {
             ready: Mutex::new(Vec::new()),
@@ -32,6 +48,8 @@ impl BumpPool {
         }
     }
 
+    /// Reset the [`BumpPool`], returning any "shunned" allocators to the "ready" pool and resetting
+    /// all pooled allocators.
     pub fn reset(&mut self) {
         for pool in self.shunned.get_mut().drain(..) {
             self.ready.get_mut().push(pool);
@@ -39,6 +57,7 @@ impl BumpPool {
         self.ready.get_mut().iter_mut().for_each(|b| b.reset());
     }
 
+    /// Get a [`Bump`] from the pool, or allocate a new [`Bump`] if the pool is empty.
     pub fn get(&self) -> PooledBump {
         let next = self
             .ready
@@ -52,6 +71,7 @@ impl BumpPool {
     }
 }
 
+/// A [`Bump`] which was allocated from a [`BumpPool`].
 pub struct PooledBump<'s> {
     stampede: &'s BumpPool,
     bump: ManuallyDrop<Pin<Box<Bump>>>,
@@ -97,14 +117,14 @@ impl<'s> PooledBump<'s> {
         self.bump.as_ref().get_ref()
     }
 
-    /// Consumes the `PooledBump` and temporarily "shuns" the
-    /// [`Bump`], placing it into a special pool inside the [`BumpPool`] which contains pools that
-    /// are now detached and floating in a thread without being `Sync` but which can be returned to
-    /// the "ready" pool once the entire [`BumpPool`] is reset. Unlike [`as_bump_unbound`], the
-    /// returned `&'s Bump` is completely safe to use, including as an allocator - because the type
-    /// `&Bump` is non-`Send`, it's now permanently locked to the thread it was detached in, and
-    /// cannot be accessed from another thread - until its borrow ends, the [`BumpPool`] is reset,
-    /// and it returns to the "ready" pool having been reset itself.
+    /// Consumes the `PooledBump` and temporarily "shuns" the [`Bump`], placing it into a special
+    /// pool inside the [`BumpPool`] which contains pools that are now detached and floating in a
+    /// thread without being `Sync` but which can be returned to the "ready" pool once the entire
+    /// [`BumpPool`] is reset. Unlike [`PooledBump::as_bump_unbound`], the returned `&'s Bump` is
+    /// completely safe to use, including as an allocator - because the type `&Bump` is non-`Send`,
+    /// it's now permanently locked to the thread it was detached in, and cannot be accessed from
+    /// another thread. That is, until its borrow ends, the [`BumpPool`] is reset, and it returns to
+    /// the "ready" pool having been reset itself.
     pub fn detach(mut self) -> &'s Bump {
         let bump = unsafe { self.as_bump_unbound() };
         let mut shunned = self.stampede.shunned.lock();
