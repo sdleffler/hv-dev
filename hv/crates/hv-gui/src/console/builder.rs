@@ -879,7 +879,6 @@ fn events(
                 pressed: true,
                 modifiers,
             } if modifiers.alt && *history_index > 1 => {
-                println!("forwards in time!");
                 *history_index -= 1;
                 None
             }
@@ -889,7 +888,6 @@ fn events(
                 pressed: true,
                 modifiers,
             } if modifiers.alt => {
-                println!("backwards in time!");
                 *history_index += 1;
                 None
             }
