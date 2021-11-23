@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use hv_gui::egui;
 use egui::mutex::Mutex;
 use egui::*;
-use hv_gui::egui;
 
 use super::{CCursorRange, CursorRange};
 
