@@ -878,7 +878,8 @@ fn events(
                 key: Key::ArrowDown,
                 pressed: true,
                 modifiers,
-            } if modifiers.command_only() && *history_index > 0 => {
+            } if modifiers.alt && *history_index > 1 => {
+                println!("forwards in time!");
                 *history_index -= 1;
                 None
             }
@@ -887,7 +888,8 @@ fn events(
                 key: Key::ArrowUp,
                 pressed: true,
                 modifiers,
-            } if modifiers.command_only() => {
+            } if modifiers.alt => {
+                println!("backwards in time!");
                 *history_index += 1;
                 None
             }

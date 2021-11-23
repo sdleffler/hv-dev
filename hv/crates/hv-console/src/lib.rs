@@ -25,6 +25,9 @@ pub struct Console {
     buffers: VecDeque<String>,
     front_dirty: bool,
 
+    // how deep are past commands?
+    history_depth: usize,
+
     // Commands which have been submitted and not yet run.
     submitted: Vec<String>,
 }
@@ -44,6 +47,7 @@ impl Console {
             buffer_index: 0,
             buffers: VecDeque::new(),
             front_dirty: false,
+            history_depth: 0,
             submitted: Vec::new(),
         }
     }
@@ -62,6 +66,7 @@ impl Console {
             buffer_index: 0,
             buffers: VecDeque::new(),
             front_dirty: false,
+            history_depth: 0,
             submitted: Vec::new(),
         }
     }
@@ -125,24 +130,23 @@ impl Console {
         if buffer_index_out != self.buffer_index && buffer_index_out < self.buffers.len() {
             // the user went back or forward in the buffer queue, and the new index is valid
             if !self.front_dirty {
-                if buffer_index_out == 1 {
-                    // if the top buffer isn't dirty, and we're trying to go straight to the front
-                    // (index 1), we can just pop the front buffer.
-                    self.buffers.pop_front();
-                } else {
-                    // if the top buffer isn't dirty and we're *not* trying to go to index 1, we
-                    // need to copy whatever index we're trying to go to, to index 0.
-                    //
-                    // sadly i can't think of a more efficient way to do this right now.
-                    let copy = self.buffers[buffer_index_out].clone();
-                    self.buffers[0].clone_from(&copy);
-                }
+                // if the top buffer isn't dirty, we need to copy whatever index we're trying to
+                // go to, to index 0.
+                //
+                // sadly i can't think of a more efficient way to do this right now.
+                let copy = self.buffers[buffer_index_out].clone();
+                self.buffers[0].clone_from(&copy);
+                self.buffer_index = buffer_index_out;
             } else {
                 // clone that buffer, and push it to the front of the buffer queue (index 0)
                 let copy = self.buffers[buffer_index_out].clone();
                 self.buffers.push_front(copy);
-                self.buffer_index = 0;
                 self.front_dirty = false;
+
+                // history is now one deeper than before...
+                self.history_depth += 1;
+                // and so is the buffer index.
+                self.buffer_index = buffer_index_out + 1;
             }
         }
 
@@ -150,8 +154,17 @@ impl Console {
             // the user submitted a command. as the user is always editing the front of the queue,d
             // we don't have to worry about correcting history. just push a blank buffer onto the
             // front, and push the submitted command into the submitted queue.
-            self.buffers.push_front(String::new());
+            self.buffers.drain(1..self.history_depth + 1);
+
+            if Some(&command) == self.buffers.get(1) {
+                self.buffers[0].clear();
+            } else if !command.is_empty() {
+                self.buffers.push_front(String::new());
+            }
+
+            self.buffer_index = 0;
             self.front_dirty = false;
+            self.history_depth = 0;
             self.submitted.push(command);
         }
     }
