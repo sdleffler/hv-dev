@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.48"
 hv-cell = { version = "0.1.0", path = "../hv-cell" }
-hv-elastic = { version = "0.3.1", path = "../hv-elastic" }
+hv-elastic = { version = "0.4.0", path = "../hv-elastic" }
 hv-gui = { version = "0.1.0", path = "../hv-gui" }
 hv-lua = { path = "../../../hv-lua" }
 hv-resources = { version = "1.1.0", path = "../hv-resources" }
