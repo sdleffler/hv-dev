@@ -44,8 +44,9 @@ use super::{state::Section, CCursorRange, ConsoleOutput, ConsoleState, CursorRan
 /// ```
 ///
 #[must_use = "You should put this widget in an ui with `ui.add(widget);`"]
-pub struct Console<'t> {
+pub struct ConsoleWidget<'t> {
     history: &'t mut dyn TextBuffer,
+    history_index: &'t mut usize,
     buffer: &'t mut dyn TextBuffer,
     hint_text: WidgetText,
     id: Option<Id>,
@@ -62,11 +63,11 @@ pub struct Console<'t> {
     cursor_at_end: bool,
 }
 
-impl<'t> WidgetWithState for Console<'t> {
+impl<'t> WidgetWithState for ConsoleWidget<'t> {
     type State = ConsoleState;
 }
 
-impl<'t> Console<'t> {
+impl<'t> ConsoleWidget<'t> {
     pub fn load_state(ctx: &Context, id: Id) -> Option<ConsoleState> {
         ConsoleState::load(ctx, id)
     }
@@ -76,11 +77,16 @@ impl<'t> Console<'t> {
     }
 }
 
-impl<'t> Console<'t> {
+impl<'t> ConsoleWidget<'t> {
     /// A REPL/console which accepts
-    pub fn new(history: &'t mut dyn TextBuffer, buffer: &'t mut dyn TextBuffer) -> Self {
+    pub fn new(
+        history: &'t mut dyn TextBuffer,
+        history_index: &'t mut usize,
+        buffer: &'t mut dyn TextBuffer,
+    ) -> Self {
         Self {
             history,
+            history_index,
             buffer,
             hint_text: Default::default(),
             id: None,
@@ -216,39 +222,15 @@ impl<'t> Console<'t> {
 
 // ----------------------------------------------------------------------------
 
-impl<'t> Widget for Console<'t> {
+impl<'t> Widget for ConsoleWidget<'t> {
     fn ui(self, ui: &mut Ui) -> Response {
         self.show(ui).response
     }
 }
 
-impl<'t> Console<'t> {
-    /// Show the [`Console`] across the whole screen, absolutely fucking bonelessly expanding it
-    /// until it covers as much as possible. You probably want to set `frame` to `false` with this.
-    pub fn show_boneless(self, ctx: &CtxRef) -> ConsoleOutput {
-        let available_rect = ctx.available_rect();
-        let layer_id = LayerId::background();
-        let id = Id::new("boneless_console");
-
-        let clip_rect = ctx.input().screen_rect();
-        let mut panel_ui = Ui::new(ctx.clone(), layer_id, id, available_rect, clip_rect);
-
-        let panel_rect = panel_ui.available_rect_before_wrap();
-        let mut panel_ui = panel_ui.child_ui(panel_rect, Layout::bottom_up(Align::Min));
-
-        // ctx.debug_painter()
-        //     .debug_rect(panel_rect, Color32::RED, "panel_rect");
-
-        panel_ui.expand_to_include_rect(panel_ui.max_rect()); // Expand frame to include it all
-        self.show(&mut panel_ui)
-
-        // Only inform ctx about what we actually used, so we can shrink the native window to fit.
-        // ctx.frame_state()
-        //     .allocate_central_panel(inner_response.response.rect);
-    }
-
+impl<'t> ConsoleWidget<'t> {
     /// Show the [`Console`], returning a rich [`ConsoleOutput`].
-    pub fn show(self, ui: &mut Ui) -> ConsoleOutput {
+    pub fn show(self, ui: &mut Ui) -> InnerResponse<ConsoleOutput> {
         let is_mutable = self.buffer.is_mutable();
         let frame = self.frame;
         let interactive = self.interactive;
@@ -256,16 +238,16 @@ impl<'t> Console<'t> {
 
         let margin = Vec2::new(4.0, 2.0);
         let max_rect = ui.available_rect_before_wrap().shrink2(margin);
-        let mut content_ui = ui.child_ui(max_rect, *ui.layout());
+        let mut content_ui = ui.child_ui(max_rect, Layout::bottom_up(Align::Min));
         let mut output = self.show_content(&mut content_ui);
         let id = output.response.id;
-        let buffer_id = output.buffer_response.id;
-        let frame_rect = output.response.rect.expand2(margin);
+        let buffer_id = output.inner.buffer_response.id;
+        let frame_rect = output.response.rect; //.expand2(margin);
         ui.allocate_space(frame_rect.size());
         if interactive {
             output.response |= ui.interact(frame_rect, id, Sense::click());
         }
-        if output.buffer_response.clicked() && !output.buffer_response.lost_focus() {
+        if output.inner.buffer_response.clicked() && !output.inner.buffer_response.lost_focus() {
             ui.memory().request_focus(buffer_id);
         }
 
@@ -273,7 +255,7 @@ impl<'t> Console<'t> {
             let visuals = ui.style().interact(&output.response);
             let frame_rect = frame_rect.expand(visuals.expansion);
             let shape = if is_mutable {
-                if output.buffer_response.has_focus() {
+                if output.response.has_focus() {
                     epaint::RectShape {
                         rect: frame_rect,
                         corner_radius: visuals.corner_radius,
@@ -307,9 +289,10 @@ impl<'t> Console<'t> {
         output
     }
 
-    fn show_content(self, ui: &mut Ui) -> ConsoleOutput {
-        let Console {
+    fn show_content(self, ui: &mut Ui) -> InnerResponse<ConsoleOutput> {
+        let ConsoleWidget {
             history,
+            history_index,
             buffer,
             hint_text,
             id,
@@ -362,389 +345,395 @@ impl<'t> Console<'t> {
         let desired_history_width = history_galley.size().x.max(wrap_width); // always show everything in multiline
         let desired_history_height = (desired_history_height_rows.at_least(1) as f32) * row_height;
         let desired_history_size = vec2(
-            desired_width,
+            desired_history_width,
             history_galley.size().y.max(desired_history_height),
         );
 
         let desired_buffer_width = buffer_galley.size().x.max(wrap_width); // always show everything in multiline
         let desired_buffer_height = (desired_buffer_height_rows.at_least(1) as f32) * row_height;
         let desired_buffer_size = vec2(
-            desired_width,
+            desired_buffer_width,
             buffer_galley.size().y.max(desired_buffer_height),
         );
 
         let total_desired_size = vec2(
-            desired_history_width.max(desired_buffer_width),
-            desired_history_height + desired_buffer_height,
-        );
+            desired_history_size.x.max(desired_buffer_size.x),
+            desired_history_size.y + desired_buffer_size.y,
+        )
+        .min(ui.available_size_before_wrap());
 
-        let combined_response =
-            ui.allocate_ui_with_layout(total_desired_size, Layout::top_down(Align::Min), |ui| {
-                egui::ScrollArea::vertical()
-                    .stick_to_bottom()
-                    .show(ui, |ui| {
-                        let (history_id, history_rect) = ui.allocate_space(desired_history_size);
-                        let (buffer_id, buffer_rect) = ui.allocate_space(desired_buffer_size);
-                        let history_painter = ui.painter_at(history_rect);
-                        let buffer_painter = ui.painter_at(buffer_rect);
-                        (
-                            (history_id, history_rect, history_painter),
-                            (buffer_id, buffer_rect, buffer_painter),
-                        )
-                    })
+        let add_contents = |ui: &mut Ui| {
+            let (history_id, history_rect) = ui.allocate_space(desired_history_size);
+            let (buffer_id, buffer_rect) = ui.allocate_space(desired_buffer_size);
+            let history_painter = ui.painter_at(history_rect);
+            let buffer_painter = ui.painter_at(buffer_rect);
+
+            let id = id.unwrap_or_else(|| {
+                if let Some(id_source) = id_source {
+                    ui.make_persistent_id(id_source)
+                } else {
+                    ui.make_persistent_id((history_id, buffer_id)) // Since we are only storing the cursor a persistent Id is not super important
+                }
             });
-        let (history_bundle, buffer_bundle) = combined_response.inner;
-        let (history_id, history_rect, history_painter) = history_bundle;
-        let (buffer_id, buffer_rect, buffer_painter) = buffer_bundle;
+            let mut state = ConsoleState::load(ui.ctx(), id).unwrap_or_default();
 
-        let id = id.unwrap_or_else(|| {
-            if let Some(id_source) = id_source {
-                ui.make_persistent_id(id_source)
+            // On touch screens (e.g. mobile in egui_web), should
+            // dragging select text, or scroll the enclosing `ScrollArea` (if any)?
+            // Since currently copying selected text in not supported on `egui_web`,
+            // we prioritize touch-scrolling:
+            let buffer_or_history_has_focus = {
+                let memory = ui.memory();
+                memory.has_focus(buffer_id) || memory.has_focus(history_id)
+            };
+            let allow_drag_to_select = !ui.input().any_touches() || buffer_or_history_has_focus;
+
+            let sense = if interactive {
+                if allow_drag_to_select {
+                    Sense::click_and_drag()
+                } else {
+                    Sense::click()
+                }
             } else {
-                ui.make_persistent_id((history_id, buffer_id)) // Since we are only storing the cursor a persistent Id is not super important
-            }
-        });
-        let mut state = ConsoleState::load(ui.ctx(), id).unwrap_or_default();
+                Sense::hover()
+            };
 
-        // On touch screens (e.g. mobile in egui_web), should
-        // dragging select text, or scroll the enclosing `ScrollArea` (if any)?
-        // Since currently copying selected text in not supported on `egui_web`,
-        // we prioritize touch-scrolling:
-        let buffer_or_history_has_focus = {
-            let memory = ui.memory();
-            memory.has_focus(buffer_id) || memory.has_focus(history_id)
-        };
-        let allow_drag_to_select = !ui.input().any_touches() || buffer_or_history_has_focus;
+            let mut buffer_response = ui.interact(buffer_rect, buffer_id, sense);
+            let mut history_response = ui.interact(history_rect, history_id, sense);
+            // let buffer_clip = Rect::from_min_size(
+            //     Pos2::new(buffer_rect.min.x, buffer_rect.min.y + viewport.min.y),
+            //     buffer_rect.size(),
+            // );
+            // let buffer_painter = ui.painter_at(buffer_clip);
+            // let history_clip = Rect::from_min_size(
+            //     Pos2::new(
+            //         history_rect.min.x,
+            //         buffer_painter.clip_rect().max.y + viewport.min.y,
+            //     ),
+            //     history_rect.size(),
+            // );
+            // let history_painter = ui.painter_at(history_clip);
 
-        let sense = if interactive {
-            if allow_drag_to_select {
-                Sense::click_and_drag()
-            } else {
-                Sense::click()
-            }
-        } else {
-            Sense::hover()
-        };
+            // {
+            //     let mut p = ui.painter_at(ui.clip_rect());
+            //     p.debug_rect(buffer_rect, Color32::RED, "buffer_rect");
+            //     // p.debug_rect(buffer_clip, Color32::BLUE, "buffer_clip");
+            //     p.debug_rect(history_rect, Color32::RED, "history_rect");
+            //     // p.debug_rect(history_clip, Color32::BLUE, "history_clip");
+            //     // p.debug_rect(viewport, Color32::GOLD, "viewport");
+            // }
 
-        let mut combined_response = combined_response.response;
-        let buffer_response = ui.interact(buffer_rect, buffer_id, sense);
-        let history_response = ui.interact(history_rect, history_id, sense);
-        // let buffer_clip = Rect::from_min_size(
-        //     Pos2::new(buffer_rect.min.x, buffer_rect.min.y + viewport.min.y),
-        //     buffer_rect.size(),
-        // );
-        // let buffer_painter = ui.painter_at(buffer_clip);
-        // let history_clip = Rect::from_min_size(
-        //     Pos2::new(
-        //         history_rect.min.x,
-        //         buffer_painter.clip_rect().max.y + viewport.min.y,
-        //     ),
-        //     history_rect.size(),
-        // );
-        // let history_painter = ui.painter_at(history_clip);
+            if interactive {
+                if let Some(pointer_pos) = ui.input().pointer.interact_pos() {
+                    if buffer_response.hovered() {
+                        if buffer_response.hovered() && buffer.is_mutable() {
+                            ui.output().mutable_text_under_cursor = true;
+                        }
 
-        // {
-        //     let mut p = ui.painter_at(ui.clip_rect());
-        //     p.debug_rect(buffer_rect, Color32::RED, "buffer_rect");
-        //     // p.debug_rect(buffer_clip, Color32::BLUE, "buffer_clip");
-        //     p.debug_rect(history_rect, Color32::RED, "history_rect");
-        //     // p.debug_rect(history_clip, Color32::BLUE, "history_clip");
-        //     // p.debug_rect(viewport, Color32::GOLD, "viewport");
-        // }
-
-        if interactive {
-            if let Some(pointer_pos) = ui.input().pointer.interact_pos() {
-                if buffer_response.hovered() {
-                    if buffer_response.hovered() && buffer.is_mutable() {
-                        ui.output().mutable_text_under_cursor = true;
-                    }
-
-                    // TODO: triple-click to select whole paragraph
-                    // TODO: drag selected text to either move or clone (ctrl on windows, alt on mac)
-                    let singleline_offset = vec2(state.singleline_offset, 0.0);
-                    let cursor_at_pointer = buffer_galley.cursor_from_pos(
-                        pointer_pos - buffer_response.rect.min + singleline_offset,
-                    );
-
-                    if ui.visuals().text_cursor_preview
-                        && buffer_response.hovered()
-                        && ui.input().pointer.is_moving()
-                    {
-                        // preview:
-                        paint_cursor_end(
-                            ui,
-                            row_height,
-                            &buffer_painter,
-                            buffer_response.rect.min,
-                            &buffer_galley,
-                            &cursor_at_pointer,
+                        // TODO: triple-click to select whole paragraph
+                        // TODO: drag selected text to either move or clone (ctrl on windows, alt on mac)
+                        let singleline_offset = vec2(state.singleline_offset, 0.0);
+                        let cursor_at_pointer = buffer_galley.cursor_from_pos(
+                            pointer_pos - buffer_response.rect.min + singleline_offset,
                         );
-                    }
 
-                    if buffer_response.double_clicked() {
-                        // Select word:
-                        let center = cursor_at_pointer;
-                        let ccursor_range = select_word_at(buffer.as_ref(), center.ccursor);
-                        state.set_cursor_range(Some(Section::Buffer(CursorRange {
-                            primary: buffer_galley.from_ccursor(ccursor_range.primary),
-                            secondary: buffer_galley.from_ccursor(ccursor_range.secondary),
-                        })));
-                    } else if allow_drag_to_select {
-                        if buffer_response.hovered() && ui.input().pointer.any_pressed() {
-                            ui.memory().request_focus(buffer_id);
-                            if ui.input().modifiers.shift {
-                                if let Some(Section::Buffer(mut cursor_range)) =
-                                    state.cursor_range(&*history_galley, &*buffer_galley)
-                                {
-                                    cursor_range.primary = cursor_at_pointer;
-                                    state.set_cursor_range(Some(Section::Buffer(cursor_range)));
+                        if ui.visuals().text_cursor_preview
+                            && buffer_response.hovered()
+                            && ui.input().pointer.is_moving()
+                        {
+                            // preview:
+                            paint_cursor_end(
+                                ui,
+                                row_height,
+                                &buffer_painter,
+                                buffer_response.rect.min,
+                                &buffer_galley,
+                                &cursor_at_pointer,
+                            );
+                        }
+
+                        if buffer_response.double_clicked() {
+                            // Select word:
+                            let center = cursor_at_pointer;
+                            let ccursor_range = select_word_at(buffer.as_ref(), center.ccursor);
+                            state.set_cursor_range(Some(Section::Buffer(CursorRange {
+                                primary: buffer_galley.from_ccursor(ccursor_range.primary),
+                                secondary: buffer_galley.from_ccursor(ccursor_range.secondary),
+                            })));
+                        } else if allow_drag_to_select {
+                            if buffer_response.hovered() && ui.input().pointer.any_pressed() {
+                                ui.memory().request_focus(buffer_id);
+                                if ui.input().modifiers.shift {
+                                    if let Some(Section::Buffer(mut cursor_range)) =
+                                        state.cursor_range(&*history_galley, &*buffer_galley)
+                                    {
+                                        cursor_range.primary = cursor_at_pointer;
+                                        state.set_cursor_range(Some(Section::Buffer(cursor_range)));
+                                    } else {
+                                        state.set_cursor_range(Some(Section::Buffer(
+                                            CursorRange::one(cursor_at_pointer),
+                                        )));
+                                    }
                                 } else {
                                     state.set_cursor_range(Some(Section::Buffer(
                                         CursorRange::one(cursor_at_pointer),
                                     )));
                                 }
-                            } else {
-                                state.set_cursor_range(Some(Section::Buffer(CursorRange::one(
-                                    cursor_at_pointer,
-                                ))));
-                            }
-                        } else if ui.input().pointer.any_down()
-                            && buffer_response.is_pointer_button_down_on()
-                        {
-                            // drag to select text:
-                            if let Some(Section::Buffer(mut cursor_range)) =
-                                state.cursor_range(&*history_galley, &*buffer_galley)
+                            } else if ui.input().pointer.any_down()
+                                && buffer_response.is_pointer_button_down_on()
                             {
-                                cursor_range.primary = cursor_at_pointer;
-                                state.set_cursor_range(Some(Section::Buffer(cursor_range)));
-                            }
-                        }
-                    }
-                } else if history_response.hovered() {
-                    // TODO: triple-click to select whole paragraph
-                    // TODO: drag selected text to either move or clone (ctrl on windows, alt on mac)
-                    let singleline_offset = vec2(state.singleline_offset, 0.0);
-                    let cursor_at_pointer = history_galley.cursor_from_pos(
-                        pointer_pos - history_response.rect.min + singleline_offset,
-                    );
-
-                    if ui.visuals().text_cursor_preview
-                        && history_response.hovered()
-                        && ui.input().pointer.is_moving()
-                    {
-                        // preview:
-                        paint_cursor_end(
-                            ui,
-                            row_height,
-                            &history_painter,
-                            history_response.rect.min,
-                            &history_galley,
-                            &cursor_at_pointer,
-                        );
-                    }
-
-                    if history_response.double_clicked() {
-                        // Select word:
-                        let center = cursor_at_pointer;
-                        let ccursor_range = select_word_at(history.as_ref(), center.ccursor);
-                        state.set_cursor_range(Some(Section::History(CursorRange {
-                            primary: history_galley.from_ccursor(ccursor_range.primary),
-                            secondary: history_galley.from_ccursor(ccursor_range.secondary),
-                        })));
-                    } else if allow_drag_to_select {
-                        if history_response.hovered() && ui.input().pointer.any_pressed() {
-                            ui.memory().request_focus(history_id);
-                            if ui.input().modifiers.shift {
-                                if let Some(Section::History(mut cursor_range)) =
+                                // drag to select text:
+                                if let Some(Section::Buffer(mut cursor_range)) =
                                     state.cursor_range(&*history_galley, &*buffer_galley)
                                 {
                                     cursor_range.primary = cursor_at_pointer;
-                                    state.set_cursor_range(Some(Section::History(cursor_range)));
+                                    state.set_cursor_range(Some(Section::Buffer(cursor_range)));
+                                }
+                            }
+                        }
+                    } else if history_response.hovered() {
+                        // TODO: triple-click to select whole paragraph
+                        // TODO: drag selected text to either move or clone (ctrl on windows, alt on mac)
+                        let singleline_offset = vec2(state.singleline_offset, 0.0);
+                        let cursor_at_pointer = history_galley.cursor_from_pos(
+                            pointer_pos - history_response.rect.min + singleline_offset,
+                        );
+
+                        if ui.visuals().text_cursor_preview
+                            && history_response.hovered()
+                            && ui.input().pointer.is_moving()
+                        {
+                            // preview:
+                            paint_cursor_end(
+                                ui,
+                                row_height,
+                                &history_painter,
+                                history_response.rect.min,
+                                &history_galley,
+                                &cursor_at_pointer,
+                            );
+                        }
+
+                        if history_response.double_clicked() {
+                            // Select word:
+                            let center = cursor_at_pointer;
+                            let ccursor_range = select_word_at(history.as_ref(), center.ccursor);
+                            state.set_cursor_range(Some(Section::History(CursorRange {
+                                primary: history_galley.from_ccursor(ccursor_range.primary),
+                                secondary: history_galley.from_ccursor(ccursor_range.secondary),
+                            })));
+                        } else if allow_drag_to_select {
+                            if history_response.hovered() && ui.input().pointer.any_pressed() {
+                                ui.memory().request_focus(history_id);
+                                if ui.input().modifiers.shift {
+                                    if let Some(Section::History(mut cursor_range)) =
+                                        state.cursor_range(&*history_galley, &*buffer_galley)
+                                    {
+                                        cursor_range.primary = cursor_at_pointer;
+                                        state
+                                            .set_cursor_range(Some(Section::History(cursor_range)));
+                                    } else {
+                                        state.set_cursor_range(Some(Section::History(
+                                            CursorRange::one(cursor_at_pointer),
+                                        )));
+                                    }
                                 } else {
                                     state.set_cursor_range(Some(Section::History(
                                         CursorRange::one(cursor_at_pointer),
                                     )));
                                 }
-                            } else {
-                                state.set_cursor_range(Some(Section::History(CursorRange::one(
-                                    cursor_at_pointer,
-                                ))));
-                            }
-                        } else if ui.input().pointer.any_down()
-                            && history_response.is_pointer_button_down_on()
-                        {
-                            // drag to select text:
-                            if let Some(Section::History(mut cursor_range)) =
-                                state.cursor_range(&*history_galley, &*buffer_galley)
+                            } else if ui.input().pointer.any_down()
+                                && history_response.is_pointer_button_down_on()
                             {
-                                cursor_range.primary = cursor_at_pointer;
-                                state.set_cursor_range(Some(Section::History(cursor_range)));
+                                // drag to select text:
+                                if let Some(Section::History(mut cursor_range)) =
+                                    state.cursor_range(&*history_galley, &*buffer_galley)
+                                {
+                                    cursor_range.primary = cursor_at_pointer;
+                                    state.set_cursor_range(Some(Section::History(cursor_range)));
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        if (buffer_response.hovered() || history_response.hovered()) && interactive {
-            ui.output().cursor_icon = CursorIcon::Text;
-        }
-
-        let mut submitted = None;
-
-        let mut cursor_range = None;
-        let prev_cursor_range = state.cursor_range(&*history_galley, &*buffer_galley);
-        if ui.memory().has_focus(buffer_id) && interactive {
-            ui.memory().lock_focus(buffer_id, lock_focus);
-
-            let default_cursor_range = if cursor_at_end {
-                Section::Buffer(CursorRange::one(buffer_galley.end()))
-            } else {
-                Section::Buffer(CursorRange::default())
-            };
-
-            let (changed, maybe_submitted, new_cursor_range) = events(
-                ui,
-                &mut state,
-                history,
-                buffer,
-                &mut history_galley,
-                &mut buffer_galley,
-                layouter,
-                buffer_id,
-                wrap_width,
-                default_cursor_range,
-            );
-
-            if changed {
-                combined_response.mark_changed();
+            if (buffer_response.hovered() || history_response.hovered()) && interactive {
+                ui.output().cursor_icon = CursorIcon::Text;
             }
-            cursor_range = Some(new_cursor_range);
-            submitted = maybe_submitted;
-        }
 
-        if ui.visible() {
-            // Paint history text.
-            let history_text_draw_pos = history_response.rect.min;
-            history_painter.galley(history_text_draw_pos, history_galley.clone());
+            let mut submitted = None;
 
-            // Paint buffer text.
-            let buffer_text_draw_pos = buffer_response.rect.min;
-            buffer_painter.galley(buffer_text_draw_pos, buffer_galley.clone());
+            let mut cursor_range = None;
+            let prev_cursor_range = state.cursor_range(&*history_galley, &*buffer_galley);
+            if ui.memory().has_focus(buffer_id) && interactive {
+                ui.memory().lock_focus(buffer_id, lock_focus);
 
-            if buffer.as_ref().is_empty() && !hint_text.is_empty() {
-                let hint_text_color = ui.visuals().weak_text_color();
-                let galley =
-                    hint_text.into_galley(ui, Some(true), desired_buffer_size.x, text_style);
-                galley.paint_with_fallback_color(
-                    &buffer_painter,
-                    buffer_response.rect.min,
-                    hint_text_color,
+                let default_cursor_range = if cursor_at_end {
+                    Section::Buffer(CursorRange::one(buffer_galley.end()))
+                } else {
+                    Section::Buffer(CursorRange::default())
+                };
+
+                let (changed, maybe_submitted, new_cursor_range) = events(
+                    ui,
+                    &mut state,
+                    history,
+                    history_index,
+                    buffer,
+                    &mut history_galley,
+                    &mut buffer_galley,
+                    layouter,
+                    buffer_id,
+                    wrap_width,
+                    default_cursor_range,
                 );
+
+                if changed {
+                    if maybe_submitted.is_some() {
+                        history_response.mark_changed();
+                    }
+
+                    buffer_response.mark_changed();
+                }
+                cursor_range = Some(new_cursor_range);
+                submitted = maybe_submitted;
             }
 
-            let memory = ui.memory();
-            let buffer_or_history_has_focus =
-                memory.has_focus(buffer_id) || memory.has_focus(history_id);
-            drop(memory);
-            if buffer_or_history_has_focus {
-                let maybe_cursor_range = state.cursor_range(&*history_galley, &*buffer_galley);
-                if let Some(Section::Buffer(cursor_range)) = maybe_cursor_range {
-                    // We paint the cursor on top of the text, in case
-                    // the text galley has backgrounds (as e.g. `code` snippets in markup do).
-                    paint_cursor_selection(
-                        ui,
-                        &buffer_painter,
-                        buffer_text_draw_pos,
-                        &buffer_galley,
-                        &cursor_range,
-                    );
-                    paint_cursor_end(
-                        ui,
-                        row_height,
-                        &buffer_painter,
-                        buffer_text_draw_pos,
-                        &buffer_galley,
-                        &cursor_range.primary,
-                    );
+            if ui.visible() {
+                // Paint history text.
+                let history_text_draw_pos = history_response.rect.min;
+                history_painter.galley(history_text_draw_pos, history_galley.clone());
 
-                    if interactive && buffer.is_mutable() {
-                        // egui_web uses `text_cursor_pos` when showing IME,
-                        // so only set it when text is editable and visible!
-                        ui.ctx().output().text_cursor_pos = Some(
-                            buffer_galley
-                                .pos_from_cursor(&cursor_range.primary)
-                                .translate(buffer_response.rect.min.to_vec2())
-                                .left_top(),
+                // Paint buffer text.
+                let buffer_text_draw_pos = buffer_response.rect.min;
+                buffer_painter.galley(buffer_text_draw_pos, buffer_galley.clone());
+
+                if buffer.as_ref().is_empty() && !hint_text.is_empty() {
+                    let hint_text_color = ui.visuals().weak_text_color();
+                    let galley =
+                        hint_text.into_galley(ui, Some(true), desired_buffer_size.x, text_style);
+                    galley.paint_with_fallback_color(
+                        &buffer_painter,
+                        buffer_response.rect.min,
+                        hint_text_color,
+                    );
+                }
+
+                let memory = ui.memory();
+                let buffer_or_history_has_focus =
+                    memory.has_focus(buffer_id) || memory.has_focus(history_id);
+                drop(memory);
+                if buffer_or_history_has_focus {
+                    let maybe_cursor_range = state.cursor_range(&*history_galley, &*buffer_galley);
+                    if let Some(Section::Buffer(cursor_range)) = maybe_cursor_range {
+                        // We paint the cursor on top of the text, in case
+                        // the text galley has backgrounds (as e.g. `code` snippets in markup do).
+                        paint_cursor_selection(
+                            ui,
+                            &buffer_painter,
+                            buffer_text_draw_pos,
+                            &buffer_galley,
+                            &cursor_range,
+                        );
+                        paint_cursor_end(
+                            ui,
+                            row_height,
+                            &buffer_painter,
+                            buffer_text_draw_pos,
+                            &buffer_galley,
+                            &cursor_range.primary,
+                        );
+
+                        if interactive && buffer.is_mutable() {
+                            // egui_web uses `text_cursor_pos` when showing IME,
+                            // so only set it when text is editable and visible!
+                            ui.ctx().output().text_cursor_pos = Some(
+                                buffer_galley
+                                    .pos_from_cursor(&cursor_range.primary)
+                                    .translate(buffer_response.rect.min.to_vec2())
+                                    .left_top(),
+                            );
+                        }
+                    } else if let Some(Section::History(cursor_range)) = maybe_cursor_range {
+                        paint_cursor_selection(
+                            ui,
+                            &history_painter,
+                            history_text_draw_pos,
+                            &history_galley,
+                            &cursor_range,
+                        );
+                        paint_cursor_end(
+                            ui,
+                            row_height,
+                            &history_painter,
+                            history_text_draw_pos,
+                            &history_galley,
+                            &cursor_range.primary,
                         );
                     }
-                } else if let Some(Section::History(cursor_range)) = maybe_cursor_range {
-                    paint_cursor_selection(
-                        ui,
-                        &history_painter,
-                        history_text_draw_pos,
-                        &history_galley,
-                        &cursor_range,
-                    );
-                    paint_cursor_end(
-                        ui,
-                        row_height,
-                        &history_painter,
-                        history_text_draw_pos,
-                        &history_galley,
-                        &cursor_range.primary,
-                    );
                 }
             }
-        }
 
-        state.clone().store(ui.ctx(), id);
+            state.clone().store(ui.ctx(), id);
 
-        let selection_changed = if let (Some(cursor_range), Some(prev_cursor_range)) =
-            (cursor_range, prev_cursor_range)
-        {
-            prev_cursor_range.as_ccursor_range() != cursor_range.as_ccursor_range()
-        } else {
-            false
-        };
-
-        if combined_response.changed() {
-            combined_response
-                .widget_info(|| WidgetInfo::text_edit(prev_text.as_str(), buffer.as_str()));
-        } else if selection_changed {
-            let info = match cursor_range.unwrap() {
-                Section::History(history_range) => {
-                    let char_range =
-                        history_range.primary.ccursor.index..=history_range.secondary.ccursor.index;
-                    WidgetInfo::text_selection_changed(char_range, history.as_str())
-                }
-                Section::Buffer(buffer_range) => {
-                    let char_range =
-                        buffer_range.primary.ccursor.index..=buffer_range.secondary.ccursor.index;
-                    WidgetInfo::text_selection_changed(char_range, buffer.as_str())
-                }
+            let selection_changed = if let (Some(cursor_range), Some(prev_cursor_range)) =
+                (cursor_range, prev_cursor_range)
+            {
+                prev_cursor_range.as_ccursor_range() != cursor_range.as_ccursor_range()
+            } else {
+                false
             };
 
-            combined_response
-                .ctx
-                .output()
-                .events
-                .push(OutputEvent::TextSelectionChanged(info));
-        } else {
-            combined_response
-                .widget_info(|| WidgetInfo::text_edit(prev_text.as_str(), buffer.as_str()));
-        }
+            if buffer_response.changed() {
+                buffer_response
+                    .widget_info(|| WidgetInfo::text_edit(prev_text.as_str(), buffer.as_str()));
+            } else if selection_changed {
+                match cursor_range.unwrap() {
+                    Section::History(history_range) => {
+                        let char_range = history_range.primary.ccursor.index
+                            ..=history_range.secondary.ccursor.index;
+                        let info = WidgetInfo::text_selection_changed(char_range, history.as_str());
+                        history_response
+                            .ctx
+                            .output()
+                            .events
+                            .push(OutputEvent::TextSelectionChanged(info));
+                    }
+                    Section::Buffer(buffer_range) => {
+                        let char_range = buffer_range.primary.ccursor.index
+                            ..=buffer_range.secondary.ccursor.index;
+                        let info = WidgetInfo::text_selection_changed(char_range, buffer.as_str());
+                        buffer_response
+                            .ctx
+                            .output()
+                            .events
+                            .push(OutputEvent::TextSelectionChanged(info));
+                    }
+                }
+            } else {
+                buffer_response
+                    .widget_info(|| WidgetInfo::text_edit(prev_text.as_str(), buffer.as_str()));
+            }
 
-        ConsoleOutput {
-            response: combined_response,
-            history_response,
-            buffer_response,
-            history_galley,
-            buffer_galley,
-            state,
-            cursor_range,
-            submitted,
-        }
+            ConsoleOutput {
+                history_response,
+                buffer_response,
+                history_galley,
+                buffer_galley,
+                state,
+                cursor_range,
+                submitted,
+            }
+        };
+
+        ui.allocate_ui(total_desired_size, |ui| {
+            egui::ScrollArea::vertical()
+                .stick_to_bottom()
+                .show(ui, |ui| {
+                    ui.with_layout(Layout::top_down(Align::Min), add_contents)
+                })
+        })
+        .inner
     }
 }
 
@@ -756,6 +745,7 @@ fn events(
     ui: &mut egui::Ui,
     state: &mut ConsoleState,
     history: &mut dyn TextBuffer,
+    history_index: &mut usize,
     buffer: &mut dyn TextBuffer,
     history_galley: &mut Arc<Galley>,
     buffer_galley: &mut Arc<Galley>,
@@ -847,18 +837,8 @@ fn events(
                     //
                     // Wipe the undoer clean - can't undo submitting a command.
                     state.undoer = Default::default();
-                    // Clear the buffer.
-                    let command = buffer.take();
-                    history.replace(&format!(
-                        "{}\n> {}",
-                        history.as_str().trim_end(),
-                        command.trim_end()
-                    ));
-                    submitted = Some(command);
-
-                    // Submitting a command is a change even if it doesn't result in a changed
-                    // cursor range.
-                    any_change = true;
+                    // *Don't* clear the buffer, just copy its contents.
+                    submitted = Some(buffer.as_str().to_owned());
 
                     None
                 } else if let Section::Buffer(cursor_range) = cursor_range {
@@ -892,6 +872,24 @@ fn events(
                 } else {
                     None
                 }
+            }
+
+            Event::Key {
+                key: Key::ArrowDown,
+                pressed: true,
+                modifiers,
+            } if modifiers.command_only() && *history_index > 0 => {
+                *history_index -= 1;
+                None
+            }
+
+            Event::Key {
+                key: Key::ArrowUp,
+                pressed: true,
+                modifiers,
+            } if modifiers.command_only() => {
+                *history_index += 1;
+                None
             }
 
             Event::Key {
@@ -1253,7 +1251,8 @@ fn move_single_cursor(cursor: &mut Cursor, galley: &Galley, key: Key, modifiers:
             if modifiers.command {
                 // mac and windows behavior
                 *cursor = Cursor::default();
-            } else {
+            } else if !modifiers.ctrl {
+                // we want to hijack ctrl to use it to go back/forth in history.
                 *cursor = galley.cursor_up_one_row(cursor);
             }
         }

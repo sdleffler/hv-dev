@@ -67,9 +67,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.45"
+version = "1.0.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee10e43ae4a853c0a3591d4e2ada1719e553be18199d9da9d4a83f5927c2f5c7"
+checksum = "62e1f47f7dc0422027a4e370dd4548d4d66b26782e513e98dca1e689e058a80e"
 
 [[package]]
 name = "approx"
@@ -435,6 +435,7 @@ dependencies = [
  "anyhow",
  "hecs",
  "hv-alchemy",
+ "hv-console",
  "hv-ecs-derive",
  "hv-elastic",
  "hv-filesystem",
@@ -444,6 +445,7 @@ dependencies = [
  "hv-lua",
  "hv-math",
  "hv-resources",
+ "hv-script",
  "hv-stampede",
  "hv-sync",
  "hv-timer",
@@ -500,6 +502,19 @@ version = "0.1.0"
 dependencies = [
  "hv-guarded-borrow",
  "hv-lease-tracker",
+]
+
+[[package]]
+name = "hv-console"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hv-cell",
+ "hv-elastic",
+ "hv-gui",
+ "hv-lua",
+ "hv-resources",
+ "hv-script",
 ]
 
 [[package]]
@@ -630,6 +645,20 @@ dependencies = [
  "fxhash",
  "parking_lot",
  "slab",
+]
+
+[[package]]
+name = "hv-script"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hashbrown",
+ "hv-cell",
+ "hv-elastic",
+ "hv-lua",
+ "hv-resources",
+ "hv-stampede",
+ "tracing",
 ]
 
 [[package]]

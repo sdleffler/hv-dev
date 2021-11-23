@@ -1,0 +1,15 @@
+[package]
+name = "hv-console"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.48"
+hv-cell = { version = "0.1.0", path = "../hv-cell" }
+hv-elastic = { version = "0.3.1", path = "../hv-elastic" }
+hv-gui = { version = "0.1.0", path = "../hv-gui" }
+hv-lua = { path = "../../../hv-lua" }
+hv-resources = { version = "1.1.0", path = "../hv-resources" }
+hv-script = { version = "0.1.0", path = "../hv-script" }

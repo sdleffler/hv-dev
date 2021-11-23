@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.44"
+anyhow = "1.0.48"
 directories = "4.0.1"
 hv-alchemy = { version = "0.1.0", path = "../hv-alchemy" }
 hv-lua = { version = "0.6.6", path = "../../../hv-lua" }

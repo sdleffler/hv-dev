@@ -179,7 +179,7 @@ mod test {
         let isometry3 = Isometry3::new(translation, axisangle);
 
         let pt = Point3::new(-23.6, 13., -42.);
-        let d = distance(
+        let d = na::distance(
             &composite.as_isometry3().transform_point(&pt),
             &isometry3.transform_point(&pt),
         );

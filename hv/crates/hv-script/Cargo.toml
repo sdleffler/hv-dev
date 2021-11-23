@@ -1,0 +1,18 @@
+[package]
+name = "hv-script"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.48"
+hashbrown = "0.11.2"
+hv-cell = { version = "0.1.0", path = "../hv-cell" }
+hv-elastic = { version = "0.3.1", path = "../hv-elastic" }
+hv-lua = { version = "0.6.6", path = "../../../hv-lua" }
+hv-resources = { version = "1.1.0", path = "../hv-resources" }
+hv-stampede = { version = "0.1.0", path = "../hv-stampede" }
+tracing = "0.1.29"
+
+[features]

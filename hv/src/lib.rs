@@ -2,6 +2,7 @@
 
 pub extern crate alchemy;
 pub extern crate anyhow as error;
+pub extern crate console;
 
 pub mod ecs;
 
@@ -16,6 +17,7 @@ pub mod lua {
 pub extern crate input;
 pub extern crate math;
 pub extern crate resources;
+pub extern crate script;
 pub extern crate stampede as bump;
 pub extern crate sync;
 pub extern crate timer;

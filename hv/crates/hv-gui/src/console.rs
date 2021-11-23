@@ -12,7 +12,7 @@ mod syntax_highlight;
 mod text_buffer;
 
 pub use {
-    builder::Console, cursor_range::*, output::ConsoleOutput, state::ConsoleState,
+    builder::ConsoleWidget, cursor_range::*, output::ConsoleOutput, state::ConsoleState,
     syntax_highlight::CodeTheme, text_buffer::TextBuffer,
 };
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use hv::{
-    gui::{self, epaint::Mesh16, ClippedMesh, Rect},
+    gui::egui::{self, epaint::Mesh16, ClippedMesh, Rect},
     prelude::*,
 };
 use luminance::{
@@ -115,7 +115,7 @@ where
     target_size_in_pixels: Vector2<u32>,
     target_size_in_points: Vector2<f32>,
     dpi_scale: f32,
-    textures: HashMap<gui::TextureId, Texture<B, Dim2, SRGBA8UI>>,
+    textures: HashMap<egui::TextureId, Texture<B, Dim2, SRGBA8UI>>,
     tess: Tess<B, Vertex, u16, (), Interleaved>,
     shader: Option<Program<B, VertexSemantics, (), Uniforms>>,
     meshes: Vec<(Rect, Mesh16)>,
@@ -148,7 +148,7 @@ where
             GenMipmaps::No,
             &[[255, 255, 255, 255]],
         )?;
-        textures.insert(gui::TextureId::Egui, initial_font_texture);
+        textures.insert(egui::TextureId::Egui, initial_font_texture);
 
         Ok(Self {
             font_texture_version: 0,
@@ -165,7 +165,7 @@ where
     pub fn update(
         &mut self,
         ctx: &mut impl GraphicsContext<Backend = B>,
-        texture: &gui::Texture,
+        texture: &egui::Texture,
         meshes: Vec<ClippedMesh>,
     ) -> Result<()> {
         self.meshes.clear();
@@ -177,7 +177,7 @@ where
 
         for (clip_rect, mesh) in meshes
             .into_iter()
-            .flat_map(|gui::ClippedMesh(r, m)| m.split_to_u16().into_iter().map(move |m| (r, m)))
+            .flat_map(|egui::ClippedMesh(r, m)| m.split_to_u16().into_iter().map(move |m| (r, m)))
         {
             assert!(mesh.is_valid());
 
@@ -202,8 +202,8 @@ where
         Ok(())
     }
 
-    pub fn rebuild_font_texture(&mut self, egui_tex: &gui::Texture) -> Result<()> {
-        let texture = self.textures.get_mut(&gui::TextureId::Egui).unwrap();
+    pub fn rebuild_font_texture(&mut self, egui_tex: &egui::Texture) -> Result<()> {
+        let texture = self.textures.get_mut(&egui::TextureId::Egui).unwrap();
         let gamma = 1.0;
         let data = egui_tex
             .srgba_pixels(gamma)
@@ -255,8 +255,8 @@ where
         interface: &mut ProgramInterface<B>,
         uni: &Uniforms,
         render_gate: &mut RenderGate<B>,
-        clip_rect: &gui::Rect,
-        mesh: &gui::epaint::Mesh16,
+        clip_rect: &egui::Rect,
+        mesh: &egui::epaint::Mesh16,
     ) -> Result<()> {
         assert!(mesh.is_valid());
 

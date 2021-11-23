@@ -16,7 +16,7 @@ use spin::Mutex;
 extern crate alloc;
 
 pub use bumpalo::{
-    boxed::Box as Owned, collections, format, vec, AllocOrInitError, Bump, ChunkIter, ChunkRawIter,
+    boxed, collections, format, vec, AllocOrInitError, Bump, ChunkIter, ChunkRawIter,
 };
 
 #[derive(Debug, Default)]
@@ -125,8 +125,8 @@ impl<'s> PooledBump<'s> {
         unsafe { self.as_bump_unbound().alloc(val) }
     }
 
-    pub fn alloc_boxed<T>(&self, val: T) -> Owned<'s, T> {
-        Owned::new_in(val, unsafe { self.as_bump_unbound() })
+    pub fn alloc_boxed<T>(&self, val: T) -> boxed::Box<'s, T> {
+        boxed::Box::new_in(val, unsafe { self.as_bump_unbound() })
     }
 
     pub fn alloc_arc<T>(&self, val: T) -> Barc<'s, T> {

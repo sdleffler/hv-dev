@@ -1,5 +1,5 @@
 use hv::{
-    bump::{Owned, *},
+    bump::{boxed::Box as ArenaBox, *},
     ecs::{DynamicBundle, Entity, EntityBuilder, World},
     prelude::*,
     resources::Resources,
@@ -14,7 +14,7 @@ use spin::Mutex;
 use std::{cell::UnsafeCell, mem::ManuallyDrop, sync::Arc};
 use tracing::{error, trace_span, warn};
 
-type Command<'a> = Owned<'a, dyn FnMut(&mut World, &mut Resources) -> Result<()> + Send>;
+type Command<'a> = ArenaBox<'a, dyn FnMut(&mut World, &mut Resources) -> Result<()> + Send>;
 
 const CHUNK_SIZE: usize = 1024;
 
@@ -36,7 +36,7 @@ impl CommandBuffer {
             (command.take().unwrap())(world, resources)
         };
         let owned: Command = unsafe {
-            Owned::from_raw(Owned::into_raw(bump.alloc_boxed(wrapped))
+            ArenaBox::from_raw(ArenaBox::into_raw(bump.alloc_boxed(wrapped))
                 as *mut (dyn FnMut(&mut World, &mut Resources) -> Result<()> + Send))
         };
 

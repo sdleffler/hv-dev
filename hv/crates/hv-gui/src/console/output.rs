@@ -2,9 +2,6 @@ use std::sync::Arc;
 
 /// The output from a `TextEdit`.
 pub struct ConsoleOutput {
-    /// The interaction response.
-    pub response: egui::Response,
-
     /// The interaction response just on the history buffer.
     pub history_response: egui::Response,
 

@@ -370,7 +370,8 @@ impl Vfs for PhysicalFs {
         if self.readonly {
             bail!(
                 "Tried to make directory {} but FS is \
-                 read-only"
+                 read-only",
+                path.display()
             );
         }
         self.create_root()?;
@@ -385,7 +386,10 @@ impl Vfs for PhysicalFs {
     /// Remove a file
     fn rm(&self, path: &Path) -> Result<()> {
         if self.readonly {
-            bail!("Tried to remove file {} but FS is read-only");
+            bail!(
+                "Tried to remove file {} but FS is read-only",
+                path.display()
+            );
         }
 
         self.create_root()?;
@@ -402,7 +406,8 @@ impl Vfs for PhysicalFs {
         if self.readonly {
             bail!(
                 "Tried to remove file/dir {} but FS is \
-                 read-only"
+                 read-only",
+                path.display()
             );
         }
 

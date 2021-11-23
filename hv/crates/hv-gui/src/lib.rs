@@ -1,4 +1,6 @@
-pub use egui::*;
+pub extern crate egui;
+
+use egui::{DroppedFile, Event, Pos2, RawInput, Rect, Vec2};
 use hv_input::{
     GenericAxis, GenericButton, GenericInputState, GenericWindowEvent, InputEvent, KeyMods,
     ScrollAxis, WindowEvent,
@@ -230,8 +232,8 @@ fn to_egui_mb(button: hv_input::MouseButton) -> Option<egui::PointerButton> {
     }
 }
 
-fn to_egui_modifiers(mods: KeyMods) -> Modifiers {
-    Modifiers {
+fn to_egui_modifiers(mods: KeyMods) -> egui::Modifiers {
+    egui::Modifiers {
         alt: mods.alt,
         ctrl: mods.ctrl,
         shift: mods.shift,
