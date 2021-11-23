@@ -3,7 +3,7 @@ name = "hv-elastic"
 description = "Safe and almost-safe abstractions for lengthening lifetimes and `'static` \"loaning\" of non-`'static` types"
 authors = ["Shea 'Decibel' Leffler <shea@errno.com>"]
 license = "MIT OR Apache-2.0"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 readme = "README.md"
 repository = "https://github.com/sdleffler/hv-dev"
@@ -20,5 +20,5 @@ hv-cell = { version = "0.1.0", path = "../hv-cell" }
 hv-guarded-borrow = { version = "0.1.1", path = "../hv-guarded-borrow" }
 hv-ecs = { version = "0.6.5", path = "../../../hv-ecs", package = "hecs", optional = true }
 static_assertions = "1.1.0"
-hv-stampede = { version = "0.2.0", path = "../hv-stampede" }
+hv-stampede = { version = "0.2.1", path = "../hv-stampede" }
 thiserror = { version = "1.0.30", optional = true }

@@ -124,12 +124,7 @@ impl ScriptResource {
             loans: &'a mut Vec<ArenaBox<'g, dyn ErasedLoan<'g> + 'g>, &'g Bump>,
         ) -> Result<()> {
             let guard = resources.get::<Elastic<StretchedRef<T>>>()?;
-            let owned = ArenaBox::new_in(
-                guard
-                    .borrow_arc(|t| &**t)
-                    .ok_or_else(|| anyhow!("failed to mutably borrow elastic"))?,
-                alloc,
-            );
+            let owned = ArenaBox::new_in(guard.borrow_arc(), alloc);
             on_loan(&owned, lua, env)?;
             // We have to do a pointer cast here since `ArenaBox` can't deal with `CoerceUnsized`.
             let raw = ArenaBox::into_raw(owned) as *mut (dyn ErasedLoan<'g> + 'g);
@@ -165,12 +160,7 @@ impl ScriptResource {
             loans: &'a mut Vec<ArenaBox<'g, dyn ErasedLoan<'g> + 'g>, &'g Bump>,
         ) -> Result<()> {
             let guard = resources.get::<Elastic<StretchedMut<T>>>()?;
-            let mut owned = ArenaBox::new_in(
-                guard
-                    .borrow_arc_mut(|t| &mut **t)
-                    .ok_or_else(|| anyhow!("failed to mutably borrow elastic"))?,
-                alloc,
-            );
+            let mut owned = ArenaBox::new_in(guard.borrow_arc_mut(), alloc);
             on_loan(&mut owned, lua, env)?;
             // We have to do a pointer cast here since `ArenaBox` can't deal with `CoerceUnsized`.
             let raw = ArenaBox::into_raw(owned) as *mut (dyn ErasedLoan<'g> + 'g);
