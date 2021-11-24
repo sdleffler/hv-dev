@@ -435,6 +435,7 @@ dependencies = [
  "anyhow",
  "hecs",
  "hv-alchemy",
+ "hv-cell",
  "hv-console",
  "hv-ecs-derive",
  "hv-elastic",
@@ -515,6 +516,7 @@ dependencies = [
  "hv-lua",
  "hv-resources",
  "hv-script",
+ "syntect",
 ]
 
 [[package]]
@@ -528,13 +530,14 @@ dependencies = [
 
 [[package]]
 name = "hv-elastic"
-version = "0.3.1"
+version = "0.4.1"
 dependencies = [
  "hecs",
  "hv-cell",
  "hv-guarded-borrow",
  "hv-stampede",
  "static_assertions",
+ "thiserror",
 ]
 
 [[package]]
@@ -564,7 +567,6 @@ dependencies = [
  "egui",
  "hv-input",
  "hv-lua",
- "syntect",
 ]
 
 [[package]]
@@ -597,10 +599,11 @@ dependencies = [
  "erased-serde",
  "hecs",
  "hv-alchemy",
+ "hv-cell",
+ "hv-elastic",
  "hv-guarded-borrow",
  "hv-lua-derive",
  "hv-math",
- "hv-sync",
  "lua-src",
  "luajit-src",
  "nalgebra",
@@ -663,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "hv-stampede"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "bumpalo",
  "spin 0.9.2",

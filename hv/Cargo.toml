@@ -18,6 +18,8 @@ parry3d = ["lua/parry3d"]
 [dependencies]
 alchemy = { version = "0.1.0", path = "crates/hv-alchemy", package = "hv-alchemy" }
 anyhow = "1.0.48"
+atom = { version = "0.1.0", path = "crates/hv-atom", package = "hv-atom" }
+cell = { version = "0.1.0", path = "crates/hv-cell", package = "hv-cell" }
 console = { version = "0.1.0", path = "crates/hv-console", package = "hv-console" }
 ecs = { version = "0.6.5", path = "../hv-ecs", package = "hecs", features = ["serde", "column-serialize", "row-serialize"] }
 ecs-derive = { version = "0.7.0", path = "crates/hv-ecs-derive", package = "hv-ecs-derive" }
@@ -28,7 +30,6 @@ gui = { version = "0.1.0", path = "crates/hv-gui", package = "hv-gui" }
 lua = { version = "0.6.6", path = "../hv-lua", package = "hv-lua", features = ["hv-reexport", "nalgebra", "send", "macros"] }
 math = { version = "0.1.0", path = "crates/hv-math", package = "hv-math" }
 petgraph = "0.6.0"
-sync = { version = "0.1.0", path = "crates/hv-sync", package = "hv-sync" }
 thiserror = "1.0.30"
 input = { version = "0.1.0", path = "crates/hv-input", package = "hv-input" }
 timer = { version = "0.1.0", path = "crates/hv-timer", package = "hv-timer" }
@@ -54,7 +55,6 @@ members = [
     "crates/hv-math",
     "crates/hv-resources",
     "crates/hv-stampede",
-    "crates/hv-sync",
     "crates/hv-timer",
     "crates/hv-vfs",
     "crates/hv-yaks",

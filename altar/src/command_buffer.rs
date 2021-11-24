@@ -1,13 +1,10 @@
 use hv::{
     bump::{boxed::Box as ArenaBox, *},
+    cell::AtomicRef,
     ecs::{DynamicBundle, Entity, EntityBuilder, World},
+    elastic::{Elastic, ElasticGuard, ScopeGuard, Stretchable, Stretched},
     prelude::*,
     resources::Resources,
-    sync::{
-        cell::AtomicRef,
-        elastic::{Elastic, ElasticGuard, ScopeGuard, Stretchable, Stretched},
-        NoSharedAccess,
-    },
 };
 
 use spin::Mutex;
@@ -29,7 +26,7 @@ impl CommandBuffer {
         &mut self,
         command: impl FnOnce(&mut World, &mut Resources) -> Result<()> + Send + 'static,
     ) {
-        let mut inner = self.inner.borrow_mut().unwrap();
+        let mut inner = self.inner.try_borrow_as_parameterized_mut().unwrap();
         let bump = unsafe { &*inner.bump.get() };
         let mut command = Some(command);
         let wrapped = move |world: &'_ mut World, resources: &'_ mut Resources| {
@@ -85,8 +82,7 @@ impl LuaUserData for CommandBuffer {
         methods.add_method_mut("push", |lua, this, function: LuaFunction| {
             let key = lua.create_registry_value(function)?;
             this.push(move |_, resources| {
-                let mut nsa_lua = resources.get_mut::<NoSharedAccess<Lua>>().to_lua_err()?;
-                let lua = nsa_lua.get_mut();
+                let lua = resources.get::<Lua>().to_lua_err()?;
                 let f: LuaFunction = lua.registry_value(&key)?;
                 let _: () = f.call(())?;
                 Ok(())
@@ -140,7 +136,7 @@ impl<'a> Stretchable<'a> for CommandBufferInner<'a> {
 unsafe impl Stretched for StretchedCommandBufferInner {
     type Parameterized<'a> = CommandBufferInner<'a>;
 
-    hv::sync::elastic::impl_stretched_methods!();
+    hv::elastic::impl_stretched_methods!();
 }
 
 pub struct CommandPool {
@@ -292,7 +288,7 @@ static_assertions::assert_eq_align!(StretchedCommandPoolScope, CommandPoolScope)
 unsafe impl Stretched for StretchedCommandPoolScope {
     type Parameterized<'a> = CommandPoolScope<'a>;
 
-    hv::sync::elastic::impl_stretched_methods!();
+    hv::elastic::impl_stretched_methods!();
 }
 
 impl<'a> Stretchable<'a> for CommandPoolScope<'a> {
@@ -321,7 +317,7 @@ impl CommandPoolResource {
 
     pub fn borrow(&self) -> AtomicRef<CommandPoolScope> {
         self.inner
-            .borrow()
+            .try_borrow_as_parameterized()
             .expect("command pool resource should never be mutably borrowed")
     }
 

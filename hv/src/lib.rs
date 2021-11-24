@@ -2,10 +2,13 @@
 
 pub extern crate alchemy;
 pub extern crate anyhow as error;
+pub extern crate atom;
+pub extern crate cell;
 pub extern crate console;
 
 pub mod ecs;
 
+pub extern crate elastic;
 pub extern crate fs;
 pub extern crate gui;
 
@@ -19,7 +22,6 @@ pub extern crate math;
 pub extern crate resources;
 pub extern crate script;
 pub extern crate stampede as bump;
-pub extern crate sync;
 pub extern crate timer;
 
 pub mod plugin;

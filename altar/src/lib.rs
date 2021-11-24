@@ -14,7 +14,6 @@ pub mod lattice;
 pub mod physics;
 pub mod render;
 pub mod scene;
-pub mod script;
 pub mod types;
 
 #[cfg(feature = "glfw")]
