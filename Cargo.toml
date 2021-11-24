@@ -1,0 +1,40 @@
+[workspace]
+exclude = [
+    "hv-ecs"
+]
+
+members = [
+    "altar",
+    "hv-lua",
+    "hv",
+    "tiled",
+    "hv/crates/hv-alchemy",
+    "hv/crates/hv-atom",
+    "hv/crates/hv-boxed",
+    "hv/crates/hv-cell",
+    "hv/crates/hv-ecs-derive",
+    "hv/crates/hv-elastic",
+    "hv/crates/hv-filesystem",
+    "hv/crates/hv-guarded-borrow",
+    "hv/crates/hv-gui",
+    "hv/crates/hv-input",
+    "hv/crates/hv-lease-tracker",
+    "hv/crates/hv-looprider",
+    "hv/crates/hv-math",
+    "hv/crates/hv-resources",
+    "hv/crates/hv-stampede",
+    "hv/crates/hv-timer",
+    "hv/crates/hv-vfs",
+    "hv/crates/hv-yaks",
+    "luminance-glyph",
+]
+
+[patch.crates-io]
+luminance = { path = "luminance-rs/luminance" }
+luminance-gl = { path = "luminance-rs/luminance-gl" }
+luminance-front = { path = "luminance-rs/luminance-front" }
+luminance-glyph = { path = "luminance-glyph" }
+
+[profile.dev]
+# Rust iterators are absolutely horrific without any optimizations, and we like them a lot.
+opt-level = 1

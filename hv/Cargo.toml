@@ -37,38 +37,3 @@ stampede = { version = "0.2.1", path = "crates/hv-stampede", package = "hv-stamp
 resources = { version = "1.1.0", path = "crates/hv-resources", package = "hv-resources" }
 script = { version = "0.1.0", path = "crates/hv-script", package = "hv-script" }
 yaks = { version = "0.1.0", path = "crates/hv-yaks", package = "hv-yaks" }
-
-[workspace]
-members = [
-    "crates/hv-alchemy",
-    "crates/hv-atom",
-    "crates/hv-boxed",
-    "crates/hv-cell",
-    "crates/hv-ecs-derive",
-    "crates/hv-elastic",
-    "crates/hv-filesystem",
-    "crates/hv-guarded-borrow",
-    "crates/hv-gui",
-    "crates/hv-input",
-    "crates/hv-lease-tracker",
-    "crates/hv-looprider",
-    "crates/hv-math",
-    "crates/hv-resources",
-    "crates/hv-stampede",
-    "crates/hv-timer",
-    "crates/hv-vfs",
-    "crates/hv-yaks",
-    ".",
-]
-
-[patch.crates-io]
-luminance = { path = "../../luminance-rs/luminance" }
-luminance-gl = { path = "../../luminance-rs/luminance-gl" }
-luminance-front = { path = "../../luminance-rs/luminance-front" }
-
-[patch."https://github.com/sdleffler/luminance-glyph"]
-luminance-glyph = { path = "../../luminance-glyph" }
-
-[profile.dev]
-# Rust iterators are absolutely horrific without any optimizations, and we like them a lot.
-opt-level = 1
