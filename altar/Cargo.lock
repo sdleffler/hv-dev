@@ -470,6 +470,7 @@ version = "0.6.5"
 dependencies = [
  "hashbrown",
  "serde",
+ "spin 0.9.2",
 ]
 
 [[package]]

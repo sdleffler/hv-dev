@@ -24,7 +24,7 @@ use luminance::{
     shader::{self, Program, ProgramInterface, Uniform},
     shading_gate::ShadingGate,
     tess::{Interleaved, Mode, Tess, TessBuilder, TessView},
-    texture::{Dim2, GenMipmaps, Sampler, Texture},
+    texture::{Dim2, Sampler, TexelUpload, Texture},
     Semantics, UniformInterface, Vertex,
 };
 
@@ -143,10 +143,11 @@ where
         let mut textures = HashMap::new();
         let initial_font_texture = ctx.new_texture(
             [1, 1],
-            0,
             Sampler::default(),
-            GenMipmaps::No,
-            &[[255, 255, 255, 255]],
+            TexelUpload::BaseLevel {
+                texels: &[[255, 255, 255, 255]],
+                mipmaps: None,
+            },
         )?;
         textures.insert(egui::TextureId::Egui, initial_font_texture);
 
@@ -209,7 +210,13 @@ where
             .srgba_pixels(gamma)
             .map(|p| p.to_array())
             .collect::<Vec<_>>();
-        texture.resize(egui_tex.size().map(|i| i as u32), 0, GenMipmaps::No, &data)?;
+        texture.resize(
+            egui_tex.size().map(|i| i as u32),
+            TexelUpload::BaseLevel {
+                texels: &data,
+                mipmaps: None,
+            },
+        )?;
         Ok(())
     }
 

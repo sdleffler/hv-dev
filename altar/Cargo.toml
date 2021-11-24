@@ -27,9 +27,9 @@ thunderdome = "0.5.0"
 tracing = "0.1.29"
 
 [patch.crates-io]
-luminance = { path = "../../luminance-rs/luminance" }
-luminance-gl = { path = "../../luminance-rs/luminance-gl" }
-luminance-front = { path = "../../luminance-rs/luminance-front" }
+luminance = { path = "../luminance-rs/luminance" }
+luminance-gl = { path = "../luminance-rs/luminance-gl" }
+luminance-front = { path = "../luminance-rs/luminance-front" }
 
 [patch."https://github.com/sdleffler/luminance-glyph"]
-luminance-glyph = { path = "../../luminance-glyph" }
+luminance-glyph = { path = "../luminance-glyph" }
