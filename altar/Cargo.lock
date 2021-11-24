@@ -435,6 +435,7 @@ dependencies = [
  "anyhow",
  "hecs",
  "hv-alchemy",
+ "hv-atom",
  "hv-cell",
  "hv-console",
  "hv-ecs-derive",
@@ -448,7 +449,6 @@ dependencies = [
  "hv-resources",
  "hv-script",
  "hv-stampede",
- "hv-sync",
  "hv-timer",
  "hv-yaks",
  "petgraph",
@@ -502,7 +502,6 @@ name = "hv-cell"
 version = "0.1.0"
 dependencies = [
  "hv-guarded-borrow",
- "hv-lease-tracker",
 ]
 
 [[package]]
@@ -580,14 +579,6 @@ dependencies = [
  "hv-math",
  "serde",
  "strum",
-]
-
-[[package]]
-name = "hv-lease-tracker"
-version = "0.1.0"
-dependencies = [
- "slab",
- "spin 0.9.2",
 ]
 
 [[package]]
@@ -670,17 +661,6 @@ version = "0.2.1"
 dependencies = [
  "bumpalo",
  "spin 0.9.2",
-]
-
-[[package]]
-name = "hv-sync"
-version = "0.1.0"
-dependencies = [
- "hv-atom",
- "hv-cell",
- "hv-elastic",
- "hv-guarded-borrow",
- "hv-lease-tracker",
 ]
 
 [[package]]
