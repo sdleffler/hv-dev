@@ -78,6 +78,7 @@ pub enum LatticeEvent<T: Copy> {
     Layer(LayerEvent),
 }
 
+#[derive(Debug)]
 struct ChunkEventDebouncer<T: Copy> {
     chunk_event: Option<ChunkEventKind>,
     per_slot: HashMap<SubCoords, SlotEventKind<T>>,
@@ -110,6 +111,7 @@ impl<T: Copy> ChunkEventDebouncer<T> {
     }
 }
 
+#[derive(Debug)]
 struct LayerEventDebouncer<T: Copy> {
     layer_event: Option<LayerEventKind>,
     per_chunk: HashMap<ChunkCoords, ChunkEventDebouncer<T>>,
@@ -132,6 +134,7 @@ impl<T: Copy> LayerEventDebouncer<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct LatticeEventDebouncer<T: Copy> {
     per_layer: HashMap<i32, LayerEventDebouncer<T>>,
 }

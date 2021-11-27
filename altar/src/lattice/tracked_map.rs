@@ -2,7 +2,7 @@ use hv::prelude::*;
 use shrev::EventChannel;
 
 use crate::lattice::{
-    chunked_map::{Chunk, ChunkLayer, ChunkMap, DividedCoords},
+    chunk_map::{Chunk, ChunkLayer, ChunkMap, DividedCoords},
     event::{
         ChunkEvent, ChunkEventKind, LatticeEvent, LayerEvent, LayerEventKind, SlotEvent,
         SlotEventKind,
@@ -219,6 +219,11 @@ impl<T: Copy + Send + Sync + 'static> TrackedMap<T> {
         }
 
         removed
+    }
+
+    pub fn get(&self, coords: Vector3<i32>) -> Option<&T> {
+        self.get_layer(coords.z)
+            .and_then(|layer| layer.get(coords.xy()))
     }
 
     pub fn as_chunk_map(&self) -> &ChunkMap<T> {

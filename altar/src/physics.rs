@@ -75,6 +75,13 @@ impl CompositeVelocity3 {
     }
 }
 
+/// A position component.
+///
+/// Contains the current position/orientation and previous position/orientation of the object.
+///
+/// This current/previous setup allows us to interpolate between positions during rendering, which
+/// in turn allows us to get smooth movement when locking our physics/mechanics updates to a
+/// specific rate but rendering as fast as possible.
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
     /// The current position of the entity.
@@ -119,11 +126,22 @@ impl Position {
     }
 }
 
+/// A velocity component.
+///
+/// Stores the "composite" velocity of an object (full 2D linear/angular velocity, plus a linear Z
+/// velocity.)
 #[derive(Debug, Clone, Copy)]
 pub struct Velocity {
     pub composite: CompositeVelocity3,
 }
 
+/// A collider component.
+///
+/// Stores an offset and a shape for collision testing. Since it's a component, you can only have
+/// one per entity; so if you want multiple shapes attached, you'll need to use a [`Compound`]
+/// shape.
+///
+/// [`Compound`]: parry3d::shape::Compound
 #[derive(Clone)]
 pub struct Collider {
     pub local_tx: Isometry3<Float>,

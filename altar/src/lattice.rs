@@ -1,6 +1,7 @@
-pub mod chunked_map;
+pub mod atom_map;
+pub mod chunk_map;
 pub mod collider_map;
 pub mod event;
 pub mod tracked_map;
 
-pub use chunked_map::{ChunkCoords, SubCoords};
+pub use chunk_map::{ChunkCoords, SubCoords};

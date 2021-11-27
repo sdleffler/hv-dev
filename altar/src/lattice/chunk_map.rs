@@ -194,6 +194,13 @@ impl<T> Chunk<T> {
             })
         })
     }
+
+    /// Clear the chunk.
+    pub fn clear(&mut self) {
+        // TODO: most cases should not need to run a destructor on the elements, but, for
+        // completeness and correctness, it should be done.
+        self.valid.set_all(false);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -333,6 +340,10 @@ impl<T> ChunkLayer<T> {
             })
         })
     }
+
+    pub fn clear(&mut self) {
+        self.chunks.values_mut().for_each(Chunk::clear);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -468,5 +479,10 @@ impl<T> ChunkMap<T> {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (Vector3<i32>, &mut T)> {
         self.layers_mut()
             .flat_map(|(z, layer)| layer.iter_mut().map(move |(xy, value)| (xy.push(z), value)))
+    }
+
+    /// Clear the map while retaining the allocated memory.
+    pub fn clear(&mut self) {
+        self.layers.values_mut().for_each(ChunkLayer::clear);
     }
 }
