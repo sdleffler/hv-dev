@@ -36,7 +36,7 @@
  * SOFTWARE.
  */
 
-use anyhow::*;
+use anyhow::{anyhow, bail, Error, Result};
 use hv_alchemy::Type;
 use hv_lua::{AnyUserData, UserData, UserDataMethods};
 use std::{

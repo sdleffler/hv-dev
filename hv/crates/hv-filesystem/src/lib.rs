@@ -44,7 +44,7 @@
 
 extern crate hv_vfs as vfs;
 
-use anyhow::*;
+use anyhow::{anyhow, bail, Result};
 use directories::ProjectDirs;
 use hv_alchemy::Type;
 use hv_lua::{from_table::Sequence, ExternalError, ExternalResult, UserData, UserDataMethods};

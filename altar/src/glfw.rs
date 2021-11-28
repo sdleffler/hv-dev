@@ -4,7 +4,7 @@ use crate::{
     event_loop::{EventLoop, MainLoopContext},
     window::WindowKind,
 };
-use glfw::Context;
+use glfw::{Context, SwapInterval, WindowMode};
 use hv::{
     input::{
         GenericAxis, GenericButton, GenericWindowEvent, InputEvent, Key, ScrollAxis,
@@ -13,9 +13,7 @@ use hv::{
     prelude::*,
     resources::Resources,
 };
-use luminance_glfw::{GL33Context, GlfwSurface};
-
-pub use luminance_windowing::{WindowDim, WindowOpt};
+use luminance_glfw::{GL33Context, GlfwSurface, GlfwSurfaceError};
 
 impl MainLoopContext for GL33Context {
     fn set_vsync(&mut self, vsync_on: bool) -> Result<()> {
@@ -38,7 +36,39 @@ pub fn run(
     let GlfwSurface {
         events_rx,
         mut context,
-    } = GlfwSurface::new_gl33(title, WindowOpt::default().set_dim(window_kind.into()))?;
+    } = GlfwSurface::new(|glfw| {
+        let (mut window, events) = match window_kind {
+            WindowKind::Fullscreen { width, height } => glfw.with_primary_monitor(|glfw, m| {
+                let m = m.ok_or_else(|| {
+                    GlfwSurfaceError::UserError(anyhow!(
+                        "no primary monitor - cannot create fullscreen window"
+                    ))
+                })?;
+                glfw.create_window(
+                    width as u32,
+                    height as u32,
+                    title,
+                    WindowMode::FullScreen(m),
+                )
+                .ok_or_else(|| {
+                    GlfwSurfaceError::UserError(anyhow!("failed to create fullscreen GLFW window!"))
+                })
+            })?,
+            WindowKind::Windowed { width, height } => glfw
+                .create_window(width, height, title, WindowMode::Windowed)
+                .ok_or_else(|| {
+                    GlfwSurfaceError::UserError(anyhow!("failed to create GLFW window!"))
+                })?,
+        };
+
+        window.make_current();
+        window.set_all_polling(true);
+        glfw.set_swap_interval(SwapInterval::Sync(1));
+
+        Ok((window, events))
+    })
+    .map_err(|err| anyhow!("error initializing glfw window: {}", err))?;
+
     let mut events_buf: Vec<GenericWindowEvent> = Vec::new();
 
     event_loop.init(resources, &mut context)?;

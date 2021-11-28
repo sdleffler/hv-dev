@@ -4,9 +4,3 @@
 [submodule "hv/crates/hv-ecs"]
 	path = hv-ecs
 	url = https://github.com/sdleffler/hv-ecs
-[submodule "luminance-rs"]
-	path = luminance-rs
-	url = https://github.com/sdleffler/luminance-rs
-[submodule "luminance-glyph"]
-	path = luminance-glyph
-	url = https://github.com/sdleffler/luminance-glyph

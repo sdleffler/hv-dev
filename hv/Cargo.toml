@@ -17,7 +17,7 @@ parry3d = ["lua/parry3d"]
 
 [dependencies]
 alchemy = { version = "0.1.0", path = "crates/hv-alchemy", package = "hv-alchemy" }
-anyhow = "1.0.48"
+anyhow = "1.0.49"
 atom = { version = "0.1.0", path = "crates/hv-atom", package = "hv-atom" }
 cell = { version = "0.1.0", path = "crates/hv-cell", package = "hv-cell" }
 console = { version = "0.1.0", path = "crates/hv-console", package = "hv-console" }

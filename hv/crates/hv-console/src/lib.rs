@@ -8,7 +8,7 @@
 use std::collections::VecDeque;
 use std::fmt::Write;
 
-use anyhow::*;
+use anyhow::{Result};
 use hv_gui::egui;
 use hv_lua::prelude::*;
 use hv_resources::Resources;

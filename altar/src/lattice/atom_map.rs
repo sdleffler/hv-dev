@@ -1,20 +1,35 @@
+use std::fmt;
+
 use hv::prelude::*;
 use parry3d::bounding_volume::AABB;
 use soft_edge::{Atom, Axis, CompoundHull, Face, VertexSet};
 
-use crate::lattice::{chunk_map::ChunkMap, tracked_map::TrackedMap};
+use crate::{
+    collision::{CompoundHullShape, CompoundHullShapeCache},
+    lattice::{chunk_map::ChunkMap, tracked_map::TrackedMap},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Intersection<'a> {
     pub coords: Vector3<i32>,
-    pub hull: &'a CompoundHull,
+    pub shape: &'a CompoundHullShape,
 }
 
 /// A 3D layered map where the cells are [`Atom`]s.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct AtomMap {
+    shape_cache: CompoundHullShapeCache,
     atoms: TrackedMap<Atom>,
     hulls: ChunkMap<CompoundHull>,
+    shapes: ChunkMap<CompoundHullShape>,
+}
+
+impl fmt::Debug for AtomMap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AtomMap")
+            .field("shape_cache", &self.shape_cache)
+            .finish_non_exhaustive()
+    }
 }
 
 impl AtomMap {
@@ -27,8 +42,9 @@ impl AtomMap {
     pub fn calculate_hulls(&mut self) {
         use Axis::*;
 
-        // Phase 1. Reset all atoms.
+        // Phase 1. Reset all hulls to their unjoined state, and clear all shapes.
         self.hulls.clear();
+        self.shapes.clear();
         for (coords, &a0) in self.atoms.as_chunk_map().iter() {
             self.hulls.insert(coords, a0.compound_hull());
         }
@@ -55,6 +71,11 @@ impl AtomMap {
                 };
                 h0.join_exteriors(axis, hi);
             }
+        }
+
+        // Phase 3. Recalculate shapes.
+        for (coords, hull) in self.hulls.iter() {
+            self.shapes.insert(coords, self.shape_cache.get_shape(hull));
         }
     }
 
@@ -113,7 +134,7 @@ impl AtomMap {
         let mins = aabb.mins.map(|t| t.floor() as i32);
         let maxs = aabb.maxs.map(|t| t.ceil() as i32);
 
-        self.hulls
+        self.shapes
             .get_layers_in_range(mins.z..maxs.z)
             .flat_map(move |(z, layer)| {
                 let coords = (mins.y..maxs.y)
@@ -121,7 +142,7 @@ impl AtomMap {
                 coords.filter_map(move |coords| {
                     layer
                         .get(coords.xy())
-                        .map(move |hull| Intersection { coords, hull })
+                        .map(move |shape| Intersection { coords, shape })
                 })
             })
     }

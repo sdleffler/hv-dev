@@ -8,15 +8,8 @@ members = [
     "hv-lua",
     "hv",
     "hv/crates/*",
-    "luminance-glyph",
     "tiled",
 ]
-
-[patch.crates-io]
-luminance = { path = "luminance-rs/luminance" }
-luminance-gl = { path = "luminance-rs/luminance-gl" }
-luminance-front = { path = "luminance-rs/luminance-front" }
-luminance-glyph = { path = "luminance-glyph" }
 
 [profile.dev]
 # Rust iterators are absolutely horrific without any optimizations, and we like them a lot.
