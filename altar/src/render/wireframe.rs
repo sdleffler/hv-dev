@@ -889,7 +889,7 @@ where
                                 self.line_colors_halfway[vertex_index + n_vertices - 1] =
                                     self.line_colors[command.start + command.len - 1];
                             } else {
-                                n_segments = command.len - 3;
+                                n_segments = command.len - 2;
                                 n_vertices = command.len;
 
                                 self.line_positions_halfway

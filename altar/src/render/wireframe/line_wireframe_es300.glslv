@@ -57,7 +57,7 @@ void main()
         float miter_l = length(v_miter);
         vec2 nv_miter = miter_l > 0.1 ? v_miter / miter_l : vec2(0);
 
-        if (line_l > 0.1 || miter_l > 0.1) {
+        if (line_l > 0.1 && miter_l > 0.1) {
             pos.xy += nv_miter * u_Thickness * (tri_i == 1 ? -0.5 : 0.5) / dot(nv_miter, nv_line) / pos.w;
         }
 
@@ -75,7 +75,7 @@ void main()
         float miter_l = length(v_miter);
         vec2 nv_miter = miter_l > 0.1 ? v_miter / miter_l : vec2(0);
 
-        if (line_l > 0.1 || miter_l > 0.1) {
+        if (line_l > 0.1 && miter_l > 0.1) {
             pos.xy += nv_miter * u_Thickness * (tri_i == 5 ? 0.5 : -0.5) / dot(nv_miter, nv_line) / pos.w;
         }
 
