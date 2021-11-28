@@ -41,31 +41,44 @@ void main()
         va[i].xy = (va[i].xy + 1.0) * 0.5 * u_Resolution;
     }
 
-    vec2 v_line  = normalize(va[2].xy - va[1].xy);
-    vec2 nv_line = vec2(-v_line.y, v_line.x);
+    vec2 v_line  = va[2].xy - va[1].xy;
+    float line_l = length(v_line);
+    vec2 nv_line = line_l > 0.1 ? vec2(-v_line.y, v_line.x) / line_l : vec2(0);
 
     vec4 pos;
     if (tri_i == 0 || tri_i == 1 || tri_i == 3)
     {
+        pos = va[1];
+
         vec2 v_pred = va[1].xy - va[0].xy;
         float pred_l = length(v_pred);
         v_pred = pred_l > 0.1 ? v_pred / pred_l : vec2(0);
-        vec2 v_miter = normalize(nv_line + vec2(-v_pred.y, v_pred.x));
+        vec2 v_miter = nv_line + vec2(-v_pred.y, v_pred.x);
+        float miter_l = length(v_miter);
+        vec2 nv_miter = miter_l > 0.1 ? v_miter / miter_l : vec2(0);
 
-        pos = va[1];
-        pos.xy += v_miter * u_Thickness * (tri_i == 1 ? -0.5 : 0.5) / (dot(v_miter, nv_line) * pos.w);
+        if (line_l > 0.1 || miter_l > 0.1) {
+            pos.xy += nv_miter * u_Thickness * (tri_i == 1 ? -0.5 : 0.5) / dot(nv_miter, nv_line) / pos.w;
+        }
+
         v_Color = a_Color[line_i+1];
         v_ViewPos = (u_View * a_Position[line_i+1]).xyz;
     }
     else
     {
+        pos = va[2];
+
         vec2 v_succ = va[3].xy - va[2].xy;
         float succ_l = length(v_succ);
         v_succ = succ_l > 0.1 ? v_succ / succ_l : vec2(0);
-        vec2 v_miter = normalize(nv_line + vec2(-v_succ.y, v_succ.x));
+        vec2 v_miter = nv_line + vec2(-v_succ.y, v_succ.x);
+        float miter_l = length(v_miter);
+        vec2 nv_miter = miter_l > 0.1 ? v_miter / miter_l : vec2(0);
 
-        pos = va[2];
-        pos.xy += v_miter * u_Thickness * (tri_i == 5 ? 0.5 : -0.5) / (dot(v_miter, nv_line) * pos.w);
+        if (line_l > 0.1 || miter_l > 0.1) {
+            pos.xy += nv_miter * u_Thickness * (tri_i == 5 ? 0.5 : -0.5) / dot(nv_miter, nv_line) / pos.w;
+        }
+
         v_Color = a_Color[line_i+2];
         v_ViewPos = (u_View * a_Position[line_i+2]).xyz;
     }

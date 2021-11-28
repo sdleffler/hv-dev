@@ -427,7 +427,7 @@ impl<T> ChunkMap<T> {
     pub fn get_n_mut<const N: usize>(&mut self, coords: [Vector3<i32>; N]) -> [Option<&mut T>; N] {
         // Fast if N is small.
         for i in 0..N {
-            for j in i..N {
+            for j in i + 1..N {
                 assert_ne!(
                     coords[i], coords[j],
                     "cannot mutably borrow the same slot twice!"

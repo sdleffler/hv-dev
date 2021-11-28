@@ -28,14 +28,13 @@ fn hull_to_trimesh(hull: &CompoundHull) -> TriMesh {
         })
     };
 
-    // Parry is left-handed. As a result, for consistent winding order and having normals face
-    // outwards when positive, we swap the first two vertices of each triangle.
+    // Our winding order matches Parry's when it comes to normal calculation.
     for facet in hull.facets() {
         match facet {
-            HullFacet::Triangle([a, b, c]) => indices.push([v(b), v(a), v(c)]),
+            HullFacet::Triangle([a, b, c]) => indices.push([v(a), v(b), v(c)]),
             HullFacet::Rectangle([a, b, c, d]) => {
-                indices.push([v(b), v(a), v(c)]);
-                indices.push([v(c), v(b), v(d)]);
+                indices.push([v(a), v(b), v(c)]);
+                indices.push([v(b), v(c), v(d)]);
             }
         }
     }

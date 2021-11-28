@@ -19,7 +19,7 @@ pub struct Intersection<'a> {
 #[derive(Default)]
 pub struct AtomMap {
     shape_cache: CompoundHullShapeCache,
-    atoms: TrackedMap<Atom>,
+    pub atoms: TrackedMap<Atom>,
     hulls: ChunkMap<CompoundHull>,
     shapes: ChunkMap<CompoundHullShape>,
 }
@@ -145,5 +145,13 @@ impl AtomMap {
                         .map(move |shape| Intersection { coords, shape })
                 })
             })
+    }
+
+    pub fn hulls(&self) -> &ChunkMap<CompoundHull> {
+        &self.hulls
+    }
+
+    pub fn shapes(&self) -> &ChunkMap<CompoundHullShape> {
+        &self.shapes
     }
 }

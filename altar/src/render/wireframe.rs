@@ -226,6 +226,7 @@ pub struct LineVertex {
 struct LineCommand {
     start: usize,
     len: usize,
+    cap: bool,
 }
 
 pub trait WireframeBackend:
@@ -539,7 +540,77 @@ where
 
         self.line_batch_counter += 1;
         self.line_pos += 4;
-        self.line_commands.push(LineCommand { start, len: 2 });
+        self.line_commands.push(LineCommand {
+            start,
+            len: 2,
+            cap: true,
+        });
+    }
+
+    pub fn queue_draw_line_strip(&mut self, vertices: impl IntoIterator<Item = LineVertex>) {
+        // positions and colors are in lockstep
+        let start = self.line_positions.len();
+        for v in vertices {
+            self.line_positions.push(Vec4(v.pos.push(1.).into()));
+            self.line_colors.push(Vec4(v.color.into()));
+        }
+        let end = self.line_positions.len();
+        let len = end - start;
+
+        if self.line_pos + len + 2 >= LINE_BUFFER_SIZE {
+            self.line_batches.push(self.line_batch_counter);
+            self.line_batch_counter = 0;
+            self.line_pos = 0;
+        }
+
+        self.line_batch_counter += 1;
+        self.line_pos += len + 2;
+        self.line_commands.push(LineCommand {
+            start,
+            len,
+            cap: true,
+        });
+    }
+
+    pub fn queue_draw_line_loop<I>(&mut self, vertices: I)
+    where
+        I: IntoIterator<Item = LineVertex>,
+        I::IntoIter: DoubleEndedIterator,
+    {
+        let mut vertices = vertices.into_iter();
+        let first = vertices
+            .next()
+            .expect("line loop must have at least two vertices!");
+        let last = vertices
+            .next_back()
+            .expect("line loop must have at least two vertices!");
+
+        // positions and colors are in lockstep
+        let start = self.line_positions.len();
+        for v in [last, first]
+            .into_iter()
+            .chain(vertices)
+            .chain([last, first])
+        {
+            self.line_positions.push(Vec4(v.pos.push(1.).into()));
+            self.line_colors.push(Vec4(v.color.into()));
+        }
+        let end = self.line_positions.len();
+        let len = end - start;
+
+        if self.line_pos + len >= LINE_BUFFER_SIZE {
+            self.line_batches.push(self.line_batch_counter);
+            self.line_batch_counter = 0;
+            self.line_pos = 0;
+        }
+
+        self.line_batch_counter += 1;
+        self.line_pos += len;
+        self.line_commands.push(LineCommand {
+            start,
+            len,
+            cap: false,
+        });
     }
 
     // pub fn queue_draw_line_strip(&mut self, vertices: impl IntoIterator<Item = LineVertex>) {
@@ -787,31 +858,51 @@ where
                         let mut vertex_index = 0;
                         let mut line_index = 0;
                         for command in commands.by_ref().take(batch) {
-                            let n_segments = command.len - 1;
-                            let n_vertices = command.len + 2;
+                            let n_segments;
+                            let n_vertices;
 
-                            // Begin with the first "cap". Every strip of line segments will be
-                            // "capped" (unless it is a loop, which we do not support yet.) Then,
-                            // copy in all of the "inner" vertices, and finally add the end cap. The
-                            // start and end caps are copies of the elements immediately after and
-                            // before them, respectively.
-                            self.line_positions_halfway[vertex_index] =
-                                self.line_positions[command.start];
-                            self.line_positions_halfway
-                                [vertex_index + 1..vertex_index + 1 + command.len]
-                                .copy_from_slice(
-                                    &self.line_positions[command.start..][..command.len],
-                                );
-                            self.line_positions_halfway[vertex_index + n_vertices - 1] =
-                                self.line_positions[command.start + command.len - 1];
+                            if command.cap {
+                                n_segments = command.len - 1;
+                                n_vertices = command.len + 2;
 
-                            self.line_colors_halfway[vertex_index] =
-                                self.line_colors[command.start];
-                            self.line_colors_halfway
-                                [vertex_index + 1..vertex_index + 1 + command.len]
-                                .copy_from_slice(&self.line_colors[command.start..][..command.len]);
-                            self.line_colors_halfway[vertex_index + n_vertices - 1] =
-                                self.line_colors[command.start + command.len - 1];
+                                // Begin with the first "cap". Every non-loop strip of line segments
+                                // will be "capped". Then, copy in all of the "inner" vertices, and
+                                // finally add the end cap. The start and end caps are copies of the
+                                // elements immediately after and before them, respectively.
+                                self.line_positions_halfway[vertex_index] =
+                                    self.line_positions[command.start];
+                                self.line_positions_halfway
+                                    [vertex_index + 1..vertex_index + 1 + command.len]
+                                    .copy_from_slice(
+                                        &self.line_positions[command.start..][..command.len],
+                                    );
+                                self.line_positions_halfway[vertex_index + n_vertices - 1] =
+                                    self.line_positions[command.start + command.len - 1];
+
+                                self.line_colors_halfway[vertex_index] =
+                                    self.line_colors[command.start];
+                                self.line_colors_halfway
+                                    [vertex_index + 1..vertex_index + 1 + command.len]
+                                    .copy_from_slice(
+                                        &self.line_colors[command.start..][..command.len],
+                                    );
+                                self.line_colors_halfway[vertex_index + n_vertices - 1] =
+                                    self.line_colors[command.start + command.len - 1];
+                            } else {
+                                n_segments = command.len - 3;
+                                n_vertices = command.len;
+
+                                self.line_positions_halfway
+                                    [vertex_index..vertex_index + command.len]
+                                    .copy_from_slice(
+                                        &self.line_positions[command.start..][..command.len],
+                                    );
+
+                                self.line_colors_halfway[vertex_index..vertex_index + command.len]
+                                    .copy_from_slice(
+                                        &self.line_colors[command.start..][..command.len],
+                                    );
+                            }
 
                             // Now that we have the vertices in, we need to deal with the line
                             // indices. These are simpler; they're just the range
