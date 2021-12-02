@@ -16,4 +16,4 @@ std = []
 default = []
 
 [dependencies]
-hv-ecs = { version = "0.6.5", path = "../../../hv-ecs", package = "hecs", optional = true }
+hv-ecs = { version = "0.7.1", path = "../../../hv-ecs", package = "hecs", optional = true }

@@ -1,6 +1,6 @@
 use hv_ecs::{
-    Archetype, ArchetypesGeneration, Entity, NoSuchEntity, PreparedQuery, PreparedQueryBorrow,
-    Query, QueryBorrow, QueryOne, World,
+    Archetype, ArchetypesGeneration, Column, ColumnMut, Component, Entity, NoSuchEntity,
+    PreparedQuery, PreparedQueryBorrow, Query, QueryBorrow, QueryOne, World,
 };
 
 use crate::{QueryMarker, SystemId};
@@ -135,6 +135,26 @@ impl<'scope> SystemContext<'scope> {
         Q: Query + Send + Sync,
     {
         self.world.query_one(entity)
+    }
+
+    /// Immutably borrow every `T` component in the world for efficient random access.
+    ///
+    /// Panics if this would conflict with an outstanding borrow.
+    pub fn column<T>(&self, _: QueryMarker<&T>) -> Column<'_, T>
+    where
+        T: Component,
+    {
+        self.world.column()
+    }
+
+    /// Mutably borrow every `T` component in the world for efficient random access.
+    ///
+    /// Panics if this would conflict with an outstanding borrow.
+    pub fn column_mut<T>(&self, _: QueryMarker<&mut T>) -> ColumnMut<'_, T>
+    where
+        T: Component,
+    {
+        self.world.column_mut()
     }
 
     /// See [`hv_ecs::World::reserve_entity()`](../hv-ecs/struct.World.html#method.reserve_entity).

@@ -18,7 +18,7 @@ default = ["std"]
 [dependencies]
 hv-cell = { version = "0.1.0", path = "../hv-cell" }
 hv-guarded-borrow = { version = "0.1.1", path = "../hv-guarded-borrow" }
-hv-ecs = { version = "0.6.5", path = "../../../hv-ecs", package = "hecs", optional = true }
+hv-ecs = { version = "0.7.1", path = "../../../hv-ecs", package = "hecs", optional = true }
 static_assertions = "1.1.0"
 hv-stampede = { version = "0.2.1", path = "../hv-stampede" }
 thiserror = { version = "1.0.30", optional = true }
