@@ -122,12 +122,17 @@ impl CompoundHullShape {
                     s2,
                     prediction,
                 ) {
-                    let is_front_face = self.mesh.triangle(*i).scaled_normal().dot(&c.normal1) > 0.;
+                    let triangle_normal = self.mesh.triangle(*i).normal().unwrap();
+                    let is_front_face = triangle_normal.dot(&c.normal1) > 0.;
                     let replace = res.map_or(true, |cbest| {
-                        is_front_face && c.dist < 0. && c.dist > cbest.dist
+                        is_front_face && c.dist <= prediction && c.dist > cbest.dist
                     });
 
                     if replace {
+                        // Manually set the normals: do NOT accept edge collisions.
+                        c.normal1 = triangle_normal;
+                        c.normal2 = -triangle_normal;
+
                         if let Some(part_pos1) = part_pos1 {
                             c.transform1_by_mut(part_pos1);
                         }
@@ -141,6 +146,11 @@ impl CompoundHullShape {
 
         let mut visitor = BoundingVolumeIntersectionsVisitor::new(&ls_aabb2, &mut leaf_callback);
         self.mesh.qbvh().traverse_depth_first(&mut visitor);
+
+        if let Some(c) = &mut res {
+            c.transform_by_mut(pos1, pos2);
+        }
+
         res
     }
 }

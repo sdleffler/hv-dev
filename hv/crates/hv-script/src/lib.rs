@@ -20,6 +20,8 @@ use hv_lua::prelude::*;
 use hv_resources::{self, Resources};
 use hv_stampede::{boxed::Box as ArenaBox, Bump};
 
+pub mod api;
+
 struct ScriptResource {
     inner: Box<dyn Any + Send + Sync>,
     #[allow(clippy::type_complexity)]

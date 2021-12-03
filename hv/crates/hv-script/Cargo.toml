@@ -3,16 +3,18 @@ name = "hv-script"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1.0.49"
 hashbrown = "0.11.2"
+hv-alchemy = { version = "0.1.0", path = "../hv-alchemy" }
 hv-cell = { version = "0.1.0", path = "../hv-cell" }
+hv-ecs = { version = "0.7.1", path = "../../../hv-ecs", package = "hecs" }
 hv-elastic = { version = "0.4.0", path = "../hv-elastic" }
 hv-lua = { version = "0.6.6", path = "../../../hv-lua" }
+hv-math = { version = "0.1.0", path = "../hv-math" }
 hv-resources = { version = "1.1.0", path = "../hv-resources" }
 hv-stampede = { version = "0.2.0", path = "../hv-stampede" }
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 tracing = "0.1.29"
 
 [features]

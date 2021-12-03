@@ -52,6 +52,7 @@ dependencies = [
  "crossbeam-queue",
  "glfw",
  "heavy",
+ "lazy_static",
  "luminance",
  "luminance-glfw",
  "parry3d",
@@ -1076,11 +1077,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hashbrown",
+ "hecs",
+ "hv-alchemy",
  "hv-cell",
  "hv-elastic",
  "hv-lua",
+ "hv-math",
  "hv-resources",
  "hv-stampede",
+ "lazy_static",
  "tracing",
 ]
 
@@ -2304,7 +2309,7 @@ dependencies = [
 
 [[package]]
 name = "soft-edge"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "arrayvec",
  "bitvec",

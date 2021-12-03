@@ -650,6 +650,51 @@ where
             }),
         }
     }
+
+    pub fn resolve_scroll_axis(
+        &self,
+        axis: impl Into<ScrollAxis>,
+        position: f32,
+    ) -> Option<InputEvent<Axes, Buttons>> {
+        match self.bindings.get(&InputType::MouseScroll(axis.into()))? {
+            InputEffect::Axis(axis, direction) => {
+                Some(InputEvent::Axis(axis.clone(), direction.sign() * position))
+            }
+            InputEffect::Button(button, direction) => Some(InputEvent::Button {
+                button: button.clone(),
+                state: (direction.sign() * position).is_sign_positive(),
+                repeat: false,
+            }),
+        }
+    }
+
+    /// Convert a generic input event into a logical input.
+    pub fn resolve_generic_input_event(
+        &self,
+        event: InputEvent<GenericAxis, GenericButton>,
+    ) -> Option<InputEvent<Axes, Buttons>> {
+        match event {
+            InputEvent::Axis(axis, position) => match axis {
+                GenericAxis::Gamepad(gamepad_axis) => {
+                    self.resolve_gamepad_axis(gamepad_axis, position)
+                }
+                GenericAxis::Mouse(scroll_axis) => self.resolve_scroll_axis(scroll_axis, position),
+            },
+            InputEvent::Button { button, state, .. } => match button {
+                GenericButton::Gamepad(gamepad_button) => {
+                    self.resolve_gamepad_button(gamepad_button, state)
+                }
+                GenericButton::KeyCode(keycode, _modifiers) => self.resolve_keycode(keycode, state),
+                GenericButton::Mouse(mouse_button, _modifiers) => {
+                    self.resolve_mouse_button(mouse_button, state)
+                }
+                GenericButton::ScanCode(scancode, _modifiers) => {
+                    self.resolve_scancode(scancode, state)
+                }
+            },
+            InputEvent::Cursor(position) => Some(InputEvent::Cursor(position)),
+        }
+    }
 }
 
 /// Represents an input state for a given set of logical axes and buttons, plus a cursor.

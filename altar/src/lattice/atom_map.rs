@@ -131,8 +131,8 @@ impl AtomMap {
 
     /// Find possible intersections with an AABB.
     pub fn intersect_with(&self, aabb: AABB) -> impl Iterator<Item = Intersection> {
-        let mins = aabb.mins.map(|t| t.floor() as i32);
-        let maxs = aabb.maxs.map(|t| t.ceil() as i32);
+        let mins = aabb.mins.map(|t| t.floor() as i32 - 1);
+        let maxs = aabb.maxs.map(|t| t.ceil() as i32 + 1);
 
         self.shapes
             .get_layers_in_range(mins.z..maxs.z)
