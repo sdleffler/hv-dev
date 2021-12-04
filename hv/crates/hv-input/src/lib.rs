@@ -749,13 +749,7 @@ where
                     } else {
                         -vel
                     };
-                axis_status.position = if pending_position > 1.0 {
-                    1.0
-                } else if pending_position < -1.0 {
-                    -1.0
-                } else {
-                    pending_position
-                }
+                axis_status.position = pending_position.clamp(-1., 1.);
             } else {
                 // Gravitate back towards 0.
                 let abs_dx = f32::min(axis_status.gravity * dt, f32::abs(axis_status.position));
