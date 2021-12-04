@@ -55,6 +55,7 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
+use alloc::sync::Weak;
 use core::cmp;
 use core::fmt;
 use core::fmt::{Debug, Display};
@@ -178,6 +179,84 @@ impl<T: ?Sized> ArcCell<T> {
     pub fn from_inner(inner: Arc<AtomicRefCell<T>>) -> Self {
         Self { inner }
     }
+
+    /// Construct a `WeakCell<T>`.
+    pub fn downgrade(this: &Self) -> WeakCell<T> {
+        WeakCell {
+            inner: Arc::downgrade(&this.inner),
+        }
+    }
+}
+
+/// An analogue to `Arc<T>`'s `Weak<T>` type.
+///
+/// A `WeakCell<T>` can be constructed via `ArcCell::downgrade(this: &T)` or `WeakCell::new()`.
+pub struct WeakCell<T: ?Sized> {
+    inner: Weak<AtomicRefCell<T>>,
+}
+
+impl<T> Default for WeakCell<T> {
+    fn default() -> Self {
+        WeakCell::new()
+    }
+}
+
+impl<T> WeakCell<T> {
+    #[inline]
+    /// Construct a new `WeakCell<T>`.
+    pub fn new() -> Self {
+        WeakCell { inner: Weak::new() }
+    }
+
+    /// Retrieve the inner field of the `WeakCell<T>`.
+    pub fn as_inner(&self) -> &Weak<AtomicRefCell<T>> {
+        &self.inner
+    }
+
+    /// Immutably borrow the underlying `T`.
+    ///
+    /// Note that this could panic either due to a `borrow` error, or due to an `upgrade` error.
+    pub fn borrow(&self) -> ArcRef<T> {
+        self.upgrade().unwrap().borrow()
+    }
+
+    /// Mutably borrow the underlying `T`.
+    ///
+    /// Note that this could panic either due to a `borrow_mut` error, or due to an `upgrade` error.
+    pub fn borrow_mut(&mut self) -> ArcRefMut<T> {
+        self.upgrade().unwrap().borrow_mut()
+    }
+
+    /// Attempt to borrow the underlying `T`.
+    ///
+    /// It first attempts to upgrade the `WeakCell<T>` before trying to borrow the `T`.
+    /// If either the upgrade or the borrow fails, a `Result` containing a `WeakBorrowError` will be returned.
+    pub fn try_borrow(&self) -> Result<ArcRef<T>, WeakBorrowError> {
+        self.upgrade()
+            .ok_or(WeakBorrowError::UpgradeError(UpgradeError { _private: () }))?
+            .try_borrow()
+            .map_err(WeakBorrowError::BorrowError)
+    }
+
+    /// Attempt to mutably borrow the underlying `T`.
+    ///
+    /// It first attempts to upgrade the `WeakCell<T>` before trying to borrow the `T`.
+    /// If either the upgrade or the borrow mut fails, a `Result` containing a `WeakBorrowError` will be returned.
+    pub fn try_borrow_mut(&self) -> Result<ArcRefMut<T>, WeakBorrowMutError> {
+        self.upgrade()
+            .ok_or(WeakBorrowMutError::UpgradeError(UpgradeError {
+                _private: (),
+            }))?
+            .try_borrow_mut()
+            .map_err(WeakBorrowMutError::BorrowMutError)
+    }
+
+    /// Attempt to upgrade the `WeakCell<T>` into an `ArcCell<T>`.
+    ///
+    /// This function returns `None` if there are no longer any live strong references to the underlying value.
+    pub fn upgrade(&self) -> Option<ArcCell<T>> {
+        self.inner.upgrade().map(ArcCell::from_inner)
+    }
 }
 
 /// A threadsafe analogue to RefCell.
@@ -221,6 +300,41 @@ impl Display for BorrowMutError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Display::fmt("already borrowed", f)
     }
+}
+
+/// An error returned when failing to upgrade a `WeakCell<T>`.
+pub struct UpgradeError {
+    _private: (),
+}
+
+impl Debug for UpgradeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UpgradeError").finish()
+    }
+}
+
+impl Display for UpgradeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt("failed to upgrade", f)
+    }
+}
+
+/// An enum representing the possible errors from trying to borrow a `WeakCell<T>` as `ArcRef<T>`.
+#[derive(Debug)]
+pub enum WeakBorrowError {
+    /// Failure due to a `BorrowError`.
+    BorrowError(BorrowError),
+    /// Failure due to an `UpgradeError`.
+    UpgradeError(UpgradeError),
+}
+
+#[derive(Debug)]
+/// An enum representing the possible errors from trying to mutably borrow a `WeakCell<T>` as `ArcRefMut<T>`.
+pub enum WeakBorrowMutError {
+    /// Failure due to a `BorrowMutError`.
+    BorrowMutError(BorrowMutError),
+    /// Failure due to an `UpgradeError`.
+    UpgradeError(UpgradeError),
 }
 
 impl<T> AtomicRefCell<T> {
