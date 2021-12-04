@@ -1,3 +1,5 @@
+use std::ops::{Add, AddAssign};
+
 use hv::prelude::*;
 use parry3d::{bounding_volume::AABB, shape::SharedShape};
 
@@ -177,6 +179,20 @@ impl LuaUserData for CompositeVelocity3 {
         table.add_clone().add_copy().add_send().add_sync();
     }
 
+    #[allow(clippy::unit_arg)]
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("x", |_, this| Ok(this.linear.x));
+        fields.add_field_method_get("y", |_, this| Ok(this.linear.y));
+        fields.add_field_method_get("z", |_, this| Ok(this.linear.z));
+        fields.add_field_method_get("linear", |_, this| Ok(this.linear));
+        fields.add_field_method_get("angular", |_, this| Ok(this.angular));
+        fields.add_field_method_set("x", |_, this, x| Ok(this.linear.x = x));
+        fields.add_field_method_set("y", |_, this, y| Ok(this.linear.y = y));
+        fields.add_field_method_set("z", |_, this, z| Ok(this.linear.z = z));
+        fields.add_field_method_set("linear", |_, this, linear| Ok(this.linear = linear));
+        fields.add_field_method_set("angular", |_, this, angular| Ok(this.angular = angular));
+    }
+
     fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, (linear, angular)| Ok(Self::new(linear, angular)));
         methods.add_function("zero", |_, ()| Ok(Self::zero()));
@@ -199,8 +215,21 @@ impl LuaUserData for Velocity {
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("get", |_, this, out: Option<LuaAnyUserData>| match out {
+            Some(ud) => {
+                *ud.borrow_mut::<CompositeVelocity3>()? = this.composite;
+                Ok(None)
+            }
+            None => Ok(Some(this.composite)),
+        });
+
         methods.add_method_mut("set", |_, this, composite: CompositeVelocity3| {
             this.composite = composite;
+            Ok(())
+        });
+
+        methods.add_method_mut("add", |_, this, composite: CompositeVelocity3| {
+            this.composite += composite;
             Ok(())
         });
     }
@@ -229,5 +258,21 @@ impl LuaUserData for Collider {
 
     fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, (local_tx, shape)| Ok(Self::new(local_tx, shape)));
+    }
+}
+
+impl Add for CompositeVelocity3 {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            linear: self.linear + rhs.linear,
+            angular: self.angular + rhs.angular,
+        }
+    }
+}
+
+impl AddAssign for CompositeVelocity3 {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
     }
 }

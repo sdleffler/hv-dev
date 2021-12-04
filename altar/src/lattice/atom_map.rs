@@ -1,8 +1,8 @@
-use std::fmt;
+use std::{fmt, sync::Arc};
 
 use hv::prelude::*;
 use parry3d::bounding_volume::AABB;
-use soft_edge::{Atom, Axis, CompoundHull, Face, VertexSet};
+use soft_edge::{Atom, Axis, CompoundHull, EdgeFilter, Face, VertexFilter, VertexSet};
 
 use crate::{
     collision::{CompoundHullShape, CompoundHullShapeCache},
@@ -19,9 +19,11 @@ pub struct Intersection<'a> {
 #[derive(Default)]
 pub struct AtomMap {
     shape_cache: CompoundHullShapeCache,
+    edge_filter: EdgeFilter,
+    vertex_filter: VertexFilter,
     pub atoms: TrackedMap<Atom>,
     hulls: ChunkMap<CompoundHull>,
-    shapes: ChunkMap<CompoundHullShape>,
+    shapes: ChunkMap<Arc<CompoundHullShape>>,
 }
 
 impl fmt::Debug for AtomMap {
@@ -45,6 +47,8 @@ impl AtomMap {
         // Phase 1. Reset all hulls to their unjoined state, and clear all shapes.
         self.hulls.clear();
         self.shapes.clear();
+        self.edge_filter.clear();
+        self.vertex_filter.clear();
         for (coords, &a0) in self.atoms.as_chunk_map().iter() {
             self.hulls.insert(coords, a0.compound_hull());
         }
@@ -77,6 +81,15 @@ impl AtomMap {
         for (coords, hull) in self.hulls.iter() {
             self.shapes.insert(coords, self.shape_cache.get_shape(hull));
         }
+
+        // Phase 4. Populate edge filter.
+        self.edge_filter
+            .extend(self.hulls.iter().flat_map(|(coords, hull)| {
+                hull.facets().map(move |facet| facet.translated_by(coords))
+            }));
+
+        // Phase 5. Populate vertex filter.
+        self.vertex_filter.extend(self.edge_filter.iter());
     }
 
     /// Recalculate the join on all axes of this cell.
@@ -151,7 +164,15 @@ impl AtomMap {
         &self.hulls
     }
 
-    pub fn shapes(&self) -> &ChunkMap<CompoundHullShape> {
+    pub fn shapes(&self) -> &ChunkMap<Arc<CompoundHullShape>> {
         &self.shapes
+    }
+
+    pub fn edge_filter(&self) -> &EdgeFilter {
+        &self.edge_filter
+    }
+
+    pub fn vertex_filter(&self) -> &VertexFilter {
+        &self.vertex_filter
     }
 }
