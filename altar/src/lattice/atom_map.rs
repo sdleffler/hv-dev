@@ -89,7 +89,7 @@ impl AtomMap {
             }));
 
         // Phase 5. Populate vertex filter.
-        self.vertex_filter.extend(self.edge_filter.iter());
+        self.vertex_filter.extend(self.edge_filter.iter_extant());
     }
 
     /// Recalculate the join on all axes of this cell.
