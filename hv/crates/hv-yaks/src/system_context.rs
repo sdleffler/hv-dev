@@ -167,6 +167,15 @@ impl<'scope> SystemContext<'scope> {
         self.world.contains(entity)
     }
 
+    /// See [`hv_ecs::World::find_entity_from_id`]
+    ///
+    /// # Safety
+    ///
+    /// The id must have been previously obtained from an entity in this world which is still live.
+    pub unsafe fn find_entity_from_id(&self, id: u32) -> Entity {
+        self.world.find_entity_from_id(id)
+    }
+
     /// See [`hv_ecs::World::archetypes()`](../hv-ecs/struct.World.html#method.archetypes).
     pub fn archetypes(&self) -> impl ExactSizeIterator<Item = &Archetype> + '_ {
         self.world.archetypes()

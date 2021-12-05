@@ -21,7 +21,8 @@ fn physics_module<'lua>(_lua: &'lua Lua, builder: &mut ModuleBuilder<'lua>) -> R
         .userdata_type::<Position>("Position")?
         .userdata_type::<Velocity>("Velocity")?
         .userdata_type::<CompositePosition3>("CompositePosition3")?
-        .userdata_type::<CompositeVelocity3>("CompositeVelocity3")?;
+        .userdata_type::<CompositeVelocity3>("CompositeVelocity3")?
+        .userdata_type::<Physics>("Physics")?;
 
     Ok(())
 }

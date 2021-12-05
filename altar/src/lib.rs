@@ -1,4 +1,4 @@
-#![allow(clippy::drop_ref)]
+#![allow(clippy::needless_option_as_deref)]
 #![feature(allocator_api)]
 #![feature(control_flow_enum)]
 #![feature(generic_associated_types)]
