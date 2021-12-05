@@ -193,6 +193,8 @@ pub struct PhysicsConfig {
     /// constraints include some position correction bias as well, so we can get away with less
     /// iterations here. Default value is `3`.
     pub position_iterations: u32,
+    /// Acceleration due to gravity. Default value is zero.
+    pub gravity: Vector3<f32>,
 }
 
 impl Default for PhysicsConfig {
@@ -202,6 +204,7 @@ impl Default for PhysicsConfig {
             bias_factor: 0.3,
             velocity_iterations: 8,
             position_iterations: 3,
+            gravity: Vector3::zeros(),
         }
     }
 }
@@ -690,7 +693,7 @@ pub fn update(
     // Integrate velocities w/ external forces
     // TODO: add gravity component and integrate here. For now, HAAAAAACK!
     for (_, physics) in context.prepared_query(physics_query).iter() {
-        physics.velocity.linear -= Vector3::z() * 20. * dt.0;
+        physics.velocity.linear += physics_config.gravity * dt.0;
     }
 
     // Solve likely-violated velocity constraints
