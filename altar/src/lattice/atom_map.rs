@@ -85,7 +85,8 @@ impl AtomMap {
         // Phase 4. Populate edge filter.
         self.edge_filter
             .extend(self.hulls.iter().flat_map(|(coords, hull)| {
-                hull.facets().map(move |facet| facet.translated_by(coords))
+                hull.facets()
+                    .map(move |facet| (coords, facet.translated_by(coords)))
             }));
 
         // Phase 5. Populate vertex filter.
