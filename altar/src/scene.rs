@@ -52,27 +52,16 @@ impl<'s, C: 'static> UpdateAction<'s, C> {
         })
     }
 
-    pub fn update_next(dt: f32) -> Self {
-        Self::new(move |stack, res, ctx| stack.update_next(res, ctx, dt))
+    pub fn update_next() -> Self {
+        Self::new(move |stack, res, ctx| stack.update_next(res, ctx))
     }
 }
 
 pub type DrawAction<'s, C> = Action<SceneStackDraw<'s, C>, C>;
 
 pub trait Scene<C>: 'static {
-    fn update<'s>(
-        &mut self,
-        res: &mut Resources,
-        ctx: &mut C,
-        dt: f32,
-    ) -> Result<UpdateAction<'s, C>>;
-
-    fn draw<'s>(
-        &mut self,
-        res: &mut Resources,
-        ctx: &mut C,
-        remaining_dt: f32,
-    ) -> Result<DrawAction<'s, C>>;
+    fn update<'s>(&mut self, res: &mut Resources, ctx: &mut C) -> Result<UpdateAction<'s, C>>;
+    fn draw<'s>(&mut self, res: &mut Resources, ctx: &mut C) -> Result<DrawAction<'s, C>>;
 }
 
 pub struct SceneStackUpdate<'s, C> {
@@ -112,11 +101,10 @@ impl<'s, C: 'static> SceneStackUpdate<'s, C> {
         &mut self,
         res: &mut Resources,
         context: &mut C,
-        dt: f32,
     ) -> Result<UpdateAction<'s, C>> {
         if self.index > 0 {
             self.index -= 1;
-            self.scene_stack.scenes[self.index].update(res, context, dt)
+            self.scene_stack.scenes[self.index].update(res, context)
         } else {
             Ok(UpdateAction::none())
         }
@@ -136,15 +124,10 @@ impl<'s, C: 'static> SceneStackDraw<'s, C> {
         }
     }
 
-    pub fn draw_next(
-        &mut self,
-        res: &mut Resources,
-        context: &mut C,
-        remaining_dt: f32,
-    ) -> Result<DrawAction<'s, C>> {
+    pub fn draw_next(&mut self, res: &mut Resources, context: &mut C) -> Result<DrawAction<'s, C>> {
         if self.index > 0 {
             self.index -= 1;
-            self.scene_stack.scenes[self.index].draw(res, context, remaining_dt)
+            self.scene_stack.scenes[self.index].draw(res, context)
         } else {
             Ok(DrawAction::none())
         }
@@ -180,37 +163,28 @@ impl<C: 'static> SceneStack<C> {
         self.scenes.is_empty()
     }
 
-    pub fn update(&mut self, res: &mut Resources, context: &mut C, dt: f32) -> Result<()> {
+    pub fn update(&mut self, res: &mut Resources, context: &mut C) -> Result<()> {
         if self.scenes.is_empty() {
             return Ok(());
         }
 
-        let action = self.scenes.last_mut().unwrap().update(res, context, dt)?;
+        let action = self.scenes.last_mut().unwrap().update(res, context)?;
         action.run(&mut SceneStackUpdate::new(self), res, context)
     }
 
-    pub fn draw(&mut self, res: &mut Resources, context: &mut C, remaining_dt: f32) -> Result<()> {
+    pub fn draw(&mut self, res: &mut Resources, context: &mut C) -> Result<()> {
         if self.scenes.is_empty() {
             return Ok(());
         }
 
-        let action = self
-            .scenes
-            .last_mut()
-            .unwrap()
-            .draw(res, context, remaining_dt)?;
+        let action = self.scenes.last_mut().unwrap().draw(res, context)?;
         action.run(&mut SceneStackDraw::new(self), res, context)
     }
 }
 
 impl<C: 'static> Scene<C> for SceneStack<C> {
-    fn update<'s>(
-        &mut self,
-        res: &mut Resources,
-        context: &mut C,
-        dt: f32,
-    ) -> Result<UpdateAction<'s, C>> {
-        self.update(res, context, dt)?;
+    fn update<'s>(&mut self, res: &mut Resources, context: &mut C) -> Result<UpdateAction<'s, C>> {
+        self.update(res, context)?;
 
         if self.is_empty() {
             Ok(UpdateAction::pop())
@@ -219,13 +193,8 @@ impl<C: 'static> Scene<C> for SceneStack<C> {
         }
     }
 
-    fn draw<'s>(
-        &mut self,
-        res: &mut Resources,
-        context: &mut C,
-        remaining_dt: f32,
-    ) -> Result<DrawAction<'s, C>> {
-        self.draw(res, context, remaining_dt)?;
+    fn draw<'s>(&mut self, res: &mut Resources, context: &mut C) -> Result<DrawAction<'s, C>> {
+        self.draw(res, context)?;
 
         Ok(DrawAction::none())
     }

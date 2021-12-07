@@ -4,8 +4,8 @@ use hv::{
 };
 
 lazy_static::lazy_static! {
-    pub static ref ALTAR: Module = Module::new("altar", altar_module);
-    pub static ref PHYSICS: Module = Module::new("physics", physics_module);
+    pub static ref ALTAR: Module = Module::new("altar", "altar", altar_module);
+    pub static ref PHYSICS: Module = Module::new("physics", "altar.physics", physics_module);
 }
 
 fn altar_module<'lua>(_lua: &'lua Lua, builder: &mut ModuleBuilder<'lua>) -> Result<()> {

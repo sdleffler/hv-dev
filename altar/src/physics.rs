@@ -180,7 +180,7 @@ impl Collider {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PhysicsConfig {
-    /// Allowed overlap between objects. Default value is `0.1`.
+    /// Allowed overlap between objects. Default value is `0.01`.
     pub position_slop: f32,
     /// In the approximate range of `[0.1, 0.3]`. Default value is `0.3`.
     pub bias_factor: f32,
@@ -200,7 +200,7 @@ pub struct PhysicsConfig {
 impl Default for PhysicsConfig {
     fn default() -> Self {
         Self {
-            position_slop: 0.1,
+            position_slop: 0.01,
             bias_factor: 0.3,
             velocity_iterations: 8,
             position_iterations: 3,
@@ -398,9 +398,9 @@ impl ContactConstraint {
         }
     }
 
-    pub fn compute_bias_velocity(&self, config: &PhysicsConfig) -> f32 {
+    pub fn compute_bias_velocity(&self, config: &PhysicsConfig, dt: &Dt) -> f32 {
         let overlap = self.contact.compute_overlap();
-        (overlap - config.position_slop).max(0.) * config.bias_factor
+        (overlap - config.position_slop).max(0.) * config.bias_factor / dt.0
     }
 
     /// Compute the required impulse to satisfy the constraint.
@@ -409,11 +409,12 @@ impl ContactConstraint {
         a: &Physics,
         b: Option<&Physics>,
         config: &PhysicsConfig,
+        dt: &Dt,
     ) -> f32 {
         let delta_v =
             b.map(|b| b.velocity.linear).unwrap_or_else(Vector3::zeros) - a.velocity.linear;
         let k_n = a.mass_data.inv_mass + b.map(|b| b.mass_data.inv_mass).unwrap_or(0.);
-        let v_bias = self.compute_bias_velocity(config);
+        let v_bias = self.compute_bias_velocity(config, dt);
         let e = b.map_or(a.restitution, |b| a.restitution.min(b.restitution));
 
         (-(1. + e) * delta_v.dot(&self.contact.normal) + v_bias) / k_n
@@ -436,9 +437,10 @@ impl ContactConstraint {
         a: &Physics,
         b: Option<&Physics>,
         config: &PhysicsConfig,
+        dt: &Dt,
     ) -> f32 {
         let k_n = a.mass_data.inv_mass + b.map(|b| b.mass_data.inv_mass).unwrap_or(0.);
-        let v_bias = self.compute_bias_velocity(config);
+        let v_bias = self.compute_bias_velocity(config, dt);
 
         -v_bias / k_n
     }
@@ -506,7 +508,12 @@ impl PhysicsPipeline {
         }
     }
 
-    pub fn solve_velocities(&mut self, physics: &mut ColumnMut<Physics>, config: &PhysicsConfig) {
+    pub fn solve_velocities(
+        &mut self,
+        physics: &mut ColumnMut<Physics>,
+        config: &PhysicsConfig,
+        dt: &Dt,
+    ) {
         // Warm start.
         for (pair, constraint) in &mut self.constraints {
             let (a, mut b) = match *pair {
@@ -533,7 +540,7 @@ impl PhysicsPipeline {
                     ConstrainedPair::Static(a, _, _) => (physics.get(a).unwrap(), None),
                 };
 
-                let corrective = constraint.compute_normal_impulse(a, b.as_deref(), config);
+                let corrective = constraint.compute_normal_impulse(a, b.as_deref(), config, dt);
                 let old = constraint.normal_impulse;
                 constraint.normal_impulse += corrective;
                 constraint.normal_impulse = constraint.normal_impulse.max(0.);
@@ -587,7 +594,7 @@ impl PhysicsPipeline {
                     ConstrainedPair::Static(a, _, _) => (physics.get(a).unwrap(), None),
                 };
 
-                let corrective = constraint.compute_pseudo_impulse(a, b.as_deref(), config);
+                let corrective = constraint.compute_pseudo_impulse(a, b.as_deref(), config, dt);
                 let old = constraint.pseudo_impulse;
                 constraint.pseudo_impulse += corrective;
                 constraint.pseudo_impulse = constraint.pseudo_impulse.max(0.);
@@ -700,6 +707,7 @@ pub fn update(
     pipeline.solve_velocities(
         &mut context.column_mut(*physics_query_marker),
         physics_config,
+        dt,
     );
 
     // Integrate positions w/ newly solved velocities
@@ -717,7 +725,7 @@ pub fn update(
                 &intersection.coords,
                 physics.collider_shape.as_ref(),
                 &pos_tx,
-                0.1,
+                0.0,
                 atom_map.edge_filter(),
                 atom_map.vertex_filter(),
                 &mut out,

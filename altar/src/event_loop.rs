@@ -3,7 +3,10 @@ use std::ops::ControlFlow;
 use hv::{prelude::*, resources::Resources, timer::TimeContext};
 use luminance::context::GraphicsContext;
 
-use crate::scene::SceneStack;
+use crate::{
+    scene::SceneStack,
+    types::{Dt, RemainingDt},
+};
 
 pub trait MainLoopContext: GraphicsContext {
     fn set_vsync(&mut self, vsync_on: bool) -> Result<()>;
@@ -92,18 +95,21 @@ impl<C: 'static, E: Send + Sync + 'static> EventLoop<C> for TimedSceneStackLoop<
         // it back later.)
         let prev_eq = resources.insert(event_queue);
         let dt = (self.target_fps as f32).recip();
+        resources.entry::<Dt>().or_insert(Dt(dt));
 
         let res = (|| {
             self.timer.tick();
             while self.timer.check_update_time(self.target_fps) {
-                self.scene_stack.update(resources, context, dt)?;
+                self.scene_stack.update(resources, context)?;
             }
 
-            self.scene_stack.draw(
-                resources,
-                context,
-                hv::timer::duration_to_f32(self.timer.remaining_update_time()),
-            )?;
+            resources.entry::<RemainingDt>().or_insert_with(|| {
+                RemainingDt(hv::timer::duration_to_f32(
+                    self.timer.remaining_update_time(),
+                ))
+            });
+
+            self.scene_stack.draw(resources, context)?;
 
             Ok::<_, Error>(())
         })();
