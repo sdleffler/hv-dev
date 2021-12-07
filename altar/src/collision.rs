@@ -6,7 +6,7 @@ use parry3d::{
     bounding_volume::BoundingVolume,
     query::{
         visitors::BoundingVolumeIntersectionsVisitor, Contact, DefaultQueryDispatcher, PointQuery,
-        QueryDispatcher,
+        QueryDispatcher, TOI,
     },
     shape::{FeatureId, Segment, Shape, TriMesh},
 };
@@ -367,5 +367,25 @@ impl CompoundHullShape {
 
         let mut visitor = BoundingVolumeIntersectionsVisitor::new(&ls_aabb2, &mut leaf_callback);
         self.mesh.qbvh().traverse_depth_first(&mut visitor);
+    }
+
+    pub fn time_of_impact(
+        &self,
+        coords: &Vector3<i32>,
+        pos2: &Isometry3<f32>,
+        vel2: &Vector3<f32>,
+        s2: &dyn Shape,
+        max_toi: f32,
+    ) -> Option<TOI> {
+        let pos1 = Isometry3::from(coords.cast::<f32>());
+        let pos12 = pos1.inv_mul(pos2);
+        parry3d::query::details::time_of_impact_composite_shape_shape(
+            &DefaultQueryDispatcher,
+            &pos12,
+            vel2,
+            &self.mesh,
+            s2,
+            max_toi,
+        )
     }
 }

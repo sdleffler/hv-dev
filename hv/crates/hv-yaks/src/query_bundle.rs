@@ -1,4 +1,4 @@
-use hv_ecs::{Component, PreparedQuery, Query, With, Without};
+use hv_ecs::{Component, PreparedQuery, Query, Satisfies, With, Without};
 
 #[cfg(feature = "parallel")]
 use hv_ecs::World;
@@ -98,6 +98,14 @@ where
     fn insert_component_types(component_type_set: &mut BorrowTypeSet) {
         Q0::insert_component_types(component_type_set);
     }
+}
+
+impl<Q0> QueryExt for Satisfies<Q0>
+where
+    Q0: Query,
+{
+    #[cfg(feature = "parallel")]
+    fn insert_component_types(_component_type_set: &mut BorrowTypeSet) {}
 }
 
 impl<Q0> QueryBundle for QueryMarker<Q0>

@@ -4,10 +4,15 @@ use std::{
 };
 
 use hv::{
-    ecs::{ColumnMut, Entity, PreparedQuery, QueryMarker, SystemContext, With},
+    ecs::{ColumnMut, Entity, PreparedQuery, QueryMarker, Satisfies, SystemContext, With},
     prelude::*,
 };
-use parry3d::{bounding_volume::AABB, partitioning::QBVH, shape::SharedShape};
+use parry3d::{
+    bounding_volume::{BoundingVolume, AABB},
+    partitioning::QBVH,
+    query::TOI,
+    shape::SharedShape,
+};
 use soft_edge::SortedPair;
 
 use crate::{
@@ -193,8 +198,20 @@ pub struct PhysicsConfig {
     /// constraints include some position correction bias as well, so we can get away with less
     /// iterations here. Default value is `3`.
     pub position_iterations: u32,
-    /// Acceleration due to gravity. Default value is zero.
+    /// Acceleration due to gravity. Default value is the zero vector.
     pub gravity: Vector3<f32>,
+    /// The discrete collision detection loosening factor. This must be greater than zero, and
+    /// indicates how close bodies much be to be "touching". Default is `0.0`.
+    pub discrete_collision_loosening: f32,
+    /// The continuous collision detection velocity threshold. Bodies with a velocity lower than
+    /// this will not have CCD performed, even if their CCD flags are set. Default value is `20.0`.
+    pub continuous_collision_velocity_threshold: f32,
+    /// TOI bias is a tiny value added to the calculated time-of-impact for bodies w/ CCD enabled.
+    /// It ensures that the newly motion-clamped location is (likely) slightly impacting its
+    /// destination, so that it will be noticed by the subsequent discrete collision detection pass.
+    ///
+    /// Default: `0.1`.
+    pub continuous_collision_toi_bias: f32,
 }
 
 impl Default for PhysicsConfig {
@@ -205,6 +222,9 @@ impl Default for PhysicsConfig {
             velocity_iterations: 8,
             position_iterations: 3,
             gravity: Vector3::zeros(),
+            discrete_collision_loosening: 0.0,
+            continuous_collision_velocity_threshold: 20.0,
+            continuous_collision_toi_bias: 0.1,
         }
     }
 }
@@ -220,6 +240,7 @@ impl Default for PhysicsConfig {
 #[derive(Clone)]
 pub struct Physics {
     position: CompositePosition3,
+    target: CompositePosition3,
     velocity: CompositeVelocity3,
     mass_data: MassData,
 
@@ -239,6 +260,7 @@ impl Physics {
     pub fn with_local_tx(collider_shape: SharedShape, collider_tx: Isometry3<f32>) -> Self {
         Self {
             position: CompositePosition3::origin(),
+            target: CompositePosition3::origin(),
             velocity: CompositeVelocity3::zero(),
             mass_data: MassData { inv_mass: 0. },
             restitution: 0.,
@@ -330,6 +352,23 @@ impl LuaUserData for Physics {
 pub struct MassData {
     /// 1/M. If zero, the body has infinite mass.
     pub inv_mass: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CcdEnabled;
+
+impl LuaUserData for CcdEnabled {
+    fn on_metatable_init(table: Type<Self>) {
+        table.mark_component().add_clone().add_copy();
+    }
+
+    fn on_type_metatable_init(table: Type<Type<Self>>) {
+        table.mark_component_type();
+    }
+
+    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
+        methods.add_function("new", |_, ()| Ok(Self));
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
@@ -472,18 +511,12 @@ impl ContactConstraint {
         }
     }
 
-    pub fn apply_pseudo_impulse(
-        &self,
-        delta: f32,
-        a: &mut Physics,
-        b: Option<&mut Physics>,
-        dt: &Dt,
-    ) {
-        let delta_av = -self.contact.normal.into_inner() * a.mass_data.inv_mass * delta * dt.0;
+    pub fn apply_pseudo_impulse(&self, delta: f32, a: &mut Physics, b: Option<&mut Physics>) {
+        let delta_av = -self.contact.normal.into_inner() * a.mass_data.inv_mass * delta;
         a.position.translation += delta_av;
 
         if let Some(b) = b {
-            let delta_bv = self.contact.normal.into_inner() * b.mass_data.inv_mass * delta * dt.0;
+            let delta_bv = self.contact.normal.into_inner() * b.mass_data.inv_mass * delta;
             b.position.translation += delta_bv;
         }
     }
@@ -599,7 +632,7 @@ impl PhysicsPipeline {
                 constraint.pseudo_impulse += corrective;
                 constraint.pseudo_impulse = constraint.pseudo_impulse.max(0.);
                 let delta = constraint.pseudo_impulse - old;
-                constraint.apply_pseudo_impulse(delta, a, b, dt);
+                constraint.apply_pseudo_impulse(delta, a, b);
             }
         }
     }
@@ -619,11 +652,15 @@ pub fn update(
         ref mut physics_query,
         ref mut with_physics_query,
         physics_query_marker,
+        ref mut maybe_ccd_query,
+        ref mut with_ccd_and_physics_query,
         ref mut physics_aux_query,
     ): &mut (
         PreparedQuery<&mut Physics>,
         PreparedQuery<With<Physics, ()>>,
         QueryMarker<&mut Physics>,
+        PreparedQuery<(&mut Physics, Satisfies<&CcdEnabled>)>,
+        PreparedQuery<With<CcdEnabled, With<Physics, ()>>>,
         PreparedQuery<(&mut Position, &mut Velocity, &mut Physics)>,
     ),
 ) {
@@ -697,8 +734,8 @@ pub fn update(
             }
         }
     }
+
     // Integrate velocities w/ external forces
-    // TODO: add gravity component and integrate here. For now, HAAAAAACK!
     for (_, physics) in context.prepared_query(physics_query).iter() {
         physics.velocity.linear += physics_config.gravity * dt.0;
     }
@@ -710,9 +747,77 @@ pub fn update(
         dt,
     );
 
-    // Integrate positions w/ newly solved velocities
-    for (_, physics) in context.prepared_query(physics_query).iter() {
-        physics.position = physics.velocity.integrate(&physics.position, dt.0);
+    // Integrate positions w/ newly solved velocities, for bodies w/o CCD
+    for (_, (physics, ccd_enabled)) in context.prepared_query(maybe_ccd_query).iter() {
+        physics.target = physics.velocity.integrate(&physics.position, dt.0);
+
+        if !ccd_enabled {
+            physics.position = physics.target;
+        }
+    }
+
+    // Integrate positions w/ newly solved velocities, for bodies w/ CCD, performing motion clamping
+    // where applicable.
+    //
+    // At current, we only perform CCD against static bodies, and we only perform CCD for bodies
+    // which are above the threshold.
+    {
+        let physics_column_mut = context.column_mut(*physics_query_marker);
+        for (e1, ()) in context.prepared_query(with_ccd_and_physics_query).iter() {
+            let mut min_toi = None::<TOI>;
+
+            let p1 = unsafe { physics_column_mut.get_unchecked(e1).unwrap() };
+
+            if p1.velocity.linear.norm_squared()
+                >= physics_config
+                    .continuous_collision_velocity_threshold
+                    .powi(2)
+            {
+                let pos_start_tx = p1.collider_tx * p1.position.as_isometry3();
+                let pos_end_tx = p1.collider_tx * p1.target.as_isometry3();
+                let aabb = p1
+                    .collider_shape
+                    .compute_swept_aabb(&pos_start_tx, &pos_end_tx)
+                    .loosened(0.1);
+
+                for intersection in atom_map.intersect_with(aabb) {
+                    let maybe_new_toi = intersection.shape.time_of_impact(
+                        &intersection.coords,
+                        &pos_start_tx,
+                        &p1.velocity.linear,
+                        p1.collider_shape.as_ref(),
+                        dt.0,
+                    );
+
+                    if let Some(new_toi) = maybe_new_toi {
+                        let do_replace =
+                            min_toi.map_or(true, |prev_toi| new_toi.toi < prev_toi.toi);
+                        if do_replace {
+                            min_toi = Some(new_toi);
+                        }
+                    }
+                }
+
+                // TODO: When/if we do CCD on dynamic-dynamic bodies, it should probably go here.
+                // We're borrowing the ECS world via the column API specifically in order to make
+                // this easy for if/when we do this.
+            }
+
+            if let Some(toi) = min_toi {
+                let extra =
+                    physics_config.continuous_collision_toi_bias / p1.velocity.linear.norm();
+                p1.position = p1
+                    .position
+                    .lerp_slerp(&p1.target, (toi.toi / dt.0 + extra).min(1.));
+                println!(
+                    "TOI: {}, velocity: {}",
+                    toi.toi / dt.0 + extra,
+                    p1.velocity.linear.norm()
+                );
+            } else {
+                p1.position = p1.target;
+            }
+        }
     }
 
     // Detect dynamic-static collisions, collecting position and velocity constraints
@@ -725,7 +830,7 @@ pub fn update(
                 &intersection.coords,
                 physics.collider_shape.as_ref(),
                 &pos_tx,
-                0.0,
+                physics_config.discrete_collision_loosening,
                 atom_map.edge_filter(),
                 atom_map.vertex_filter(),
                 &mut out,
