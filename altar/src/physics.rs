@@ -200,9 +200,6 @@ pub struct PhysicsConfig {
     pub position_iterations: u32,
     /// Acceleration due to gravity. Default value is the zero vector.
     pub gravity: Vector3<f32>,
-    /// The discrete collision detection loosening factor. This must be greater than zero, and
-    /// indicates how close bodies much be to be "touching". Default is `0.0`.
-    pub discrete_collision_loosening: f32,
     /// The continuous collision detection velocity threshold. Bodies with a velocity lower than
     /// this will not have CCD performed, even if their CCD flags are set. Default value is `20.0`.
     pub continuous_collision_velocity_threshold: f32,
@@ -222,7 +219,6 @@ impl Default for PhysicsConfig {
             velocity_iterations: 8,
             position_iterations: 3,
             gravity: Vector3::zeros(),
-            discrete_collision_loosening: 0.0,
             continuous_collision_velocity_threshold: 20.0,
             continuous_collision_toi_bias: 0.1,
         }
@@ -830,7 +826,7 @@ pub fn update(
                 &intersection.coords,
                 physics.collider_shape.as_ref(),
                 &pos_tx,
-                physics_config.discrete_collision_loosening,
+                0.0,
                 atom_map.edge_filter(),
                 atom_map.vertex_filter(),
                 &mut out,
