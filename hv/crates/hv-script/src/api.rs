@@ -26,18 +26,14 @@ pub struct Module {
 impl Module {
     pub fn new<S1, S2, F>(name: &S1, key: &S2, closure: F) -> Self
     where
-        F: for<'lua> Fn(&'lua Lua, &mut ModuleBuilder<'lua>) -> Result<()> + Send + Sync + 'static,
+        F: for<'lua> Fn(&'lua Lua) -> Result<ModuleBuilder<'lua>> + Send + Sync + 'static,
         S1: AsRef<str> + ?Sized,
         S2: AsRef<str> + ?Sized,
     {
         Self {
             name: name.as_ref().to_owned(),
             key: key.as_ref().to_owned(),
-            build: Box::new(move |lua| {
-                let mut builder = ModuleBuilder::new(lua)?;
-                closure(lua, &mut builder)?;
-                Ok(builder)
-            }),
+            build: Box::new(closure),
         }
     }
 
@@ -163,7 +159,7 @@ impl<'lua> ModuleBuilder<'lua> {
         self.value(&name, sub.build(self.lua)?)
     }
 
-    pub fn build(&self) -> LuaTable<'lua> {
+    pub fn to_table(&self) -> LuaTable<'lua> {
         self.table.clone()
     }
 }
@@ -197,30 +193,36 @@ lazy_static::lazy_static! {
     /// Loaded automatically by the `hv` module as `hv.lua.class`.
     pub static ref CLASS: Module =
         Module::from_source("class", "hv.lua.class", include_str!("../resources/class.lua"));
+
+    /// A convenient state machine/pushdown automaton abstraction.
+    ///
+    /// Loaded automatically by the `hv` module as `hv.lua.agent`.
+    pub static ref AGENT: Module = Module::new("agent", "hv.lua.agent", hv_lua_agent);
 }
 
-fn hv<'lua>(_lua: &'lua Lua, builder: &mut ModuleBuilder<'lua>) -> Result<()> {
+fn hv(lua: &Lua) -> Result<ModuleBuilder> {
+    let mut builder = ModuleBuilder::new(lua)?;
     builder
         .submodule(&*HV_ECS)?
         .submodule(&*HV_MATH)?
         .submodule(&*HV_LUA)?;
 
-    Ok(())
+    Ok(builder)
 }
 
-fn hv_ecs<'lua>(_lua: &'lua Lua, builder: &mut ModuleBuilder<'lua>) -> Result<()> {
+fn hv_ecs(lua: &Lua) -> Result<ModuleBuilder> {
     use hv_ecs::*;
-
+    let mut builder = ModuleBuilder::new(lua)?;
     builder
         .userdata_type::<World>("World")?
         .userdata_type::<DynamicQuery>("Query")?;
 
-    Ok(())
+    Ok(builder)
 }
 
-fn hv_math<'lua>(_lua: &'lua Lua, builder: &mut ModuleBuilder<'lua>) -> Result<()> {
+fn hv_math(lua: &Lua) -> Result<ModuleBuilder> {
     use hv_math::*;
-
+    let mut builder = ModuleBuilder::new(lua)?;
     builder
         .userdata_type::<Vector2<f32>>("Vector2")?
         .userdata_type::<Vector3<f32>>("Vector3")?
@@ -228,14 +230,24 @@ fn hv_math<'lua>(_lua: &'lua Lua, builder: &mut ModuleBuilder<'lua>) -> Result<(
         .userdata_type::<Isometry3<f32>>("Isometry3")?
         .userdata_type::<Velocity2<f32>>("Velocity2")?;
 
-    Ok(())
+    Ok(builder)
 }
 
-fn hv_lua<'lua>(_lua: &'lua Lua, builder: &mut ModuleBuilder<'lua>) -> Result<()> {
+fn hv_lua(lua: &Lua) -> Result<ModuleBuilder> {
+    let mut builder = ModuleBuilder::new(lua)?;
     builder
         .userdata_type::<LuaRegistryKey>("RegistryKey")?
         .submodule(&*BINSER)?
-        .submodule(&*CLASS)?;
+        .submodule(&*CLASS)?
+        .submodule(&*AGENT)?;
 
-    Ok(())
+    Ok(builder)
+}
+
+fn hv_lua_agent(lua: &Lua) -> Result<ModuleBuilder> {
+    let _ = CLASS.build(lua)?;
+    Ok(ModuleBuilder::from_table(
+        lua,
+        lua.load(include_str!("../resources/agent.lua")).eval()?,
+    ))
 }

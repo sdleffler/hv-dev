@@ -1,8 +1,4 @@
-use crate::render::{
-    mesh::{HasNormal, HasPosition},
-    pipeline::semantics::*,
-    Color, LinearColor, Transform,
-};
+use crate::render::{pipeline::semantics::*, Color, LinearColor, Transform};
 use hv::{
     ecs::{Or, PreparedQuery, SystemContext},
     prelude::*,
@@ -32,6 +28,8 @@ use luminance::{
 use std::ops;
 use thunderdome::{Arena, Index};
 
+pub mod mesh;
+
 #[derive(Clone, Copy, Debug, Vertex, PartialEq)]
 #[vertex(sem = "VertexSemantics")]
 pub struct Vertex {
@@ -39,26 +37,6 @@ pub struct Vertex {
     #[vertex(normalized = true)]
     pub color: VertexColor,
     pub normal: VertexNormal,
-}
-
-impl HasPosition<Vector3<f32>> for Vertex {
-    fn get_position(&self) -> Vector3<f32> {
-        self.position.into()
-    }
-
-    fn set_position(&mut self, position: Vector3<f32>) {
-        self.position = position.into();
-    }
-}
-
-impl HasNormal for Vertex {
-    fn get_normal(&self) -> Vector3<f32> {
-        self.normal.into()
-    }
-
-    fn set_normal(&mut self, normal: Vector3<f32>) {
-        self.normal = normal.into();
-    }
 }
 
 impl From<Vector3<f32>> for Vertex {

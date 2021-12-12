@@ -5,6 +5,7 @@ use std::{
 
 use hv::{
     ecs::{ColumnMut, Entity, PreparedQuery, QueryMarker, Satisfies, SystemContext, With},
+    elastic::ElasticMut,
     prelude::*,
 };
 use parry3d::{
@@ -13,11 +14,13 @@ use parry3d::{
     query::TOI,
     shape::SharedShape,
 };
+use shrev::{EventChannel, ReaderId};
 use soft_edge::SortedPair;
+use thunderdome::{Arena, Index};
 
 use crate::{
     lattice::atom_map::AtomMap,
-    types::{Dt, Float, Tick},
+    types::{Float, UpdateDt, UpdateTick},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -225,6 +228,12 @@ impl Default for PhysicsConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ContactIdEntry {
+    pub flipped: bool,
+    pub id: ContactId,
+}
+
 /// Physics information and solver state.
 ///
 /// Contains mass data as well as intermediate states used by the solver.
@@ -243,9 +252,12 @@ pub struct Physics {
     restitution: f32,
     static_friction: f32,
     dynamic_friction: f32,
+    gravity_k: f32,
 
     collider_tx: Isometry3<f32>,
     collider_shape: SharedShape,
+
+    contacts: Vec<ContactIdEntry>,
 }
 
 impl Physics {
@@ -262,8 +274,10 @@ impl Physics {
             restitution: 0.,
             static_friction: 0.,
             dynamic_friction: 0.,
+            gravity_k: 1.,
             collider_shape,
             collider_tx,
+            contacts: Vec::new(),
         }
     }
 
@@ -273,6 +287,18 @@ impl Physics {
         } else {
             MassData {
                 inv_mass: self.collider_shape.mass_properties(density).inv_mass,
+            }
+        };
+
+        Self { mass_data, ..self }
+    }
+
+    pub fn with_mass(self, mass: f32) -> Self {
+        let mass_data = if mass == 0. {
+            MassData { inv_mass: 0. }
+        } else {
+            MassData {
+                inv_mass: mass.recip(),
             }
         };
 
@@ -307,40 +333,14 @@ impl Physics {
             ..self
         }
     }
-}
 
-impl LuaUserData for Physics {
-    fn on_metatable_init(table: Type<Self>) {
-        table.add_clone().mark_component();
-    }
-
-    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
-        fields.add_field_method_get("static_friction", |_, this| Ok(this.static_friction));
-        fields.add_field_method_get("dynamic_friction", |_, this| Ok(this.dynamic_friction));
-        fields.add_field_method_set("static_friction", |_, this, static_friction| {
-            this.static_friction = static_friction;
-            Ok(())
-        });
-        fields.add_field_method_set("dynamic_friction", |_, this, dynamic_friction| {
-            this.dynamic_friction = dynamic_friction;
-            Ok(())
-        });
-    }
-
-    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method_mut(
-            "set_friction",
-            |_, this, (static_friction, dynamic_friction): (f32, Option<f32>)| {
-                let dynamic_friction = dynamic_friction.unwrap_or(static_friction);
-                this.static_friction = static_friction;
-                this.dynamic_friction = dynamic_friction;
-                Ok(())
-            },
-        );
-    }
-
-    fn on_type_metatable_init(table: Type<Type<Self>>) {
-        table.mark_component_type();
+    fn remove_contact(&mut self, contact_id: ContactId) {
+        let i = self
+            .contacts
+            .iter()
+            .position(|&entry| entry.id == contact_id)
+            .unwrap();
+        self.contacts.swap_remove(i);
     }
 }
 
@@ -353,24 +353,20 @@ pub struct MassData {
 #[derive(Debug, Clone, Copy)]
 pub struct CcdEnabled;
 
-impl LuaUserData for CcdEnabled {
-    fn on_metatable_init(table: Type<Self>) {
-        table.mark_component().add_clone().add_copy();
-    }
-
-    fn on_type_metatable_init(table: Type<Type<Self>>) {
-        table.mark_component_type();
-    }
-
-    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
-        methods.add_function("new", |_, ()| Ok(Self));
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 pub enum ConstrainedPair {
     Dynamic(SortedPair<Entity>),
     Static(Entity, Vector3<i32>, u32),
+}
+
+impl ConstrainedPair {
+    pub fn get_participant(self, flipped: bool) -> Entity {
+        match self {
+            Self::Dynamic(pair) if !flipped => pair.0,
+            Self::Dynamic(pair) => pair.1,
+            Self::Static(e, _, _) => e,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -413,6 +409,7 @@ impl Contact {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ContactConstraint {
+    pub participants: ConstrainedPair,
     pub contact: Contact,
     /// "Lambda" value, used for velocity correction.
     pub normal_impulse: f32,
@@ -423,8 +420,9 @@ pub struct ContactConstraint {
 }
 
 impl ContactConstraint {
-    pub fn new(contact: Contact) -> Self {
+    pub fn new(participants: ConstrainedPair, contact: Contact) -> Self {
         Self {
+            participants,
             contact,
             normal_impulse: 0.,
             tangent_impulses: Vector2::zeros(),
@@ -433,7 +431,7 @@ impl ContactConstraint {
         }
     }
 
-    pub fn compute_bias_velocity(&self, config: &PhysicsConfig, dt: &Dt) -> f32 {
+    pub fn compute_bias_velocity(&self, config: &PhysicsConfig, dt: &UpdateDt) -> f32 {
         let overlap = self.contact.compute_overlap();
         (overlap - config.position_slop).max(0.) * config.bias_factor / dt.0
     }
@@ -444,7 +442,7 @@ impl ContactConstraint {
         a: &Physics,
         b: Option<&Physics>,
         config: &PhysicsConfig,
-        dt: &Dt,
+        dt: &UpdateDt,
     ) -> f32 {
         let delta_v =
             b.map(|b| b.velocity.linear).unwrap_or_else(Vector3::zeros) - a.velocity.linear;
@@ -472,7 +470,7 @@ impl ContactConstraint {
         a: &Physics,
         b: Option<&Physics>,
         config: &PhysicsConfig,
-        dt: &Dt,
+        dt: &UpdateDt,
     ) -> f32 {
         let k_n = a.mass_data.inv_mass + b.map(|b| b.mass_data.inv_mass).unwrap_or(0.);
         let v_bias = self.compute_bias_velocity(config, dt);
@@ -518,34 +516,45 @@ impl ContactConstraint {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ContactId(Index);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
+pub enum PhysicsEvent {
+    BeginContact(ContactId),
+    EndContact(ContactId, ConstrainedPair),
+}
+
 pub struct PhysicsPipeline {
     qbvh: QBVH<u32>,
-    constraints: HashMap<ConstrainedPair, ContactConstraint>,
+    constraints: Arena<ContactConstraint>,
+    contacts: HashMap<ConstrainedPair, ContactId>,
+    events: EventChannel<PhysicsEvent>,
+
+    pub config: PhysicsConfig,
 }
 
 impl Default for PhysicsPipeline {
     fn default() -> Self {
-        Self::new()
+        Self::new(PhysicsConfig::default())
     }
 }
 
 impl PhysicsPipeline {
-    pub fn new() -> Self {
+    pub fn new(config: PhysicsConfig) -> Self {
         Self {
             qbvh: QBVH::new(),
-            constraints: HashMap::new(),
+            constraints: Arena::new(),
+            contacts: HashMap::new(),
+            config,
+            events: EventChannel::new(),
         }
     }
 
-    pub fn solve_velocities(
-        &mut self,
-        physics: &mut ColumnMut<Physics>,
-        config: &PhysicsConfig,
-        dt: &Dt,
-    ) {
+    pub fn solve_velocities(&mut self, physics: &mut ColumnMut<Physics>, dt: &UpdateDt) {
         // Warm start.
-        for (pair, constraint) in &mut self.constraints {
-            let (a, mut b) = match *pair {
+        for (_, constraint) in &mut self.constraints {
+            let (a, mut b) = match constraint.participants {
                 ConstrainedPair::Dynamic(pair) => {
                     let ma_ptr = physics.get(pair.0).unwrap() as *mut _;
                     let mb_ptr = physics.get(pair.1).unwrap() as *mut _;
@@ -558,9 +567,9 @@ impl PhysicsPipeline {
             constraint.apply_tangent_impulses(constraint.tangent_impulses, a, b);
         }
 
-        for _ in 0..config.velocity_iterations {
-            for (pair, constraint) in &mut self.constraints {
-                let (a, mut b) = match *pair {
+        for _ in 0..self.config.velocity_iterations {
+            for (_, constraint) in &mut self.constraints {
+                let (a, mut b) = match constraint.participants {
                     ConstrainedPair::Dynamic(pair) => {
                         let ma_ptr = physics.get(pair.0).unwrap() as *mut _;
                         let mb_ptr = physics.get(pair.1).unwrap() as *mut _;
@@ -569,7 +578,8 @@ impl PhysicsPipeline {
                     ConstrainedPair::Static(a, _, _) => (physics.get(a).unwrap(), None),
                 };
 
-                let corrective = constraint.compute_normal_impulse(a, b.as_deref(), config, dt);
+                let corrective =
+                    constraint.compute_normal_impulse(a, b.as_deref(), &self.config, dt);
                 let old = constraint.normal_impulse;
                 constraint.normal_impulse += corrective;
                 constraint.normal_impulse = constraint.normal_impulse.max(0.);
@@ -601,20 +611,15 @@ impl PhysicsPipeline {
         }
     }
 
-    pub fn solve_positions(
-        &mut self,
-        physics: &mut ColumnMut<Physics>,
-        config: &PhysicsConfig,
-        dt: &Dt,
-    ) {
-        for constraint in self.constraints.values_mut() {
+    pub fn solve_positions(&mut self, physics: &mut ColumnMut<Physics>, dt: &UpdateDt) {
+        for (_, constraint) in &mut self.constraints {
             // No warm starting for position constraints.
             constraint.pseudo_impulse = 0.;
         }
 
-        for _ in 0..config.position_iterations {
-            for (pair, constraint) in &mut self.constraints {
-                let (a, b) = match *pair {
+        for _ in 0..self.config.position_iterations {
+            for (_, constraint) in &mut self.constraints {
+                let (a, b) = match constraint.participants {
                     ConstrainedPair::Dynamic(pair) => {
                         let ma_ptr = physics.get(pair.0).unwrap() as *mut _;
                         let mb_ptr = physics.get(pair.1).unwrap() as *mut _;
@@ -623,7 +628,8 @@ impl PhysicsPipeline {
                     ConstrainedPair::Static(a, _, _) => (physics.get(a).unwrap(), None),
                 };
 
-                let corrective = constraint.compute_pseudo_impulse(a, b.as_deref(), config, dt);
+                let corrective =
+                    constraint.compute_pseudo_impulse(a, b.as_deref(), &self.config, dt);
                 let old = constraint.pseudo_impulse;
                 constraint.pseudo_impulse += corrective;
                 constraint.pseudo_impulse = constraint.pseudo_impulse.max(0.);
@@ -632,18 +638,24 @@ impl PhysicsPipeline {
             }
         }
     }
+
+    pub fn contact(&self, contact_id: ContactId) -> Option<&ContactConstraint> {
+        self.constraints.get(contact_id.0)
+    }
+
+    pub fn register_reader(&mut self) -> ReaderId<PhysicsEvent> {
+        self.events.register_reader()
+    }
+
+    pub fn events(&self) -> &EventChannel<PhysicsEvent> {
+        &self.events
+    }
 }
 
 #[allow(clippy::type_complexity)]
 pub fn update(
     context: SystemContext,
-    (dt, tick, atom_map, pipeline, physics_config): (
-        &Dt,
-        &Tick,
-        &AtomMap,
-        &mut PhysicsPipeline,
-        &PhysicsConfig,
-    ),
+    (dt, tick, atom_map, pipeline): (&UpdateDt, &UpdateTick, &AtomMap, &mut PhysicsPipeline),
     (
         ref mut physics_query,
         ref mut with_physics_query,
@@ -716,10 +728,30 @@ pub fn update(
                     }
 
                     let contact = Contact::new(c.normal1, c.point1, c.point2);
-                    let constraint = match pipeline.constraints.entry(pair) {
-                        Entry::Vacant(vacant) => vacant.insert(ContactConstraint::new(contact)),
+                    let constraint = match pipeline.contacts.entry(pair) {
+                        Entry::Vacant(vacant) => {
+                            let contact_id = ContactId(
+                                pipeline
+                                    .constraints
+                                    .insert(ContactConstraint::new(pair, contact)),
+                            );
+                            vacant.insert(contact_id);
+                            p1.contacts.push(ContactIdEntry {
+                                flipped: false,
+                                id: contact_id,
+                            });
+                            p2.contacts.push(ContactIdEntry {
+                                flipped: true,
+                                id: contact_id,
+                            });
+                            pipeline
+                                .events
+                                .single_write(PhysicsEvent::BeginContact(contact_id));
+                            &mut pipeline.constraints[contact_id.0]
+                        }
                         Entry::Occupied(occupied) => {
-                            let mut_constraint = occupied.into_mut();
+                            let contact_id = *occupied.get();
+                            let mut_constraint = &mut pipeline.constraints[contact_id.0];
                             mut_constraint.contact = contact;
                             mut_constraint
                         }
@@ -733,15 +765,11 @@ pub fn update(
 
     // Integrate velocities w/ external forces
     for (_, physics) in context.prepared_query(physics_query).iter() {
-        physics.velocity.linear += physics_config.gravity * dt.0;
+        physics.velocity.linear += physics.gravity_k * pipeline.config.gravity * dt.0;
     }
 
     // Solve likely-violated velocity constraints
-    pipeline.solve_velocities(
-        &mut context.column_mut(*physics_query_marker),
-        physics_config,
-        dt,
-    );
+    pipeline.solve_velocities(&mut context.column_mut(*physics_query_marker), dt);
 
     // Integrate positions w/ newly solved velocities, for bodies w/o CCD
     for (_, (physics, ccd_enabled)) in context.prepared_query(maybe_ccd_query).iter() {
@@ -765,7 +793,8 @@ pub fn update(
             let p1 = unsafe { physics_column_mut.get_unchecked(e1).unwrap() };
 
             if p1.velocity.linear.norm_squared()
-                >= physics_config
+                >= pipeline
+                    .config
                     .continuous_collision_velocity_threshold
                     .powi(2)
             {
@@ -801,15 +830,10 @@ pub fn update(
 
             if let Some(toi) = min_toi {
                 let extra =
-                    physics_config.continuous_collision_toi_bias / p1.velocity.linear.norm();
+                    pipeline.config.continuous_collision_toi_bias / p1.velocity.linear.norm();
                 p1.position = p1
                     .position
                     .lerp_slerp(&p1.target, (toi.toi / dt.0 + extra).min(1.));
-                println!(
-                    "TOI: {}, velocity: {}",
-                    toi.toi / dt.0 + extra,
-                    p1.velocity.linear.norm()
-                );
             } else {
                 p1.position = p1.target;
             }
@@ -836,10 +860,26 @@ pub fn update(
                 c.flip();
                 let pair = ConstrainedPair::Static(e, intersection.coords, feature);
                 let contact = Contact::new(c.normal1, c.point1, c.point2);
-                let constraint = match pipeline.constraints.entry(pair) {
-                    Entry::Vacant(vacant) => vacant.insert(ContactConstraint::new(contact)),
+                let constraint = match pipeline.contacts.entry(pair) {
+                    Entry::Vacant(vacant) => {
+                        let contact_id = ContactId(
+                            pipeline
+                                .constraints
+                                .insert(ContactConstraint::new(pair, contact)),
+                        );
+                        vacant.insert(contact_id);
+                        physics.contacts.push(ContactIdEntry {
+                            flipped: false,
+                            id: contact_id,
+                        });
+                        pipeline
+                            .events
+                            .single_write(PhysicsEvent::BeginContact(contact_id));
+                        &mut pipeline.constraints[contact_id.0]
+                    }
                     Entry::Occupied(occupied) => {
-                        let mut_constraint = occupied.into_mut();
+                        let contact_id = *occupied.get();
+                        let mut_constraint = &mut pipeline.constraints[contact_id.0];
                         mut_constraint.contact = contact;
                         mut_constraint
                     }
@@ -850,16 +890,37 @@ pub fn update(
         }
     }
 
-    // Solve position constraints
-    pipeline.solve_positions(
-        &mut context.column_mut(*physics_query_marker),
-        physics_config,
-        dt,
-    );
+    {
+        let mut physics = context.column_mut(*physics_query_marker);
+        // Solve position constraints
+        pipeline.solve_positions(&mut physics, dt);
 
-    pipeline
-        .constraints
-        .retain(|_, constraint| constraint.timestamp == tick.0);
+        pipeline.constraints.retain(|id, constraint| {
+            if constraint.timestamp != tick.0 {
+                pipeline.contacts.remove(&constraint.participants);
+
+                let contact_id = ContactId(id);
+                match constraint.participants {
+                    ConstrainedPair::Dynamic(pair) => {
+                        physics.get(pair.0).unwrap().remove_contact(contact_id);
+                        physics.get(pair.1).unwrap().remove_contact(contact_id);
+                    }
+                    ConstrainedPair::Static(e1, _, _) => {
+                        physics.get(e1).unwrap().remove_contact(contact_id);
+                    }
+                }
+
+                pipeline.events.single_write(PhysicsEvent::EndContact(
+                    contact_id,
+                    constraint.participants,
+                ));
+
+                false
+            } else {
+                true
+            }
+        });
+    }
 
     // Copy physics data back to the ECS.
     for (_, (pos, vel, physics)) in context.prepared_query(physics_aux_query).iter() {
@@ -871,6 +932,12 @@ pub fn update(
 impl LuaUserData for CompositePosition3 {
     fn on_metatable_init(table: Type<Self>) {
         table.add_clone().add_copy().add_send().add_sync();
+    }
+
+    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
+        methods.add_function("new", |_, (translation, rotation): (_, Option<_>)| {
+            Ok(Self::new(translation, rotation.unwrap_or(0.)))
+        });
     }
 }
 
@@ -904,8 +971,30 @@ impl LuaUserData for Position {
         table.mark_component().add_clone().add_copy();
     }
 
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method_mut("get", |_, this, out: Option<LuaAnyUserData>| match out {
+            Some(ud) => {
+                *ud.borrow_mut::<CompositePosition3>()? = this.current;
+                Ok(None)
+            }
+            None => Ok(Some(this.current)),
+        });
+
+        methods.add_method_mut("set", |_, this, composite: CompositePosition3| {
+            this.current = composite;
+            Ok(())
+        });
+    }
+
     fn on_type_metatable_init(table: Type<Type<Self>>) {
         table.mark_component_type();
+    }
+
+    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
+        methods.add_function("new", |_, composite| Ok(Self::new(composite)));
+        methods.add_function("new_out_of_sync", |_, (position, velocity, dt)| {
+            Ok(Self::new_out_of_sync(position, &velocity, dt))
+        });
     }
 }
 
@@ -937,6 +1026,15 @@ impl LuaUserData for Velocity {
     fn on_type_metatable_init(table: Type<Type<Self>>) {
         table.mark_component_type();
     }
+
+    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
+        methods.add_function("new", |_, composite| Ok(Self { composite }));
+        methods.add_function("zero", |_, ()| {
+            Ok(Self {
+                composite: CompositeVelocity3::zero(),
+            })
+        });
+    }
 }
 
 impl LuaUserData for Collider {
@@ -958,6 +1056,146 @@ impl LuaUserData for Collider {
 
     fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, (local_tx, shape)| Ok(Self::new(local_tx, shape)));
+    }
+}
+
+impl LuaUserData for Physics {
+    fn on_metatable_init(table: Type<Self>) {
+        table.add_clone().mark_component();
+    }
+
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("static_friction", |_, this| Ok(this.static_friction));
+        fields.add_field_method_get("dynamic_friction", |_, this| Ok(this.dynamic_friction));
+        fields.add_field_method_get("gravity_k", |_, this| Ok(this.gravity_k));
+
+        fields.add_field_method_set("static_friction", |_, this, static_friction| {
+            this.static_friction = static_friction;
+            Ok(())
+        });
+        fields.add_field_method_set("dynamic_friction", |_, this, dynamic_friction| {
+            this.dynamic_friction = dynamic_friction;
+            Ok(())
+        });
+        fields.add_field_method_set("gravity_k", |_, this, gravity_k| {
+            this.gravity_k = gravity_k;
+            Ok(())
+        });
+    }
+
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_function_mut("with_density", |_, (ud, density): (LuaAnyUserData, _)| {
+            let mut this = ud.borrow_mut::<Self>()?;
+            *this = this.clone().with_density(density);
+            drop(this);
+            Ok(ud)
+        });
+
+        methods.add_function_mut("with_friction", |_, (ud, friction): (LuaAnyUserData, _)| {
+            let mut this = ud.borrow_mut::<Self>()?;
+            *this = this.clone().with_friction(friction);
+            drop(this);
+            Ok(ud)
+        });
+
+        methods.add_function_mut(
+            "with_static_friction",
+            |_, (ud, friction): (LuaAnyUserData, _)| {
+                let mut this = ud.borrow_mut::<Self>()?;
+                *this = this.clone().with_static_friction(friction);
+                drop(this);
+                Ok(ud)
+            },
+        );
+
+        methods.add_function_mut(
+            "with_dynamic_friction",
+            |_, (ud, friction): (LuaAnyUserData, _)| {
+                let mut this = ud.borrow_mut::<Self>()?;
+                *this = this.clone().with_dynamic_friction(friction);
+                drop(this);
+                Ok(ud)
+            },
+        );
+
+        methods.add_function_mut(
+            "with_restitution",
+            |_, (ud, restitution): (LuaAnyUserData, _)| {
+                let mut this = ud.borrow_mut::<Self>()?;
+                *this = this.clone().with_restitution(restitution);
+                drop(this);
+                Ok(ud)
+            },
+        );
+
+        methods.add_method_mut(
+            "set_friction",
+            |_, this, (static_friction, dynamic_friction): (f32, Option<f32>)| {
+                let dynamic_friction = dynamic_friction.unwrap_or(static_friction);
+                this.static_friction = static_friction;
+                this.dynamic_friction = dynamic_friction;
+                Ok(())
+            },
+        );
+
+        methods.add_method(
+            "max_projected_contact_normal",
+            |lua, this, normal: Vector3<f32>| {
+                let pp_elastic = lua
+                    .app_data_ref::<ElasticMut<PhysicsPipeline>>()
+                    .ok_or_else(|| {
+                        LuaError::external("no physics pipeline loaned to Lua state!")
+                    })?;
+
+                let pp = pp_elastic.borrow();
+                let query_normal = UnitVector3::new_normalize(normal);
+                let mut max_projected = None::<f32>;
+
+                for &contact_id_entry in &this.contacts {
+                    let constraint = pp.contact(contact_id_entry.id).expect("invalid contact");
+                    let contact_normal = if contact_id_entry.flipped {
+                        -constraint.contact.normal
+                    } else {
+                        constraint.contact.normal
+                    };
+
+                    let projected = query_normal.dot(&contact_normal);
+                    let replace =
+                        max_projected.map_or(true, |max_projected| projected > max_projected);
+                    if replace {
+                        max_projected = Some(projected);
+                    }
+                }
+
+                Ok(max_projected)
+            },
+        );
+    }
+
+    fn on_type_metatable_init(table: Type<Type<Self>>) {
+        table.mark_component_type();
+    }
+
+    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
+        methods.add_function("new", |_, collider_shape| Ok(Self::new(collider_shape)));
+
+        methods.add_function("with_local_tx", |_, (collider_shape, collider_tx)| {
+            Ok(Self::with_local_tx(collider_shape, collider_tx))
+        });
+    }
+}
+
+impl LuaUserData for CcdEnabled {
+    fn on_metatable_init(table: Type<Self>) {
+        table.mark_component().add_clone().add_copy();
+    }
+
+    fn on_type_metatable_init(table: Type<Type<Self>>) {
+        table.mark_component_type();
+    }
+
+    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
+        methods.add_function("new", |_, ()| Ok(Self));
     }
 }
 

@@ -1,10 +1,16 @@
 pub type Float = f32;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Dt(pub f32);
+pub struct GlobalTick(pub u64);
 
 #[derive(Debug, Clone, Copy)]
-pub struct RemainingDt(pub f32);
+pub struct GlobalDt(pub f32);
 
 #[derive(Debug, Clone, Copy)]
-pub struct Tick(pub u64);
+pub struct UpdateDt(pub f32);
+
+#[derive(Debug, Clone, Copy)]
+pub struct RemainingUpdateDt(pub f32);
+
+#[derive(Debug, Clone, Copy)]
+pub struct UpdateTick(pub u64);

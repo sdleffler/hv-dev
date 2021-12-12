@@ -6,6 +6,8 @@
 #![feature(bool_to_option)]
 #![feature(slice_partition_dedup)]
 #![feature(is_sorted)]
+#![feature(split_array)]
+#![feature(toowned_clone_into)]
 #![feature(maybe_uninit_uninit_array, maybe_uninit_array_assume_init)]
 
 pub mod api;

@@ -15,7 +15,9 @@ use core::{
 use hashbrown::{HashMap, HashSet};
 
 use hv_cell::{ArcRef, ArcRefMut};
-use hv_elastic::{Elastic, ScopeArena, ScopeGuard, StretchedMut, StretchedRef};
+use hv_elastic::{
+    Elastic, ElasticMut, ElasticRef, ScopeArena, ScopeGuard, StretchedMut, StretchedRef,
+};
 use hv_lua::prelude::*;
 use hv_resources::{self, Resources};
 use hv_stampede::{boxed::Box as ArenaBox, Bump};
@@ -23,7 +25,7 @@ use hv_stampede::{boxed::Box as ArenaBox, Bump};
 pub mod api;
 
 struct ScriptResource {
-    inner: Box<dyn Any + Send + Sync>,
+    inner: Box<dyn Any>,
     #[allow(clippy::type_complexity)]
     loanable: Box<
         dyn for<'a, 'lua, 'g> Fn(
@@ -46,7 +48,7 @@ impl fmt::Debug for ScriptResource {
 impl ScriptResource {
     fn with_ref<T, F>(elastic: Elastic<StretchedRef<T>>, on_loan: F) -> Self
     where
-        T: 'static + Send + Sync,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         fn loan_ref<'a, 'g, 'lua, T: 'static>(
@@ -78,7 +80,7 @@ impl ScriptResource {
 
     fn with_mut<T, F>(elastic: Elastic<StretchedMut<T>>, on_loan: F) -> Self
     where
-        T: 'static + Send + Sync,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         fn loan_mut<'a, 'g, 'lua, T: 'static>(
@@ -114,7 +116,7 @@ impl ScriptResource {
 
     fn with_arc_ref<T, F>(elastic: Elastic<StretchedRef<T>>, on_loan: F) -> Self
     where
-        T: 'static + Send + Sync,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         fn loan_arc_ref<'a, 'g, 'lua, T: 'static>(
@@ -146,7 +148,7 @@ impl ScriptResource {
 
     fn with_arc_mut<T, F>(elastic: Elastic<StretchedMut<T>>, on_loan: F) -> Self
     where
-        T: 'static + Send + Sync,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         fn loan_arc_mut<'a, 'g, 'lua, T: 'static>(
@@ -186,6 +188,7 @@ trait ErasedLoan<'a>: 'a {
         &'b mut self,
         guard: &mut ScopeGuard<'b>,
         map: &HashMap<TypeId, ScriptResource>,
+        lua: &Lua,
     ) -> Result<()>;
 }
 
@@ -194,11 +197,13 @@ impl<'a, T: 'static + Any> ErasedLoan<'a> for hv_resources::Ref<'a, T> {
         &'b mut self,
         guard: &mut ScopeGuard<'b>,
         map: &HashMap<TypeId, ScriptResource>,
+        lua: &Lua,
     ) -> Result<()> {
         let elastic = (*map.get(&TypeId::of::<T>()).unwrap().inner)
-            .downcast_ref::<Elastic<StretchedRef<T>>>()
+            .downcast_ref::<ElasticRef<T>>()
             .unwrap();
         guard.loan(elastic, &**self);
+        lua.set_app_data::<ElasticRef<T>>(elastic.clone());
 
         Ok(())
     }
@@ -209,11 +214,13 @@ impl<'a, T: 'static + Any> ErasedLoan<'a> for hv_resources::RefMut<'a, T> {
         &'b mut self,
         guard: &mut ScopeGuard<'b>,
         map: &HashMap<TypeId, ScriptResource>,
+        lua: &Lua,
     ) -> Result<()> {
         let elastic = (*map.get(&TypeId::of::<T>()).unwrap().inner)
-            .downcast_ref::<Elastic<StretchedMut<T>>>()
+            .downcast_ref::<ElasticMut<T>>()
             .unwrap();
         guard.loan(elastic, &mut **self);
+        lua.set_app_data::<ElasticMut<T>>(elastic.clone());
 
         Ok(())
     }
@@ -224,11 +231,13 @@ impl<'a, U: 'static, T: 'static + Any> ErasedLoan<'a> for ArcRef<T, U> {
         &'b mut self,
         guard: &mut ScopeGuard<'b>,
         map: &HashMap<TypeId, ScriptResource>,
+        lua: &Lua,
     ) -> Result<()> {
         let elastic = (*map.get(&TypeId::of::<T>()).unwrap().inner)
-            .downcast_ref::<Elastic<StretchedRef<T>>>()
+            .downcast_ref::<ElasticRef<T>>()
             .unwrap();
         guard.loan(elastic, &**self);
+        lua.set_app_data::<ElasticRef<T>>(elastic.clone());
 
         Ok(())
     }
@@ -239,11 +248,13 @@ impl<'a, U: 'static, T: 'static + Any> ErasedLoan<'a> for ArcRefMut<T, U> {
         &'b mut self,
         guard: &mut ScopeGuard<'b>,
         map: &HashMap<TypeId, ScriptResource>,
+        lua: &Lua,
     ) -> Result<()> {
         let elastic = (*map.get(&TypeId::of::<T>()).unwrap().inner)
-            .downcast_ref::<Elastic<StretchedMut<T>>>()
+            .downcast_ref::<ElasticMut<T>>()
             .unwrap();
         guard.loan(elastic, &mut **self);
+        lua.set_app_data::<ElasticMut<T>>(elastic.clone());
 
         Ok(())
     }
@@ -259,7 +270,7 @@ impl ScriptResourceSetBuilder {
         Self::default()
     }
 
-    pub fn add<T: 'static + Send + Sync>(&mut self) -> &mut Self {
+    pub fn add<T: 'static>(&mut self) -> &mut Self {
         self.types.insert(TypeId::of::<T>());
         self
     }
@@ -357,10 +368,7 @@ impl ScriptContext {
     ///
     /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
     /// depending on the resource set/resources offered) is to-do, but not currently implemented.
-    pub fn insert_ref<T: LuaUserData + Send + Sync + 'static>(
-        &mut self,
-        elastic: Elastic<StretchedRef<T>>,
-    ) {
+    pub fn insert_ref<T: 'static>(&mut self, elastic: Elastic<StretchedRef<T>>) {
         self.insert_ref_with_callback(elastic, |_, _, _| Ok(()));
     }
 
@@ -371,10 +379,7 @@ impl ScriptContext {
     ///
     /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
     /// depending on the resource set/resources offered) is to-do, but not currently implemented.
-    pub fn insert_mut<T: LuaUserData + Send + Sync + 'static>(
-        &mut self,
-        elastic: Elastic<StretchedMut<T>>,
-    ) {
+    pub fn insert_mut<T: 'static>(&mut self, elastic: Elastic<StretchedMut<T>>) {
         self.insert_mut_with_callback(elastic, |_, _, _| Ok(()));
     }
 
@@ -386,10 +391,7 @@ impl ScriptContext {
     ///
     /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
     /// depending on the resource set/resources offered) is to-do, but not currently implemented.
-    pub fn insert_reborrowed_ref<T: LuaUserData + Send + Sync + 'static>(
-        &mut self,
-        elastic: Elastic<StretchedRef<T>>,
-    ) {
+    pub fn insert_reborrowed_ref<T: 'static>(&mut self, elastic: Elastic<StretchedRef<T>>) {
         self.insert_reborrowed_ref_with_callback(elastic, |_, _, _| Ok(()));
     }
 
@@ -401,10 +403,7 @@ impl ScriptContext {
     ///
     /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
     /// depending on the resource set/resources offered) is to-do, but not currently implemented.
-    pub fn insert_reborrowed_mut<T: LuaUserData + Send + Sync + 'static>(
-        &mut self,
-        elastic: Elastic<StretchedMut<T>>,
-    ) {
+    pub fn insert_reborrowed_mut<T: 'static>(&mut self, elastic: Elastic<StretchedMut<T>>) {
         self.insert_reborrowed_mut_with_callback(elastic, |_, _, _| Ok(()));
     }
 
@@ -416,9 +415,7 @@ impl ScriptContext {
     ///
     /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
     /// depending on the resource set/resources offered) is to-do, but not currently implemented.
-    pub fn register_ref<T: LuaUserData + Send + Sync + 'static>(
-        &mut self,
-    ) -> Elastic<StretchedRef<T>> {
+    pub fn register_ref<T: 'static>(&mut self) -> Elastic<StretchedRef<T>> {
         let elastic = Elastic::new();
         self.insert_ref(elastic.clone());
         elastic
@@ -432,9 +429,7 @@ impl ScriptContext {
     ///
     /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
     /// depending on the resource set/resources offered) is to-do, but not currently implemented.
-    pub fn register_mut<T: LuaUserData + Send + Sync + 'static>(
-        &mut self,
-    ) -> Elastic<StretchedMut<T>> {
+    pub fn register_mut<T: 'static>(&mut self) -> Elastic<StretchedMut<T>> {
         let elastic = Elastic::new();
         self.insert_mut(elastic.clone());
         elastic
@@ -448,9 +443,7 @@ impl ScriptContext {
     ///
     /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
     /// depending on the resource set/resources offered) is to-do, but not currently implemented.
-    pub fn register_reborrowed_ref<T: LuaUserData + Send + Sync + 'static>(
-        &mut self,
-    ) -> Elastic<StretchedRef<T>> {
+    pub fn register_reborrowed_ref<T: 'static>(&mut self) -> Elastic<StretchedRef<T>> {
         let elastic = Elastic::new();
         self.insert_reborrowed_ref(elastic.clone());
         elastic
@@ -464,9 +457,7 @@ impl ScriptContext {
     ///
     /// Allowing resources to be registered as mutable or immutable (and flexibly choosing which
     /// depending on the resource set/resources offered) is to-do, but not currently implemented.
-    pub fn register_reborrowed_mut<T: LuaUserData + Send + Sync + 'static>(
-        &mut self,
-    ) -> Elastic<StretchedMut<T>> {
+    pub fn register_reborrowed_mut<T: 'static>(&mut self) -> Elastic<StretchedMut<T>> {
         let elastic = Elastic::new();
         self.insert_reborrowed_mut(elastic.clone());
         elastic
@@ -476,11 +467,7 @@ impl ScriptContext {
     /// key `name` in the environment table.
     ///
     /// Panics if this context has no environment table.
-    pub fn set_ref<T: LuaUserData + Send + Sync + 'static>(
-        &mut self,
-        lua: &Lua,
-        name: &str,
-    ) -> Result<()> {
+    pub fn set_ref<T: LuaUserData + 'static>(&mut self, lua: &Lua, name: &str) -> Result<()> {
         let elastic = self.register_ref::<T>();
         let table: LuaTable = lua.registry_value(&self.env)?;
         table.set(name, elastic)?;
@@ -491,11 +478,7 @@ impl ScriptContext {
     /// `name` in the environment table.
     ///
     /// Panics if this context has no environment table.
-    pub fn set_mut<T: LuaUserData + Send + Sync + 'static>(
-        &mut self,
-        lua: &Lua,
-        name: &str,
-    ) -> Result<()> {
+    pub fn set_mut<T: LuaUserData + 'static>(&mut self, lua: &Lua, name: &str) -> Result<()> {
         let elastic = self.register_mut::<T>();
         let table: LuaTable = lua.registry_value(&self.env)?;
         table.set(name, elastic)?;
@@ -506,7 +489,7 @@ impl ScriptContext {
     /// the value at the key `name` in the environment table.
     ///
     /// Panics if this context has no environment table.
-    pub fn set_reborrowed_ref<T: LuaUserData + Send + Sync + 'static>(
+    pub fn set_reborrowed_ref<T: LuaUserData + 'static>(
         &mut self,
         lua: &Lua,
         name: &str,
@@ -521,7 +504,7 @@ impl ScriptContext {
     /// value at the key `name` in the environment table.
     ///
     /// Panics if this context has no environment table.
-    pub fn set_reborrowed_mut<T: LuaUserData + Send + Sync + 'static>(
+    pub fn set_reborrowed_mut<T: LuaUserData + 'static>(
         &mut self,
         lua: &Lua,
         name: &str,
@@ -535,7 +518,7 @@ impl ScriptContext {
     /// `insert_ref` with an on-loan callback.
     pub fn insert_ref_with_callback<T, F>(&mut self, elastic: Elastic<StretchedRef<T>>, on_loan: F)
     where
-        T: LuaUserData + Send + Sync + 'static,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let replaced = self.map.insert(
@@ -551,7 +534,7 @@ impl ScriptContext {
     /// `insert_mut` with an on-loan callback.
     pub fn insert_mut_with_callback<T, F>(&mut self, elastic: Elastic<StretchedMut<T>>, on_loan: F)
     where
-        T: LuaUserData + Send + Sync + 'static,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let replaced = self.map.insert(
@@ -570,7 +553,7 @@ impl ScriptContext {
         elastic: Elastic<StretchedRef<T>>,
         on_loan: F,
     ) where
-        T: LuaUserData + Send + Sync + 'static,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let replaced = self.map.insert(
@@ -589,7 +572,7 @@ impl ScriptContext {
         elastic: Elastic<StretchedMut<T>>,
         on_loan: F,
     ) where
-        T: LuaUserData + Send + Sync + 'static,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let replaced = self.map.insert(
@@ -605,7 +588,7 @@ impl ScriptContext {
     /// `register_ref` with an on-loan callback.
     pub fn register_ref_with_callback<T, F>(&mut self, on_loan: F) -> Elastic<StretchedRef<T>>
     where
-        T: LuaUserData + Send + Sync + 'static,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let elastic = Elastic::new();
@@ -616,7 +599,7 @@ impl ScriptContext {
     /// `register_mut` with an on-loan callback.
     pub fn register_mut_with_callback<T, F>(&mut self, on_loan: F) -> Elastic<StretchedMut<T>>
     where
-        T: LuaUserData + Send + Sync + 'static,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let elastic = Elastic::new();
@@ -630,7 +613,7 @@ impl ScriptContext {
         on_loan: F,
     ) -> Elastic<StretchedRef<T>>
     where
-        T: LuaUserData + Send + Sync + 'static,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let elastic = Elastic::new();
@@ -644,7 +627,7 @@ impl ScriptContext {
         on_loan: F,
     ) -> Elastic<StretchedMut<T>>
     where
-        T: LuaUserData + Send + Sync + 'static,
+        T: 'static,
         F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let elastic = Elastic::new();
@@ -655,7 +638,7 @@ impl ScriptContext {
     /// `set_ref` with an on-loan callback.
     pub fn set_ref_with_callback<T, F>(&mut self, lua: &Lua, name: &str, on_loan: F) -> Result<()>
     where
-        T: LuaUserData + Send + Sync + 'static,
+        T: LuaUserData + 'static,
         F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let elastic = self.register_ref_with_callback(on_loan);
@@ -667,7 +650,7 @@ impl ScriptContext {
     /// `set_mut` with an on-loan callback.
     pub fn set_mut_with_callback<T, F>(&mut self, lua: &Lua, name: &str, on_loan: F) -> Result<()>
     where
-        T: LuaUserData + Send + Sync + 'static,
+        T: LuaUserData + 'static,
         F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let elastic = self.register_mut_with_callback(on_loan);
@@ -684,7 +667,7 @@ impl ScriptContext {
         on_loan: F,
     ) -> Result<()>
     where
-        T: LuaUserData + Send + Sync + 'static,
+        T: LuaUserData + 'static,
         F: for<'a, 'lua> Fn(&'a T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let elastic = self.register_reborrowed_ref_with_callback(on_loan);
@@ -701,7 +684,7 @@ impl ScriptContext {
         on_loan: F,
     ) -> Result<()>
     where
-        T: LuaUserData + Send + Sync + 'static,
+        T: LuaUserData + 'static,
         F: for<'a, 'lua> Fn(&'a mut T, &'lua Lua, &'a LuaTable<'lua>) -> Result<()> + 'static,
     {
         let elastic = self.register_reborrowed_mut_with_callback(on_loan);
@@ -754,7 +737,7 @@ impl ScriptContext {
 
         let out = self.scope_arena.scope(|guard| {
             for loanable in &mut erased_loanables {
-                loanable.erased_loan(guard, &self.map)?;
+                loanable.erased_loan(guard, &self.map, lua)?;
             }
 
             Ok(f(env))
@@ -801,7 +784,7 @@ impl ScriptContext {
 
         let out = self.scope_arena.scope(|guard| {
             for loanable in &mut erased_loanables {
-                loanable.erased_loan(guard, &self.map)?;
+                loanable.erased_loan(guard, &self.map, lua)?;
             }
 
             Ok(f(env))

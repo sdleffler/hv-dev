@@ -3,16 +3,24 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
 };
 
+use crate::Resource;
+
 /// Error indicating that no [`Resource`] of requested type is present in a [`Resources`] container.
 ///
 /// [`Resource`]: trait.Resource.html
 /// [`Resources`]: struct.Resources.html
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct NoSuchResource;
+pub struct NoSuchResource(&'static str);
+
+impl NoSuchResource {
+    pub(crate) fn new<T: Resource>() -> Self {
+        Self(std::any::type_name::<T>())
+    }
+}
 
 impl Display for NoSuchResource {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.pad("no such resource")
+        write!(f, "no such resource `{}`", self.0)
     }
 }
 
@@ -28,17 +36,27 @@ impl Error for NoSuchResource {}
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum InvalidBorrow {
     /// Can't access mutably because the resource is accessed either immutably or mutably elsewhere.
-    Mutable,
+    Mutable(&'static str),
     /// Can't access immutably because the resource is accessed mutably elsewhere.
-    Immutable,
+    Immutable(&'static str),
+}
+
+impl InvalidBorrow {
+    pub(crate) fn mutable<T: Resource>() -> Self {
+        Self::Mutable(std::any::type_name::<T>())
+    }
+
+    pub(crate) fn immutable<T: Resource>() -> Self {
+        Self::Immutable(std::any::type_name::<T>())
+    }
 }
 
 impl Display for InvalidBorrow {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.pad(match self {
-            InvalidBorrow::Mutable => "cannot borrow mutably",
-            InvalidBorrow::Immutable => "cannot borrow immutably",
-        })
+        match self {
+            InvalidBorrow::Mutable(name) => write!(f, "cannot borrow `{}` mutably", name),
+            InvalidBorrow::Immutable(name) => write!(f, "cannot borrow `{}` immutably", name),
+        }
     }
 }
 

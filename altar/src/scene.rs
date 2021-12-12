@@ -1,201 +1,233 @@
-use hv::prelude::*;
-use hv::resources::Resources;
+use hv::{
+    ecs::World,
+    elastic::{ElasticMut, ScopeGuard},
+    prelude::*,
+    resources::Resources,
+    script::ScriptContext,
+};
 
-pub struct Action<T, C> {
-    #[allow(clippy::type_complexity)]
-    inner: Option<Box<dyn FnOnce(&mut T, &mut Resources, &mut C) -> Result<Action<T, C>>>>,
+#[derive(Debug)]
+pub struct SceneScript {
+    table: LuaRegistryKey,
 }
 
-impl<T, C> From<()> for Action<T, C> {
-    fn from(_: ()) -> Self {
-        Action::none()
+impl<'lua> FromLua<'lua> for SceneScript {
+    fn from_lua(lua_value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+        Self::from_table(lua, LuaTable::from_lua(lua_value, lua)?).to_lua_err()
     }
 }
 
-impl<T, C> Action<T, C> {
-    pub fn none() -> Self {
-        Self { inner: None }
+impl SceneScript {
+    pub fn from_table(lua: &Lua, table: LuaTable) -> Result<Self> {
+        Ok(Self {
+            table: lua.create_registry_value(table)?,
+        })
     }
 
-    pub fn new<U>(f: impl FnOnce(&mut T, &mut Resources, &mut C) -> Result<U> + 'static) -> Self
+    /// Enter the script context, mutably loan the `World` to the `Resources` (if it's configured to
+    /// accept such a loan), load the Lua table representing the script, and then run a closure w/
+    /// access to the Lua context, resources, and script table.
+    pub fn in_context<'g, 'lua, T>(
+        &self,
+        lua: &'lua Lua,
+        world: &'g mut World,
+        resources: &Resources,
+        script_context: &mut ScriptContext,
+        guard: &mut ScopeGuard<'g>,
+        thunk: impl FnOnce(&'lua Lua, &Resources, LuaTable<'lua>) -> Result<T>,
+    ) -> Result<T> {
+        if let Ok(world_elastic) = resources.get::<ElasticMut<World>>() {
+            guard.loan(&world_elastic, world);
+        }
+
+        script_context.with_resources(lua, resources, |_| {
+            let table: LuaTable = lua.registry_value(&self.table)?;
+            thunk(lua, resources, table)
+        })?
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn call_method<'g, 'lua, S, A, R>(
+        &self,
+        lua: &'lua Lua,
+        world: &'g mut World,
+        resources: &Resources,
+        script_context: &mut ScriptContext,
+        guard: &mut ScopeGuard<'g>,
+        name: &S,
+        args: A,
+    ) -> Result<R>
     where
-        U: Into<Action<T, C>>,
+        A: ToLuaMulti<'lua>,
+        R: FromLuaMulti<'lua>,
+        S: AsRef<str> + ?Sized,
     {
-        Self {
-            inner: Some(Box::new(|s, r, c| f(s, r, c).map(Into::into))),
-        }
-    }
-
-    pub fn run(mut self, target: &mut T, res: &mut Resources, context: &mut C) -> Result<()> {
-        while let Some(f) = self.inner {
-            self = f(target, res, context)?;
-        }
-
-        Ok(())
-    }
-}
-
-pub type UpdateAction<'s, C> = Action<SceneStackUpdate<'s, C>, C>;
-
-impl<'s, C: 'static> UpdateAction<'s, C> {
-    pub fn push(scene: impl Scene<C>) -> Self {
-        Self::new(|stack, _, _| {
-            stack.push(scene);
-            Ok(Self::none())
-        })
-    }
-
-    pub fn pop() -> Self {
-        Self::new(|stack, _, _| {
-            stack.pop();
-            Ok(Self::none())
-        })
-    }
-
-    pub fn update_next() -> Self {
-        Self::new(move |stack, res, ctx| stack.update_next(res, ctx))
+        self.in_context(
+            lua,
+            world,
+            resources,
+            script_context,
+            guard,
+            |_, _, script| {
+                script
+                    .call_method(name.as_ref(), (script.clone(), args))
+                    .with_context(|| {
+                        anyhow!(
+                            "error while evaluating scene script method: {}",
+                            name.as_ref()
+                        )
+                    })
+            },
+        )
     }
 }
 
-pub type DrawAction<'s, C> = Action<SceneStackDraw<'s, C>, C>;
-
-pub trait Scene<C>: 'static {
-    fn update<'s>(&mut self, res: &mut Resources, ctx: &mut C) -> Result<UpdateAction<'s, C>>;
-    fn draw<'s>(&mut self, res: &mut Resources, ctx: &mut C) -> Result<DrawAction<'s, C>>;
+pub enum PostTick<C, T> {
+    Push(Box<dyn Scene<C, T>>),
+    Switch(Box<dyn Scene<C, T>>),
+    Pop,
+    None,
 }
 
-pub struct SceneStackUpdate<'s, C> {
-    index: usize,
-    scene_stack: &'s mut SceneStack<C>,
+impl<'lua, C: 'static, T: 'static> FromLuaMulti<'lua> for PostTick<C, T> {
+    fn from_lua_multi(lua_multi: LuaMultiValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+        let (maybe_variant, maybe_ud) =
+            <(Option<LuaValue>, Option<LuaAnyUserData>)>::from_lua_multi(lua_multi, lua)?;
+
+        if let Some(v) = maybe_variant {
+            let lua_str = LuaString::from_lua(v, lua)?;
+            match lua_str.to_str()? {
+                "Push" => {
+                    let ud = maybe_ud
+                        .ok_or_else(|| anyhow!("expected a scene to push!"))
+                        .to_lua_err()?;
+                    Ok(Self::Push(ud.dyn_take()?))
+                }
+                "Switch" => {
+                    let ud = maybe_ud
+                        .ok_or_else(|| anyhow!("expected a scene to switch!"))
+                        .to_lua_err()?;
+                    Ok(Self::Switch(ud.dyn_take()?))
+                }
+                "Pop" => Ok(Self::Pop),
+                "None" => Ok(Self::None),
+                _ => Err(LuaError::external("expected Push, Switch, Pop, or None!")),
+            }
+        } else {
+            Ok(Self::None)
+        }
+    }
 }
 
-impl<'s, C: 'static> SceneStackUpdate<'s, C> {
-    fn new(scene_stack: &'s mut SceneStack<C>) -> Self {
-        Self {
-            index: scene_stack.scenes.len() - 1,
-            scene_stack,
-        }
+pub trait Scene<C, T> {
+    /// Called once on the scene when it is created, before any other hooks.
+    fn load(&mut self, resources: &Resources, lua: &Lua, context: &mut C) -> Result<()>;
+
+    /// Called before `update`/`draw` on a tick.
+    fn pre_tick(&mut self, resources: &Resources, lua: &Lua, context: &mut C) -> Result<()>;
+
+    /// A logical update w/ a fixed timestep. Called zero or more times per frame, depending on how
+    /// much time has passed since the last logical timestep/update.
+    ///
+    /// The delta-time is provided in a [`Dt`](crate::types::Dt) entry in the resource map.
+    fn update(&mut self, resources: &Resources, lua: &Lua, context: &mut C) -> Result<()>;
+
+    /// If true, also update the scene "below" this on the scene stack. Default implementation
+    /// returns `false`.
+    fn update_previous(&self) -> bool {
+        false
     }
 
-    pub fn scene_stack(&self) -> &SceneStack<C> {
-        self.scene_stack
+    /// A render update. Always called once per tick.
+    ///
+    /// The remaining delta-time (difference between the time of the last logical update and the
+    /// time of this render) is given in a [`RemainingDt`](crate::types::RemainingDt) entry in the
+    /// resource map.
+    fn draw(&mut self, resources: &Resources, lua: &Lua, context: &mut C, target: &T)
+        -> Result<()>;
+
+    /// If true, also draw the scene "below" this on the scene stack. Useful if you're writing a
+    /// `Scene` for dialogue and you still want to draw the game scene, etc. Default implementation
+    /// returns `false`.
+    fn draw_previous(&self) -> bool {
+        false
     }
 
-    pub fn scene_stack_mut(&mut self) -> &mut SceneStack<C> {
-        self.scene_stack
-    }
-
-    pub fn push(&mut self, scene: impl Scene<C>) {
-        self.scene_stack.scenes.push(Box::new(scene));
-    }
-
-    pub fn pop(&mut self) -> Option<Box<dyn Scene<C>>> {
-        let removed = self.scene_stack.scenes.pop()?;
-        if self.index >= self.scene_stack.scenes.len() {
-            self.index = self.scene_stack.scenes.len() - 1;
-        }
-        Some(removed)
-    }
-
-    pub fn update_next(
+    /// Called after all `update` and `draw` calls for a tick are finished. Returns an action to
+    /// take for the entire tick, which allows modifying the scene stack.
+    fn post_tick(
         &mut self,
-        res: &mut Resources,
+        resources: &Resources,
+        lua: &Lua,
         context: &mut C,
-    ) -> Result<UpdateAction<'s, C>> {
-        if self.index > 0 {
-            self.index -= 1;
-            self.scene_stack.scenes[self.index].update(res, context)
-        } else {
-            Ok(UpdateAction::none())
-        }
-    }
+    ) -> Result<PostTick<C, T>>;
 }
 
-pub struct SceneStackDraw<'s, C> {
-    index: usize,
-    scene_stack: &'s mut SceneStack<C>,
+pub struct SceneStack<C, T> {
+    scenes: Vec<Box<dyn Scene<C, T>>>,
 }
 
-impl<'s, C: 'static> SceneStackDraw<'s, C> {
-    fn new(scene_stack: &'s mut SceneStack<C>) -> Self {
-        Self {
-            index: scene_stack.scenes.len() - 1,
-            scene_stack,
-        }
-    }
-
-    pub fn draw_next(&mut self, res: &mut Resources, context: &mut C) -> Result<DrawAction<'s, C>> {
-        if self.index > 0 {
-            self.index -= 1;
-            self.scene_stack.scenes[self.index].draw(res, context)
-        } else {
-            Ok(DrawAction::none())
-        }
-    }
-}
-
-impl<C> Default for SceneStack<C> {
-    fn default() -> Self {
+impl<C, T> SceneStack<C, T> {
+    pub fn empty() -> Self {
         Self { scenes: Vec::new() }
-    }
-}
-
-pub struct SceneStack<C> {
-    scenes: Vec<Box<dyn Scene<C>>>,
-}
-
-impl<C: 'static> SceneStack<C> {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn start(scene: Box<dyn Scene<C>>) -> Self {
-        Self {
-            scenes: vec![scene],
-        }
-    }
-
-    pub fn push(&mut self, scene: Box<dyn Scene<C>>) {
-        self.scenes.push(scene);
     }
 
     pub fn is_empty(&self) -> bool {
         self.scenes.is_empty()
     }
 
-    pub fn update(&mut self, res: &mut Resources, context: &mut C) -> Result<()> {
-        if self.scenes.is_empty() {
-            return Ok(());
-        }
-
-        let action = self.scenes.last_mut().unwrap().update(res, context)?;
-        action.run(&mut SceneStackUpdate::new(self), res, context)
+    pub fn push(&mut self, scene: Box<dyn Scene<C, T>>) {
+        self.scenes.push(scene);
     }
 
-    pub fn draw(&mut self, res: &mut Resources, context: &mut C) -> Result<()> {
-        if self.scenes.is_empty() {
-            return Ok(());
-        }
-
-        let action = self.scenes.last_mut().unwrap().draw(res, context)?;
-        action.run(&mut SceneStackDraw::new(self), res, context)
-    }
-}
-
-impl<C: 'static> Scene<C> for SceneStack<C> {
-    fn update<'s>(&mut self, res: &mut Resources, context: &mut C) -> Result<UpdateAction<'s, C>> {
-        self.update(res, context)?;
-
-        if self.is_empty() {
-            Ok(UpdateAction::pop())
-        } else {
-            Ok(UpdateAction::none())
-        }
+    pub fn pre_tick(&mut self, resources: &Resources, lua: &Lua, context: &mut C) -> Result<()> {
+        let current = self
+            .scenes
+            .last_mut()
+            .ok_or_else(|| anyhow!("empty scene stack!"))?;
+        current.pre_tick(resources, lua, context)
     }
 
-    fn draw<'s>(&mut self, res: &mut Resources, context: &mut C) -> Result<DrawAction<'s, C>> {
-        self.draw(res, context)?;
+    pub fn update(&mut self, resources: &Resources, lua: &Lua, context: &mut C) -> Result<bool> {
+        for scene in self.scenes.iter_mut().rev() {
+            scene.update(resources, lua, context)?;
+            if !scene.update_previous() {
+                return Ok(false);
+            }
+        }
 
-        Ok(DrawAction::none())
+        Ok(true)
+    }
+
+    pub fn post_tick(&mut self, resources: &Resources, lua: &Lua, context: &mut C) -> Result<()> {
+        let current = self
+            .scenes
+            .last_mut()
+            .ok_or_else(|| anyhow!("empty scene stack!"))?;
+        match current.post_tick(resources, lua, context)? {
+            PostTick::Push(scene) => self.scenes.push(scene),
+            PostTick::Switch(scene) => *current = scene,
+            PostTick::Pop => drop(self.scenes.pop()),
+            PostTick::None => {}
+        }
+
+        Ok(())
+    }
+
+    pub fn draw(
+        &mut self,
+        resources: &Resources,
+        lua: &Lua,
+        context: &mut C,
+        target: &T,
+    ) -> Result<bool> {
+        for scene in self.scenes.iter_mut().rev() {
+            scene.draw(resources, lua, context, target)?;
+            if !scene.draw_previous() {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 }

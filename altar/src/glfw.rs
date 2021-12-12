@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::{
-    event_loop::{EventLoop, MainLoopContext},
+    event_loop::{EventLoop, MainLoopContext, TickEvents},
     window::WindowKind,
 };
 use glfw::{Context, SwapInterval, WindowMode};
@@ -31,7 +31,7 @@ pub fn run(
     title: &str,
     window_kind: WindowKind,
     resources: &mut Resources,
-    event_loop: &mut impl EventLoop<GL33Context, Event = GenericWindowEvent>,
+    event_loop: &mut impl EventLoop<GL33Context>,
 ) -> Result<()> {
     let GlfwSurface {
         events_rx,
@@ -69,12 +69,29 @@ pub fn run(
     })
     .map_err(|err| anyhow!("error initializing glfw window: {}", err))?;
 
-    let mut events_buf: Vec<GenericWindowEvent> = Vec::new();
+    resources.insert({
+        let mut events = TickEvents::<GenericWindowEvent>::new();
 
-    event_loop.init(resources, &mut context)?;
+        let (window_size_x, window_size_y) = context.window.get_size();
+        let (fb_size_x, fb_size_y) = context.window.get_framebuffer_size();
+        let (cs_x, cs_y) = context.window.get_content_scale();
+
+        events.extend([
+            Event::WindowSize(Vector2::new(window_size_x as u32, window_size_y as u32)),
+            Event::FramebufferSize(Vector2::new(fb_size_x as u32, fb_size_y as u32)),
+            Event::ContentScale(Vector2::new(cs_x, cs_y)),
+        ]);
+
+        events
+    });
+
+    let lua = crate::api::create_lua_context()?;
+
+    event_loop.init(resources, &lua, &mut context)?;
 
     'main: loop {
         context.window.glfw.poll_events();
+        let mut events_buf = resources.get_mut::<TickEvents<GenericWindowEvent>>()?;
         for (_, event) in glfw::flush_messages(&events_rx) {
             let generic_event = match event {
                 glfw::WindowEvent::Pos(x, y) => {
@@ -158,15 +175,18 @@ pub fn run(
 
             events_buf.push(generic_event);
         }
+        drop(events_buf);
 
-        let flow = event_loop.tick(resources, &mut context, &mut events_buf)?;
-        events_buf.clear();
+        if let ControlFlow::Break(_) = event_loop.tick(resources, &lua, &mut context)? {
+            break 'main;
+        }
 
         context.window.swap_buffers();
 
-        if let ControlFlow::Break(_) = flow {
-            break 'main;
-        }
+        // Clear the tick events last so that "initialization" events get through.
+        resources
+            .get_mut::<TickEvents<GenericWindowEvent>>()?
+            .clear();
     }
 
     Ok(())

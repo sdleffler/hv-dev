@@ -23,7 +23,7 @@ impl<'a, T: Resource> Ref<'a, T> {
                         .unwrap_or_else(|| panic!("downcasting resources should always succeed"))
                 }),
             })
-            .ok_or(InvalidBorrow::Immutable)
+            .ok_or_else(|| InvalidBorrow::immutable::<T>())
     }
 }
 
@@ -53,7 +53,7 @@ impl<'a, T: Resource> RefMut<'a, T> {
                         .unwrap_or_else(|| panic!("downcasting resources should always succeed"))
                 }),
             })
-            .ok_or(InvalidBorrow::Mutable)
+            .ok_or_else(|| InvalidBorrow::mutable::<T>())
     }
 }
 

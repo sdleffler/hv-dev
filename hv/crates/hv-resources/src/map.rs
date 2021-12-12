@@ -87,7 +87,7 @@ impl Resources {
     pub fn get<T: Resource>(&self) -> Result<Ref<T>, CantGetResource> {
         self.resources
             .get(&TypeId::of::<T>())
-            .ok_or_else(|| NoSuchResource.into())
+            .ok_or_else(|| NoSuchResource::new::<T>().into())
             .and_then(|lock| Ref::from_lock(lock).map_err(|error| error.into()))
     }
 
@@ -98,7 +98,7 @@ impl Resources {
     pub fn get_mut<T: Resource>(&self) -> Result<RefMut<T>, CantGetResource> {
         self.resources
             .get(&TypeId::of::<T>())
-            .ok_or_else(|| NoSuchResource.into())
+            .ok_or_else(|| NoSuchResource::new::<T>().into())
             .and_then(|lock| RefMut::from_lock(lock).map_err(|error| error.into()))
     }
 
@@ -267,7 +267,7 @@ impl<'a> SyncResources<'a> {
         self.wrapped
             .resources
             .get(&TypeId::of::<T>())
-            .ok_or_else(|| NoSuchResource.into())
+            .ok_or_else(|| NoSuchResource::new::<T>().into())
             .and_then(|lock| Ref::from_lock(lock).map_err(|error| error.into()))
     }
 
@@ -279,7 +279,7 @@ impl<'a> SyncResources<'a> {
         self.wrapped
             .resources
             .get(&TypeId::of::<T>())
-            .ok_or_else(|| NoSuchResource.into())
+            .ok_or_else(|| NoSuchResource::new::<T>().into())
             .and_then(|lock| RefMut::from_lock(lock).map_err(|error| error.into()))
     }
 

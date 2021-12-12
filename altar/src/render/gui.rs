@@ -125,11 +125,7 @@ impl<B> GuiRenderer<B>
 where
     B: GuiBackend,
 {
-    pub fn new(
-        ctx: &mut impl GraphicsContext<Backend = B>,
-        target_size: Vector2<u32>,
-        dpi_scale: f32,
-    ) -> Result<Self> {
+    pub fn new(ctx: &mut impl GraphicsContext<Backend = B>) -> Result<Self> {
         let tess = TessBuilder::build(
             TessBuilder::new(ctx)
                 .set_vertices(vec![Vertex::default(); 1024])
@@ -153,9 +149,9 @@ where
 
         Ok(Self {
             font_texture_version: 0,
-            target_size_in_pixels: target_size,
-            target_size_in_points: target_size.cast::<f32>() / dpi_scale,
-            dpi_scale,
+            target_size_in_pixels: Vector2::zeros(),
+            target_size_in_points: Vector2::zeros(),
+            dpi_scale: 1.,
             textures,
             tess,
             shader: Some(shader),
@@ -224,7 +220,13 @@ where
         &mut self,
         pipeline: &mut Pipeline<B>,
         shading_gate: &mut ShadingGate<B>,
+        target_size_in_pixels: &Vector2<u32>,
+        dpi_scale: f32,
     ) -> Result<()> {
+        self.dpi_scale = dpi_scale;
+        self.target_size_in_pixels = *target_size_in_pixels;
+        self.target_size_in_points = target_size_in_pixels.cast::<f32>() / self.dpi_scale;
+
         let mut shader = self.shader.take().unwrap();
         let meshes = std::mem::take(&mut self.meshes);
 

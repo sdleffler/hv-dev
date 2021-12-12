@@ -2,6 +2,8 @@ use std::{collections::BTreeSet, marker::PhantomData};
 
 use hv::{math, prelude::*};
 
+use crate::render::wireframe::Vertex;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub struct Edge {
@@ -16,19 +18,19 @@ impl Edge {
     }
 }
 
-pub type TriangleMesh<V> = IndexedMesh<V, Triangle>;
+pub type TriangleMesh = IndexedMesh<Triangle>;
 
-pub type TriangleStripMesh<V> = IndexedMesh<V, TriangleStrip>;
+pub type TriangleStripMesh = IndexedMesh<TriangleStrip>;
 
-pub type TriangleFanMesh<V> = IndexedMesh<V, TriangleFan>;
+pub type TriangleFanMesh = IndexedMesh<TriangleFan>;
 
-pub type LineMesh<V> = IndexedMesh<V, Line>;
+pub type LineMesh = IndexedMesh<Line>;
 
-pub type LineStripMesh<V> = IndexedMesh<V, LineStrip>;
+pub type LineStripMesh = IndexedMesh<LineStrip>;
 
-pub type LineLoopMesh<V> = IndexedMesh<V, LineLoop>;
+pub type LineLoopMesh = IndexedMesh<LineLoop>;
 
-pub type PointMesh<V> = IndexedMesh<V, Point>;
+pub type PointMesh = IndexedMesh<Point>;
 
 pub enum Triangle {}
 pub enum TriangleStrip {}
@@ -41,30 +43,20 @@ pub enum Point {}
 pub trait PrimitiveMode: sealed::PrimitiveMode {}
 impl<T: sealed::PrimitiveMode> PrimitiveMode for T {}
 
-pub trait HasPosition<T> {
-    fn get_position(&self) -> T;
-    fn set_position(&mut self, pos: T);
-}
-
-pub trait HasNormal {
-    fn get_normal(&self) -> Vector3<f32>;
-    fn set_normal(&mut self, normal: Vector3<f32>);
-}
-
-pub struct IndexedMesh<V, P: PrimitiveMode> {
-    vertices: Vec<V>,
+pub struct IndexedMesh<P: PrimitiveMode> {
+    vertices: Vec<Vertex>,
     indices: Vec<u16>,
     primitive_restart: Option<u16>,
     _phantom: PhantomData<P>,
 }
 
-impl<V, P: PrimitiveMode> Default for IndexedMesh<V, P> {
+impl<P: PrimitiveMode> Default for IndexedMesh<P> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<V, P: PrimitiveMode> IndexedMesh<V, P> {
+impl<P: PrimitiveMode> IndexedMesh<P> {
     pub fn new() -> Self {
         Self {
             vertices: Vec::new(),
@@ -75,13 +67,13 @@ impl<V, P: PrimitiveMode> IndexedMesh<V, P> {
     }
 
     /// Push a single vertex and get back its index.
-    pub fn push_vertex(&mut self, vertex: V) -> u16 {
+    pub fn push_vertex(&mut self, vertex: Vertex) -> u16 {
         let index = self.vertices.len();
         self.vertices.push(vertex);
         index as u16
     }
 
-    pub fn vertices(&self) -> &[V] {
+    pub fn vertices(&self) -> &[Vertex] {
         &self.vertices
     }
 
@@ -94,7 +86,7 @@ impl<V, P: PrimitiveMode> IndexedMesh<V, P> {
     }
 }
 
-impl<V> IndexedMesh<V, Line> {
+impl IndexedMesh<Line> {
     pub fn line_count(&self) -> usize {
         self.indices.len() / 2
     }
@@ -104,7 +96,7 @@ impl<V> IndexedMesh<V, Line> {
     }
 }
 
-impl<V> IndexedMesh<V, Triangle> {
+impl IndexedMesh<Triangle> {
     /// How many triangles will we get by drawing this mesh?
     pub fn triangle_count(&self) -> usize {
         self.indices.len() / 3
@@ -129,10 +121,7 @@ impl<V> IndexedMesh<V, Triangle> {
     }
 }
 
-impl<V> IndexedMesh<V, Triangle>
-where
-    V: Clone + HasPosition<Vector3<f32>> + HasNormal,
-{
+impl IndexedMesh<Triangle> {
     /// Calculate normals ONLY for "provoking" vertices of this triangle mesh. This is useful for
     /// flat shading for wireframes and such, but not for more general "smooth" normals. It works
     /// with the wireframe vertex/fragment shaders, which expect flat normal data.
@@ -148,26 +137,26 @@ where
         let mut provoking_set = BTreeSet::new();
 
         for is in self.indices.chunks_exact_mut(3) {
-            let p0 = self.vertices[is[0] as usize].get_position();
-            let p1 = self.vertices[is[1] as usize].get_position();
-            let p2 = self.vertices[is[2] as usize].get_position();
+            let p0 = Vector3::from(self.vertices[is[0] as usize].position);
+            let p1 = Vector3::from(self.vertices[is[1] as usize].position);
+            let p2 = Vector3::from(self.vertices[is[2] as usize].position);
             let a = p1 - p0;
             let b = p2 - p0;
             let normal = a.cross(&b).normalize();
 
             if provoking_set.insert(is[2]) {
-                self.vertices[is[2] as usize].set_normal(normal);
+                self.vertices[is[2] as usize].normal = normal.into();
             } else if provoking_set.insert(is[1]) {
-                self.vertices[is[1] as usize].set_normal(normal);
+                self.vertices[is[1] as usize].normal = normal.into();
                 is.rotate_right(1);
             } else if provoking_set.insert(is[0]) {
-                self.vertices[is[0] as usize].set_normal(normal);
+                self.vertices[is[0] as usize].normal = normal.into();
                 is.rotate_left(1);
             } else {
                 // relabel is[2]
                 let old_is2 = is[2];
-                let mut i2 = self.vertices[old_is2 as usize].clone();
-                i2.set_normal(normal);
+                let mut i2 = self.vertices[old_is2 as usize];
+                i2.normal = normal.into();
                 let new_is2 = self.vertices.len() as u16;
                 is[2] = new_is2;
                 self.vertices.push(i2);
@@ -176,13 +165,10 @@ where
     }
 }
 
-impl<V> IndexedMesh<V, Triangle>
-where
-    V: Clone + HasPosition<Vector3<f32>> + From<Vector3<f32>>,
-{
+impl IndexedMesh<Triangle> {
     pub fn push_icosahedron(&mut self, center: Vector3<f32>, radius: f32) {
         let t = (1. + (5.).sqrt()) / 2.;
-        let v = V::from;
+        let v = Vertex::from;
 
         // Vertices
         let vs = [
@@ -224,7 +210,7 @@ where
     }
 }
 
-impl<V: PartialEq> IndexedMesh<V, TriangleStrip> {
+impl IndexedMesh<TriangleStrip> {
     pub fn push_triangle(&mut self, indices: [u16; 3]) {
         let index_slice = self.indices.get(self.indices.len() - 3..);
         if matches!(index_slice, Some(sliced) if &indices[0..2] == sliced) {
@@ -245,7 +231,7 @@ impl<V: PartialEq> IndexedMesh<V, TriangleStrip> {
     }
 }
 
-impl<V: PartialEq> IndexedMesh<V, TriangleFan> {
+impl IndexedMesh<TriangleFan> {
     pub fn push_triangle(&mut self, indices: [u16; 3]) {
         let last = self.indices.last();
         if matches!(last, Some(&last) if indices[0] == self.indices[0] && indices[1] == last) {

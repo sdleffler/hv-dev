@@ -5,6 +5,7 @@ use hv_input::{
     GenericAxis, GenericButton, GenericInputState, GenericWindowEvent, InputEvent, KeyMods,
     ScrollAxis, WindowEvent,
 };
+use hv_math::*;
 
 pub struct GuiInputState {
     time: f32,
@@ -12,6 +13,7 @@ pub struct GuiInputState {
     hv_input_state: GenericInputState,
     raw_input_state: RawInput,
     content_scale: f32,
+    window_size: Vector2<u32>,
 }
 
 impl Default for GuiInputState {
@@ -28,6 +30,7 @@ impl GuiInputState {
             hv_input_state: GenericInputState::new(),
             raw_input_state: RawInput::default(),
             content_scale: 1.,
+            window_size: Vector2::zeros(),
         }
     }
 
@@ -37,6 +40,8 @@ impl GuiInputState {
 
     pub fn flush(&mut self, dt: f32) -> RawInput {
         use WindowEvent::*;
+        let mut update_screen_rect = false;
+
         self.time += dt;
         self.raw_input_state.time = Some(self.time.into());
         self.raw_input_state.predicted_dt = dt;
@@ -113,6 +118,7 @@ impl GuiInputState {
                     assert_eq!(v.x, v.y, "weird content scale");
                     self.raw_input_state.pixels_per_point = Some(v.x);
                     self.content_scale = v.x;
+                    update_screen_rect = true;
                 }
                 WindowCursorEnter(entered) => {
                     if !entered {
@@ -136,17 +142,22 @@ impl GuiInputState {
                 }
                 FramebufferSize(_) => {}
                 WindowSize(size) => {
-                    self.raw_input_state.screen_rect = Some(Rect::from_min_size(
-                        Pos2::ZERO,
-                        Vec2::new(
-                            size.x as f32 / self.content_scale,
-                            size.y as f32 / self.content_scale,
-                        ),
-                    ));
+                    update_screen_rect = true;
+                    self.window_size = size;
                 }
                 WindowPos(_) | WindowMinimize(_) | WindowMaximize(_) | WindowRefresh
                 | WindowClose => {}
             }
+        }
+
+        if update_screen_rect {
+            self.raw_input_state.screen_rect = Some(Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(
+                    self.window_size.x as f32 / self.content_scale,
+                    self.window_size.y as f32 / self.content_scale,
+                ),
+            ));
         }
 
         self.raw_input_state.take()

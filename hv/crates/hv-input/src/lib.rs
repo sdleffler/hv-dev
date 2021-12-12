@@ -977,10 +977,7 @@ where
         methods.add_method_mut("reset_input_state", |_, t, ()| Ok(t.reset_input_state()));
     }
 
-    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M)
-    where
-        Self: 'static + Send,
-    {
+    fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, ()| Ok(Self::new()));
     }
 }
