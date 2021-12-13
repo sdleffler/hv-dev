@@ -190,7 +190,7 @@ impl Collider {
 pub struct PhysicsConfig {
     /// Allowed overlap between objects. Default value is `0.01`.
     pub position_slop: f32,
-    /// In the approximate range of `[0.1, 0.3]`. Default value is `0.3`.
+    /// In the approximate range of `[0.1, 0.3]`. Default value is `0.1`.
     pub bias_factor: f32,
     /// Number of iterations to use when correcting velocities/solving velocity constraints. The
     /// higher the number, the more accurate, but more computationally intensive. Default value is
@@ -218,7 +218,7 @@ impl Default for PhysicsConfig {
     fn default() -> Self {
         Self {
             position_slop: 0.01,
-            bias_factor: 0.3,
+            bias_factor: 0.1,
             velocity_iterations: 8,
             position_iterations: 3,
             gravity: Vector3::zeros(),
