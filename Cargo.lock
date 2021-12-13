@@ -52,6 +52,7 @@ dependencies = [
  "crossbeam-queue",
  "decorum",
  "glfw",
+ "glyph_brush",
  "heavy",
  "lazy_static",
  "luminance",
@@ -1444,7 +1445,7 @@ dependencies = [
 [[package]]
 name = "luminance-glyph"
 version = "0.3.0"
-source = "git+https://github.com/sdleffler/luminance-glyph#f7e1f0e4833a49a898fa824f1e632fb1f098eba8"
+source = "git+https://github.com/sdleffler/luminance-glyph#b0cec5a071581d09d3d0ddc9acc7fa05f8543abd"
 dependencies = [
  "glyph_brush",
  "log",

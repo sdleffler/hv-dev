@@ -1336,10 +1336,8 @@ impl dyn AlchemicalAny + Send + Sync {
 /// already initialized and will be treated as uninitialized.)
 pub unsafe fn clone_or_move(src: *mut dyn AlchemicalAny, dst: *mut u8) -> bool {
     let table = <dyn AlchemicalAny>::type_table(&*src);
-    if let Some(clone_vt) = table.get::<dyn CloneProxy>() {
-        clone_vt
-            .to_dyn_object_ptr::<dyn CloneProxy>(src as *mut ())
-            .clone_into_ptr(dst as *mut u8);
+    if let Some(clone_proxy) = (*src).dyncast_ref::<dyn CloneProxy>() {
+        clone_proxy.clone_into_ptr(dst);
         false
     } else {
         core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, table.layout.size());
@@ -1359,15 +1357,11 @@ pub unsafe fn copy_clone_or_move_to(
 ) -> bool {
     let table = <dyn AlchemicalAny>::type_table(&*src);
     assert!(core::ptr::eq(table, <dyn AlchemicalAny>::type_table(&*dst)));
-    if let Some(copy_vt) = table.get::<dyn CopyProxy>() {
-        copy_vt
-            .to_dyn_object_ptr::<dyn CopyProxy>(src as *mut ())
-            .copy_into_ptr(dst as *mut u8);
+    if let Some(copy_proxy) = (*src).dyncast_ref::<dyn CopyProxy>() {
+        copy_proxy.copy_into_ptr(dst as *mut u8);
         false
-    } else if let Some(clone_vt) = table.get::<dyn CloneProxy>() {
-        clone_vt
-            .to_dyn_object_ptr::<dyn CloneProxy>(src as *mut ())
-            .clone_into_ptr(dst as *mut u8);
+    } else if let Some(clone_proxy) = (*src).dyncast_ref::<dyn CloneProxy>() {
+        clone_proxy.clone_into_ptr(dst as *mut u8);
         false
     } else {
         core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, table.layout.size());

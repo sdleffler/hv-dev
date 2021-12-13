@@ -4,7 +4,7 @@ use std::{
 };
 
 use hv::{
-    ecs::{ColumnMut, Entity, PreparedQuery, QueryMarker, Satisfies, SystemContext, With},
+    ecs::{ColumnMut, Entity, PreparedQuery, QueryMarker, Satisfies, SystemContext, With, Without},
     elastic::ElasticMut,
     prelude::*,
 };
@@ -279,6 +279,7 @@ impl Physics {
             collider_tx,
             contacts: Vec::new(),
         }
+        .with_density(1.)
     }
 
     pub fn with_density(self, density: f32) -> Self {
@@ -352,6 +353,9 @@ pub struct MassData {
 
 #[derive(Debug, Clone, Copy)]
 pub struct CcdEnabled;
+
+#[derive(Debug, Clone, Copy)]
+pub struct KinematicMarker;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 pub enum ConstrainedPair {
@@ -652,36 +656,45 @@ impl PhysicsPipeline {
     }
 }
 
+pub type DynamicBody<Q> = With<Velocity, Without<KinematicMarker, Q>>;
+
 #[allow(clippy::type_complexity)]
 pub fn update(
     context: SystemContext,
     (dt, tick, atom_map, pipeline): (&UpdateDt, &UpdateTick, &AtomMap, &mut PhysicsPipeline),
     (
-        ref mut physics_query,
-        ref mut with_physics_query,
+        ref mut all_colliders_query,
+        ref mut dynamic_objects_query,
+        ref mut with_physics_and_dynamic_query,
         physics_query_marker,
-        ref mut maybe_ccd_query,
-        ref mut with_ccd_and_physics_query,
-        ref mut physics_aux_query,
+        ref mut update_target_pos_query,
+        ref mut motion_clamping_query,
+        ref mut all_physics_objects_query,
     ): &mut (
         PreparedQuery<&mut Physics>,
-        PreparedQuery<With<Physics, ()>>,
+        PreparedQuery<DynamicBody<&mut Physics>>,
+        PreparedQuery<DynamicBody<With<Physics, ()>>>,
         QueryMarker<&mut Physics>,
-        PreparedQuery<(&mut Physics, Satisfies<&CcdEnabled>)>,
-        PreparedQuery<With<CcdEnabled, With<Physics, ()>>>,
-        PreparedQuery<(&mut Position, &mut Velocity, &mut Physics)>,
+        PreparedQuery<With<Velocity, (&mut Physics, Satisfies<&CcdEnabled>)>>,
+        PreparedQuery<DynamicBody<With<CcdEnabled, With<Physics, ()>>>>,
+        PreparedQuery<(&mut Position, Option<&mut Velocity>, &mut Physics)>,
     ),
 ) {
     // Copy physics data from the ECS.
-    for (_, (pos, vel, physics)) in context.prepared_query(physics_aux_query).iter() {
+    for (_, (pos, maybe_vel, physics)) in context.prepared_query(all_physics_objects_query).iter() {
         physics.position = pos.current;
-        physics.velocity = vel.composite;
+
+        if let Some(vel) = maybe_vel {
+            physics.velocity = vel.composite;
+        } else {
+            physics.velocity = CompositeVelocity3::zero();
+        }
     }
 
     // Rebuild the quadtree.
     pipeline.qbvh.clear_and_rebuild(
         context
-            .prepared_query(physics_query)
+            .prepared_query(all_colliders_query)
             .iter()
             .map(|(e, physics)| {
                 (
@@ -698,7 +711,10 @@ pub fn update(
     {
         let physics_column_mut = context.column_mut(*physics_query_marker);
         let mut out = Vec::new();
-        for (e1, ()) in context.prepared_query(with_physics_query).iter() {
+        for (e1, ()) in context
+            .prepared_query(with_physics_and_dynamic_query)
+            .iter()
+        {
             let p1 = unsafe { physics_column_mut.get_unchecked(e1).unwrap() };
             let pos1 = p1.collider_tx * p1.position.as_isometry3();
             let aabb = p1.collider_shape.compute_aabb(&pos1);
@@ -764,7 +780,7 @@ pub fn update(
     }
 
     // Integrate velocities w/ external forces
-    for (_, physics) in context.prepared_query(physics_query).iter() {
+    for (_, physics) in context.prepared_query(dynamic_objects_query).iter() {
         physics.velocity.linear += physics.gravity_k * pipeline.config.gravity * dt.0;
     }
 
@@ -772,7 +788,7 @@ pub fn update(
     pipeline.solve_velocities(&mut context.column_mut(*physics_query_marker), dt);
 
     // Integrate positions w/ newly solved velocities, for bodies w/o CCD
-    for (_, (physics, ccd_enabled)) in context.prepared_query(maybe_ccd_query).iter() {
+    for (_, (physics, ccd_enabled)) in context.prepared_query(update_target_pos_query).iter() {
         physics.target = physics.velocity.integrate(&physics.position, dt.0);
 
         if !ccd_enabled {
@@ -787,7 +803,7 @@ pub fn update(
     // which are above the threshold.
     {
         let physics_column_mut = context.column_mut(*physics_query_marker);
-        for (e1, ()) in context.prepared_query(with_ccd_and_physics_query).iter() {
+        for (e1, ()) in context.prepared_query(motion_clamping_query).iter() {
             let mut min_toi = None::<TOI>;
 
             let p1 = unsafe { physics_column_mut.get_unchecked(e1).unwrap() };
@@ -842,7 +858,7 @@ pub fn update(
 
     // Detect dynamic-static collisions, collecting position and velocity constraints
     let mut out = Vec::new();
-    for (e, physics) in context.prepared_query(physics_query).iter() {
+    for (e, physics) in context.prepared_query(dynamic_objects_query).iter() {
         let pos_tx = physics.collider_tx * physics.position.as_isometry3();
         let aabb = physics.collider_shape.compute_aabb(&pos_tx);
         for intersection in atom_map.intersect_with(aabb) {
@@ -923,15 +939,35 @@ pub fn update(
     }
 
     // Copy physics data back to the ECS.
-    for (_, (pos, vel, physics)) in context.prepared_query(physics_aux_query).iter() {
-        pos.current = physics.position;
-        vel.composite = physics.velocity;
+    for (_, (pos, maybe_vel, physics)) in context.prepared_query(all_physics_objects_query).iter() {
+        if let Some(vel) = maybe_vel {
+            pos.current = physics.position;
+            vel.composite = physics.velocity;
+        }
     }
 }
 
 impl LuaUserData for CompositePosition3 {
     fn on_metatable_init(table: Type<Self>) {
         table.add_clone().add_copy().add_send().add_sync();
+    }
+
+    #[allow(clippy::unit_arg)]
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("x", |_, this| Ok(this.translation.x));
+        fields.add_field_method_get("y", |_, this| Ok(this.translation.y));
+        fields.add_field_method_get("z", |_, this| Ok(this.translation.z));
+        fields.add_field_method_get("translation", |_, this| Ok(this.translation));
+        fields.add_field_method_get("rotation", |_, this| Ok(this.rotation.angle()));
+        fields.add_field_method_set("x", |_, this, x| Ok(this.translation.x = x));
+        fields.add_field_method_set("y", |_, this, y| Ok(this.translation.y = y));
+        fields.add_field_method_set("z", |_, this, z| Ok(this.translation.z = z));
+        fields.add_field_method_set("translation", |_, this, translation| {
+            Ok(this.translation = translation)
+        });
+        fields.add_field_method_set("rotation", |_, this, rotation| {
+            Ok(this.rotation = UnitComplex::new(rotation))
+        });
     }
 
     fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
@@ -972,7 +1008,7 @@ impl LuaUserData for Position {
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method_mut("get", |_, this, out: Option<LuaAnyUserData>| match out {
+        methods.add_method("get", |_, this, out: Option<LuaAnyUserData>| match out {
             Some(ud) => {
                 *ud.borrow_mut::<CompositePosition3>()? = this.current;
                 Ok(None)
@@ -1004,7 +1040,7 @@ impl LuaUserData for Velocity {
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method_mut("get", |_, this, out: Option<LuaAnyUserData>| match out {
+        methods.add_method("get", |_, this, out: Option<LuaAnyUserData>| match out {
             Some(ud) => {
                 *ud.borrow_mut::<CompositeVelocity3>()? = this.composite;
                 Ok(None)
@@ -1196,6 +1232,34 @@ impl LuaUserData for CcdEnabled {
 
     fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
         methods.add_function("new", |_, ()| Ok(Self));
+    }
+}
+
+impl LuaUserData for KinematicMarker {
+    fn on_metatable_init(table: Type<Self>) {
+        table.mark_component().add_clone().add_copy();
+    }
+
+    fn on_type_metatable_init(table: Type<Type<Self>>) {
+        table.mark_component_type();
+    }
+
+    fn add_type_methods<'lua, M: LuaUserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
+        methods.add_function("new", |_, ()| Ok(Self));
+    }
+}
+
+impl LuaUserData for PhysicsPipeline {
+    fn on_metatable_init(table: Type<Self>) {
+        table.add_send().add_sync();
+    }
+
+    #[allow(clippy::unit_arg)]
+    fn add_fields<'lua, F: LuaUserDataFields<'lua, Self>>(fields: &mut F) {
+        fields.add_field_method_get("bias_factor", |_, this| Ok(this.config.bias_factor));
+        fields.add_field_method_set("bias_factor", |_, this, bias| {
+            Ok(this.config.bias_factor = bias)
+        });
     }
 }
 

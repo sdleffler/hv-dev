@@ -7,9 +7,13 @@ use glyph::{
     ab_glyph::{FontArc, PxScale},
     BuiltInLineBreaker, Extra, FontId, Layout, Section, Text,
 };
+use glyph_brush::ab_glyph::{self, Rect};
 use hv::prelude::*;
 use luminance::{
     backend::{
+        color_slot::ColorSlot,
+        depth_stencil_slot::DepthStencilSlot,
+        framebuffer::Framebuffer as FramebufferBackend,
         pipeline::{Pipeline as PipelineBackend, PipelineTexture},
         shader::{ShaderData as ShaderDataBackend, Uniformable},
         tess::{
@@ -20,7 +24,8 @@ use luminance::{
         texture::Texture as TextureBackend,
     },
     context::GraphicsContext,
-    pipeline::{Pipeline, TextureBinding},
+    framebuffer::Framebuffer,
+    pipeline::{Pipeline, PipelineGate, PipelineState, TextureBinding},
     pixel::{NormRGBA8UI, NormUnsigned},
     render_state::RenderState,
     shader::{
@@ -1196,16 +1201,22 @@ impl<B: EvolBackend> EvolRenderer<B> {
         TextureId(self.textures.insert(texture))
     }
 
-    pub fn draw_buffered<'a>(
+    pub fn draw_buffered<CS, DS>(
         &mut self,
-        pipeline: &mut Pipeline<'a, B>,
-        shading_gate: &mut ShadingGate<'a, B>,
+        context: &mut impl GraphicsContext<Backend = B>,
+        pipeline_state: &PipelineState,
+        framebuffer: &Framebuffer<B, Dim2, CS, DS>,
         buffer: &mut EvolCommandBuffer,
         view_projection: &Matrix4<f32>,
         target_size: &Vector2<f32>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        CS: ColorSlot<B, Dim2>,
+        DS: DepthStencilSlot<B, Dim2>,
+    {
         let mut commands = buffer.commands.drain(..).peekable();
         let mut model = Matrix4::identity();
+        let y_flip = Matrix4::new_nonuniform_scaling(&Vector3::new(1., -1., 1.));
 
         while let Some(command) = commands.peek() {
             match command {
@@ -1218,118 +1229,188 @@ impl<B: EvolBackend> EvolRenderer<B> {
                         match command {
                             EvolCommand::DrawText(pooled_text) => {
                                 let text_buf = buffer.section_pool.pop().unwrap_or_default();
-                                let section = pooled_text.to_section(text_buf);
+                                let mut section = pooled_text.to_section(text_buf);
+                                section.screen_position.1 = -section.screen_position.1;
                                 self.glyph_brush.queue(section);
                                 commands.next();
                             }
-                            _ => {
-                                let mvp = view_projection * model;
+                            _ => break,
+                        }
+                    }
+
+                    self.glyph_brush.process_queued(context);
+
+                    context
+                        .new_pipeline_gate()
+                        .pipeline(
+                            framebuffer,
+                            pipeline_state,
+                            |mut pipeline, mut shading_gate| {
+                                let mvp = y_flip * view_projection * model;
                                 self.glyph_brush.draw_queued_with_transform(
-                                    pipeline,
-                                    shading_gate,
+                                    &mut pipeline,
+                                    &mut shading_gate,
                                     *mvp.as_slice().split_array_ref().0,
-                                )?
-                            }
-                        }
-                    }
+                                )
+                            },
+                        )
+                        .into_result()?;
                 }
-                EvolCommand::DrawTexturedQuad(texture_id, instance) => {
-                    let first_texture_id = *texture_id;
-                    let bound = pipeline
-                        .bind_texture::<Dim2, NormRGBA8UI>(&mut self.textures[first_texture_id.0])?
-                        .binding();
+                &EvolCommand::DrawTexturedQuad(texture_id, instance) => {
+                    let do_draw = |pipeline: Pipeline<B>, mut shading_gate: ShadingGate<B>| {
+                        let first_texture_id = texture_id;
 
-                    let quad_mesh = &mut self.meshes[self.quad.0];
-                    quad_mesh.clear();
-                    quad_mesh.try_push(&buffer.instances[*instance])?;
-                    commands.next();
-                    let mut writer = quad_mesh.try_write()?;
-                    while let Some(EvolCommand::DrawTexturedQuad(texture_id, instance_id)) =
-                        commands.peek()
-                    {
-                        if *texture_id != first_texture_id || writer.is_full() {
-                            break;
-                        }
-                        writer.single_write(&buffer.instances[*instance_id])?;
+                        let quad_mesh = &mut self.meshes[self.quad.0];
+                        quad_mesh.clear();
+                        quad_mesh.try_push(&buffer.instances[instance])?;
+
                         commands.next();
-                    }
-                    drop(writer);
 
-                    shading_gate.shade(&mut self.program, |mut iface, uni, mut render_gate| {
-                        iface.set(&uni.texture, bound);
-                        iface.set(&uni.target_size, Vec2::from(target_size.data.0[0]));
-                        iface.set(
-                            &uni.view_projection,
-                            Mat44::from((view_projection * model).data.0),
-                        );
-
-                        let render_state = RenderState::default();
-                        render_gate.render(&render_state, |mut tess_gate| {
-                            quad_mesh.view().and_then(|view| tess_gate.render(view))
-                        })
-                    })?;
-                }
-                EvolCommand::DrawMesh(texture_id, mesh_id, instance_id) => {
-                    let first_texture_id = *texture_id;
-                    let first_mesh_id = *mesh_id;
-                    let resolved_texture_id = first_texture_id.unwrap_or(self.white);
-                    let bound = pipeline.bind_texture::<Dim2, NormRGBA8UI>(
-                        &mut self.textures[resolved_texture_id.0],
-                    )?;
-
-                    let mesh = &mut self.meshes[first_mesh_id.0];
-                    mesh.clear();
-                    mesh.try_push(&buffer.instances[*instance_id])?;
-                    commands.next();
-                    let mut writer = mesh.try_write()?;
-                    while let Some(EvolCommand::DrawMesh(texture_id, mesh_id, instance_id)) =
-                        commands.peek()
-                    {
-                        if *texture_id != first_texture_id
-                            || *mesh_id != first_mesh_id
-                            || writer.is_full()
+                        let mut writer = quad_mesh.try_write()?;
+                        while let Some(EvolCommand::DrawTexturedQuad(texture_id, instance_id)) =
+                            commands.peek()
                         {
-                            break;
+                            if *texture_id != first_texture_id || writer.is_full() {
+                                break;
+                            }
+                            writer.single_write(&buffer.instances[*instance_id])?;
+                            commands.next();
                         }
-                        writer.single_write(&buffer.instances[*instance_id])?;
+                        drop(writer);
+
+                        let bound = pipeline
+                            .bind_texture::<Dim2, NormRGBA8UI>(
+                                &mut self.textures[first_texture_id.0],
+                            )?
+                            .binding();
+
+                        let quad_mesh = &mut self.meshes[self.quad.0];
+                        quad_mesh.clear();
+                        quad_mesh.try_push(&buffer.instances[instance])?;
                         commands.next();
-                    }
-                    drop(writer);
+                        let mut writer = quad_mesh.try_write()?;
+                        while let Some(EvolCommand::DrawTexturedQuad(texture_id, instance_id)) =
+                            commands.peek()
+                        {
+                            if *texture_id != first_texture_id || writer.is_full() {
+                                break;
+                            }
+                            writer.single_write(&buffer.instances[*instance_id])?;
+                            commands.next();
+                        }
+                        drop(writer);
 
-                    shading_gate.shade(&mut self.program, |mut iface, uni, mut render_gate| {
-                        iface.set(&uni.texture, bound.binding());
-                        iface.set(&uni.target_size, Vec2::from(target_size.data.0[0]));
-                        iface.set(
-                            &uni.view_projection,
-                            Mat44::from((view_projection * model).data.0),
-                        );
+                        shading_gate.shade(
+                            &mut self.program,
+                            |mut iface, uni, mut render_gate| {
+                                iface.set(&uni.texture, bound);
+                                iface.set(&uni.target_size, Vec2::from(target_size.data.0[0]));
+                                iface.set(
+                                    &uni.view_projection,
+                                    Mat44::from((view_projection * model).data.0),
+                                );
 
-                        let render_state = RenderState::default();
-                        render_gate.render(&render_state, |mut tess_gate| {
-                            mesh.view().and_then(|view| tess_gate.render(view))
-                        })
-                    })?;
+                                let render_state = RenderState::default();
+                                render_gate.render(&render_state, |mut tess_gate| {
+                                    quad_mesh.view().and_then(|view| tess_gate.render(view))
+                                })
+                            },
+                        )?;
+
+                        Ok::<_, Error>(())
+                    };
+
+                    context
+                        .new_pipeline_gate()
+                        .pipeline(framebuffer, pipeline_state, do_draw)
+                        .into_result()?;
+                }
+                &EvolCommand::DrawMesh(texture_id, mesh_id, instance_id) => {
+                    let do_draw = |pipeline: Pipeline<B>, mut shading_gate: ShadingGate<B>| {
+                        let first_texture_id = texture_id;
+                        let first_mesh_id = mesh_id;
+                        let resolved_texture_id = first_texture_id.unwrap_or(self.white);
+                        let bound = pipeline.bind_texture::<Dim2, NormRGBA8UI>(
+                            &mut self.textures[resolved_texture_id.0],
+                        )?;
+
+                        let mesh = &mut self.meshes[first_mesh_id.0];
+                        mesh.clear();
+                        mesh.try_push(&buffer.instances[instance_id])?;
+                        commands.next();
+                        let mut writer = mesh.try_write()?;
+                        while let Some(EvolCommand::DrawMesh(texture_id, mesh_id, instance_id)) =
+                            commands.peek()
+                        {
+                            if *texture_id != first_texture_id
+                                || *mesh_id != first_mesh_id
+                                || writer.is_full()
+                            {
+                                break;
+                            }
+                            writer.single_write(&buffer.instances[*instance_id])?;
+                            commands.next();
+                        }
+                        drop(writer);
+
+                        shading_gate.shade(
+                            &mut self.program,
+                            |mut iface, uni, mut render_gate| {
+                                iface.set(&uni.texture, bound.binding());
+                                iface.set(&uni.target_size, Vec2::from(target_size.data.0[0]));
+                                iface.set(
+                                    &uni.view_projection,
+                                    Mat44::from((view_projection * model).data.0),
+                                );
+
+                                let render_state = RenderState::default();
+                                render_gate.render(&render_state, |mut tess_gate| {
+                                    mesh.view().and_then(|view| tess_gate.render(view))
+                                })
+                            },
+                        )?;
+
+                        Ok::<_, Error>(())
+                    };
+
+                    context
+                        .new_pipeline_gate()
+                        .pipeline(framebuffer, pipeline_state, do_draw)
+                        .into_result()?;
                 }
                 EvolCommand::DrawMeshInstanced(maybe_texture_id, mesh_id) => {
-                    let maybe_texture_id = *maybe_texture_id;
-                    let texture_id = maybe_texture_id.unwrap_or(self.white);
-                    let bound = pipeline
-                        .bind_texture::<Dim2, NormRGBA8UI>(&mut self.textures[texture_id.0])?
-                        .binding();
-                    let mesh = &self.meshes[mesh_id.0];
-                    shading_gate.shade(&mut self.program, |mut iface, uni, mut render_gate| {
-                        iface.set(&uni.texture, bound);
-                        iface.set(&uni.target_size, Vec2::from(target_size.data.0[0]));
-                        iface.set(
-                            &uni.view_projection,
-                            Mat44::from((view_projection * model).data.0),
-                        );
+                    let do_draw = |pipeline: Pipeline<B>, mut shading_gate: ShadingGate<B>| {
+                        let maybe_texture_id = *maybe_texture_id;
+                        let texture_id = maybe_texture_id.unwrap_or(self.white);
+                        let bound = pipeline
+                            .bind_texture::<Dim2, NormRGBA8UI>(&mut self.textures[texture_id.0])?
+                            .binding();
+                        let mesh = &self.meshes[mesh_id.0];
 
-                        let render_state = RenderState::default();
-                        render_gate.render(&render_state, |mut tess_gate| {
-                            mesh.view().and_then(|view| tess_gate.render(view))
-                        })
-                    })?;
+                        shading_gate.shade(
+                            &mut self.program,
+                            |mut iface, uni, mut render_gate| {
+                                iface.set(&uni.texture, bound);
+                                iface.set(&uni.target_size, Vec2::from(target_size.data.0[0]));
+                                iface.set(
+                                    &uni.view_projection,
+                                    Mat44::from((view_projection * model).data.0),
+                                );
+
+                                let render_state = RenderState::default();
+                                render_gate.render(&render_state, |mut tess_gate| {
+                                    mesh.view().and_then(|view| tess_gate.render(view))
+                                })
+                            },
+                        )?;
+
+                        Ok::<_, Error>(())
+                    };
+
+                    context
+                        .new_pipeline_gate()
+                        .pipeline(framebuffer, pipeline_state, do_draw)
+                        .into_result()?;
 
                     commands.next();
                 }

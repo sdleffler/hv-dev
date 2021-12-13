@@ -1,10 +1,4 @@
-use hv::{
-    ecs::World,
-    elastic::{ElasticMut, ScopeGuard},
-    prelude::*,
-    resources::Resources,
-    script::ScriptContext,
-};
+use hv::{prelude::*, resources::Resources, script::ScriptContext};
 
 #[derive(Debug)]
 pub struct SceneScript {
@@ -27,19 +21,13 @@ impl SceneScript {
     /// Enter the script context, mutably loan the `World` to the `Resources` (if it's configured to
     /// accept such a loan), load the Lua table representing the script, and then run a closure w/
     /// access to the Lua context, resources, and script table.
-    pub fn in_context<'g, 'lua, T>(
+    pub fn in_context<'lua, T>(
         &self,
         lua: &'lua Lua,
-        world: &'g mut World,
         resources: &Resources,
         script_context: &mut ScriptContext,
-        guard: &mut ScopeGuard<'g>,
         thunk: impl FnOnce(&'lua Lua, &Resources, LuaTable<'lua>) -> Result<T>,
     ) -> Result<T> {
-        if let Ok(world_elastic) = resources.get::<ElasticMut<World>>() {
-            guard.loan(&world_elastic, world);
-        }
-
         script_context.with_resources(lua, resources, |_| {
             let table: LuaTable = lua.registry_value(&self.table)?;
             thunk(lua, resources, table)
@@ -47,13 +35,11 @@ impl SceneScript {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn call_method<'g, 'lua, S, A, R>(
+    pub fn call_method<'lua, S, A, R>(
         &self,
         lua: &'lua Lua,
-        world: &'g mut World,
         resources: &Resources,
         script_context: &mut ScriptContext,
-        guard: &mut ScopeGuard<'g>,
         name: &S,
         args: A,
     ) -> Result<R>
@@ -62,23 +48,16 @@ impl SceneScript {
         R: FromLuaMulti<'lua>,
         S: AsRef<str> + ?Sized,
     {
-        self.in_context(
-            lua,
-            world,
-            resources,
-            script_context,
-            guard,
-            |_, _, script| {
-                script
-                    .call_method(name.as_ref(), (script.clone(), args))
-                    .with_context(|| {
-                        anyhow!(
-                            "error while evaluating scene script method: {}",
-                            name.as_ref()
-                        )
-                    })
-            },
-        )
+        self.in_context(lua, resources, script_context, |_, _, script| {
+            script
+                .call_method(name.as_ref(), (script.clone(), args))
+                .with_context(|| {
+                    anyhow!(
+                        "error while evaluating scene script method: {}",
+                        name.as_ref()
+                    )
+                })
+        })
     }
 }
 

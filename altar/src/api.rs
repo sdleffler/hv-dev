@@ -26,6 +26,7 @@ fn physics_module(lua: &Lua) -> Result<ModuleBuilder> {
         .userdata_type::<CompositeVelocity3>("CompositeVelocity3")?
         .userdata_type::<Physics>("Physics")?
         .userdata_type::<CcdEnabled>("CcdEnabled")?
+        .userdata_type::<KinematicMarker>("KinematicMarker")?
         .userdata_type::<SharedShape>("Shape")?;
 
     Ok(builder)
