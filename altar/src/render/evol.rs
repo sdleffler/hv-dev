@@ -7,13 +7,11 @@ use glyph::{
     ab_glyph::{FontArc, PxScale},
     BuiltInLineBreaker, Extra, FontId, Layout, Section, Text,
 };
-use glyph_brush::ab_glyph::{self, Rect};
 use hv::prelude::*;
 use luminance::{
     backend::{
         color_slot::ColorSlot,
         depth_stencil_slot::DepthStencilSlot,
-        framebuffer::Framebuffer as FramebufferBackend,
         pipeline::{Pipeline as PipelineBackend, PipelineTexture},
         shader::{ShaderData as ShaderDataBackend, Uniformable},
         tess::{
@@ -25,7 +23,7 @@ use luminance::{
     },
     context::GraphicsContext,
     framebuffer::Framebuffer,
-    pipeline::{Pipeline, PipelineGate, PipelineState, TextureBinding},
+    pipeline::{Pipeline, PipelineState, TextureBinding},
     pixel::{NormRGBA8UI, NormUnsigned},
     render_state::RenderState,
     shader::{
@@ -1230,7 +1228,16 @@ impl<B: EvolBackend> EvolRenderer<B> {
                             EvolCommand::DrawText(pooled_text) => {
                                 let text_buf = buffer.section_pool.pop().unwrap_or_default();
                                 let mut section = pooled_text.to_section(text_buf);
+
+                                // glyph-brush uses a top-left origin with a left-handed coordinate
+                                // system; to get around this, we flip all of our Y coordinates and
+                                // Z coordinates, giving us a bottom-left origin w/ right-handed
+                                // coordinates.
                                 section.screen_position.1 = -section.screen_position.1;
+                                for text in section.text.iter_mut() {
+                                    text.extra.z = -text.extra.z;
+                                }
+
                                 self.glyph_brush.queue(section);
                                 commands.next();
                             }

@@ -52,7 +52,6 @@ dependencies = [
  "crossbeam-queue",
  "decorum",
  "glfw",
- "glyph_brush",
  "heavy",
  "lazy_static",
  "luminance",
