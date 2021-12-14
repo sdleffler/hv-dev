@@ -1443,8 +1443,9 @@ dependencies = [
 
 [[package]]
 name = "luminance-glyph"
-version = "0.3.0"
-source = "git+https://github.com/sdleffler/luminance-glyph#b0cec5a071581d09d3d0ddc9acc7fa05f8543abd"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fd7d5576e8ebf6175e636fdd8ee34ac5bac14e4600d153438755424cecbb188"
 dependencies = [
  "glyph_brush",
  "log",

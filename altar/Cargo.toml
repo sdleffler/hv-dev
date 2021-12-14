@@ -18,7 +18,7 @@ hv = { path = "../hv", features = ["parry3d", "vendored"], package = "heavy" }
 lazy_static = "1.4.0"
 luminance = "0.45.0"
 luminance-glfw = { version = "0.17.0", optional = true }
-luminance-glyph = { version = "0.3.0", git = "https://github.com/sdleffler/luminance-glyph" }
+luminance-glyph = { version = "0.4.0" }
 lyon = "0.17.10"
 parry3d = "0.7.1"
 serde = "1.0.130"
