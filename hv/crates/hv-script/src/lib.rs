@@ -1,12 +1,8 @@
 //! Components, systems, and resources, for loading, running/updating, and managing resources
 //! provided to Lua scripts.
 
-#![no_std]
 #![feature(allocator_api)]
 
-extern crate alloc;
-
-use alloc::{borrow::ToOwned, boxed::Box, string::String, vec::Vec};
 use anyhow::*;
 use core::{
     any::{Any, TypeId},

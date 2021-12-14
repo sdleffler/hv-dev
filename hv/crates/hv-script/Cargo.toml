@@ -10,6 +10,7 @@ hv-alchemy = { version = "0.1.0", path = "../hv-alchemy" }
 hv-cell = { version = "0.1.0", path = "../hv-cell" }
 hv-ecs = { version = "0.7.1", path = "../../../hv-ecs", package = "hecs" }
 hv-elastic = { version = "0.4.0", path = "../hv-elastic" }
+hv-filesystem = { version = "0.1.0", path = "../hv-filesystem" }
 hv-lua = { version = "0.6.6", path = "../../../hv-lua" }
 hv-math = { version = "0.1.0", path = "../hv-math" }
 hv-resources = { version = "1.1.0", path = "../hv-resources" }

@@ -1169,6 +1169,7 @@ dependencies = [
  "hv-alchemy",
  "hv-cell",
  "hv-elastic",
+ "hv-filesystem",
  "hv-lua",
  "hv-math",
  "hv-resources",

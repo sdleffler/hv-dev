@@ -11,10 +11,14 @@
 //! #Ok(()) }
 //! ```
 
-use alloc::{borrow::ToOwned, boxed::Box, string::String};
-use anyhow::{bail, Result};
+use std::io::Read;
+
+use anyhow::{anyhow, bail, Context, Result};
 use hv_alchemy::Type;
+use hv_elastic::{ElasticMut, ElasticRef};
+use hv_filesystem::Filesystem;
 use hv_lua::prelude::*;
+use hv_resources::Resources;
 
 pub struct Module {
     name: String,
@@ -167,7 +171,35 @@ impl<'lua> ModuleBuilder<'lua> {
 lazy_static::lazy_static! {
     /// Entrypoint for the main `hv` Lua API.
     ///
-    /// Exposes all `hv.*` modules.
+    /// Exposes all `hv.*` modules, and overrides a number of native Lua functions.
+    ///
+    /// ## Override behavior
+    ///
+    /// Some Lua functions are overridden/replaced rather than being entirely removed, and in such a
+    /// way that they interface more nicely with Heavy. For example, the `package.loaders` table is
+    /// modified in such a way that Lua cannot access the normal filesystem, and instead uses the
+    /// Heavy `hv-filesystem`'s `Filesystem` type (if available) to load Lua code. However, many Lua
+    /// functions are either detrimental to portability, potentially insecure (though security isn't
+    /// something Heavy focuses too heavily on, being a game framework) and altogether just don't
+    /// make all that much sense.
+    ///
+    /// ### Override behavior: modified functions and tables
+    ///
+    /// - `package`: `package.loaders` completely replaced w/ Heavy-specific alternatives, thus
+    ///   changing the behavior of `require`.
+    /// - `print`: results in logging a `DEBUG` message instead.
+    /// - `require`: paths are loaded from the Heavy VFS rather than from the OS filesystem.
+    ///
+    /// ### Override behavior: removed functions and tables
+    ///
+    /// - `load`, `loadfile`, `loadstring`: often a code smell and ideally unnecessary. These could
+    ///   be replaced at some point with a Heavy VFS enabled version which also maintains the
+    ///   correct function environment, but we currently have no good reason to do so.
+    /// - `module`: we don't need it, it's considered a bit of a code smell, and there's no reason
+    ///   to keep it for completeness when so often we replace the global environment for scripts.
+    /// - `io`: superseded by the Heavy filesystem; in the future a compatibility layer could be
+    ///   implemented but currently we have no good reason to do so.
+    /// - `os`: unneeded and a big potential problem for a misbehaving script.
     pub static ref HV: Module = Module::new("hv", "hv", hv);
 
     /// The `hv.ecs` module.
@@ -200,7 +232,107 @@ lazy_static::lazy_static! {
     pub static ref AGENT: Module = Module::new("agent", "hv.lua.agent", hv_lua_agent);
 }
 
+fn hv_filesystem_loader<'lua>(lua: &'lua Lua, path: LuaString<'lua>) -> LuaResult<LuaValue<'lua>> {
+    // `package.path`
+    let package_path = lua
+        .globals()
+        .get::<_, LuaTable>("package")?
+        .get::<_, LuaString>("path")?;
+
+    // Shouldn't ever be bad unicode, tbh. If either of these are bad unicode, something else is
+    // very wrong.
+    let package_path = package_path.to_str()?;
+    let path = path.to_str()?;
+
+    // First, look for a `Filesystem` in our Lua app data.
+    if let Some(mut fs) = lua.app_data_mut::<Filesystem>() {
+        return hv_filesystem_do_load(lua, package_path, path, &mut *fs);
+    } else if let Some(fs_elastic) = lua.app_data_ref::<ElasticMut<Filesystem>>() {
+        if let Ok(mut fs) = fs_elastic.try_borrow_mut() {
+            return hv_filesystem_do_load(lua, package_path, path, &mut *fs);
+        }
+    }
+
+    // If there's no `Filesystem` in our Lua app data, check for a `Resources` there instead.
+    if let Some(resources_elastic) = lua.app_data_ref::<ElasticRef<Resources>>() {
+        if let Ok(resources) = resources_elastic.try_borrow() {
+            if let Ok(mut fs) = resources.get_mut::<Filesystem>() {
+                return hv_filesystem_do_load(lua, package_path, path, &mut *fs);
+            } else if let Ok(fs_elastic) = resources.get::<ElasticMut<Filesystem>>() {
+                if let Ok(mut fs) = fs_elastic.try_borrow_mut() {
+                    return hv_filesystem_do_load(lua, package_path, path, &mut *fs);
+                }
+            }
+        }
+    }
+
+    "could not find a `Filesystem` resource to search!".to_lua(lua)
+}
+
+fn hv_filesystem_do_load<'lua>(
+    lua: &'lua Lua,
+    package_path: &str,
+    path: &str,
+    fs: &mut Filesystem,
+) -> LuaResult<LuaValue<'lua>> {
+    let segments = package_path.split(';');
+    let path_replaced = path.replace(".", "/");
+    let mut tried = Vec::new();
+
+    for segment in segments {
+        let path = segment.replace('?', &path_replaced);
+        let mut file = match fs.open(&path) {
+            Ok(file) => file,
+            Err(err) => {
+                tried.push(err.to_string());
+                continue;
+            }
+        };
+        let mut buf = String::new();
+        file.read_to_string(&mut buf).to_lua_err()?;
+        let loaded = lua
+            .load(&buf)
+            .set_name(&path)?
+            .into_function()
+            .with_context(|| anyhow!("error while loading module {}", path))
+            .to_lua_err()?;
+
+        return Some(loaded).to_lua(lua);
+    }
+
+    // FIXME: better error reporting here; collect errors from individual module attempts
+    // and log them?
+    Some(format!("module {} not found: {}\n", path, tried.join("\n"),)).to_lua(lua)
+}
+
 fn hv(lua: &Lua) -> Result<ModuleBuilder> {
+    // Clean the global namespace; see override behavior
+    let g = lua.globals();
+    g.raw_remove("load")?;
+    g.raw_remove("loadfile")?;
+    g.raw_remove("loadstring")?;
+    g.raw_remove("module")?;
+    g.raw_remove("io")?;
+    g.raw_remove("os")?;
+
+    let package: LuaTable = g.get("package")?;
+    let loaders: LuaTable = package.get("loaders")?;
+
+    // Set the value of `package.path` such that it is compatible with our loaders and the Heavy
+    // VFS's requirement of all paths starting at the root.
+    package.set("path", "/?.lua;/?/init.lua")?;
+
+    // cpath does not apply. Clear it to emphasize this and keep note.
+    package.set("cpath", "")?;
+
+    // Remove the default filesystem search and C library opening Lua loader behavior; we do not
+    // want to search the OS filesystem in any way.
+    loaders.raw_remove(3)?;
+    loaders.raw_remove(2)?;
+
+    // Add in a filesystem loader which loads from the Heavy VFS rather than the OS filesystem.
+    loaders.set(2, lua.create_function(hv_filesystem_loader)?)?;
+
     let mut builder = ModuleBuilder::new(lua)?;
     builder
         .submodule(&*HV_ECS)?
