@@ -185,6 +185,11 @@ lazy_static::lazy_static! {
     ///
     /// ### Override behavior: modified functions and tables
     ///
+    /// - `loadfile`: paths are resolved in the Heavy VFS rather than from the OS filesystem; in
+    ///   addition, it tries paths from `package.path` if it cannot find the file directly (and will
+    ///   also resolve module paths to VFS paths.) This is because internally the same function used
+    ///   to implement the modified `loadfile` is also used as the Heavy VFS loader in
+    ///   `package.loaders`.
     /// - `package`: `package.loaders` completely replaced w/ Heavy-specific alternatives, thus
     ///   changing the behavior of `require`.
     /// - `print`: results in logging a `DEBUG` message instead.
@@ -192,7 +197,7 @@ lazy_static::lazy_static! {
     ///
     /// ### Override behavior: removed functions and tables
     ///
-    /// - `load`, `loadfile`, `loadstring`: often a code smell and ideally unnecessary. These could
+    /// - `load`, `loadstring`: often a code smell and ideally unnecessary. These could
     ///   be replaced at some point with a Heavy VFS enabled version which also maintains the
     ///   correct function environment, but we currently have no good reason to do so.
     /// - `module`: we don't need it, it's considered a bit of a code smell, and there's no reason
@@ -318,12 +323,14 @@ fn hv(lua: &Lua) -> Result<ModuleBuilder> {
     g.raw_remove("io")?;
     g.raw_remove("os")?;
 
+    g.raw_set("loadfile", lua.create_function(hv_filesystem_loader)?)?;
+
     let package: LuaTable = g.get("package")?;
     let loaders: LuaTable = package.get("loaders")?;
 
     // Set the value of `package.path` such that it is compatible with our loaders and the Heavy
     // VFS's requirement of all paths starting at the root.
-    package.set("path", "/?.lua;/?/init.lua")?;
+    package.set("path", "/?;/?.lua;/?/init.lua")?;
 
     // cpath does not apply. Clear it to emphasize this and keep note.
     package.set("cpath", "")?;
