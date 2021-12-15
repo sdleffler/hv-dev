@@ -1,6 +1,6 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
-    ops::{Add, AddAssign},
+    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 use hv::{
@@ -974,6 +974,7 @@ impl LuaUserData for CompositePosition3 {
         methods.add_function("new", |_, (translation, rotation): (_, Option<_>)| {
             Ok(Self::new(translation, rotation.unwrap_or(0.)))
         });
+        methods.add_function("origin", |_, ()| Ok(Self::origin()));
     }
 }
 
@@ -1030,6 +1031,9 @@ impl LuaUserData for Position {
         methods.add_function("new", |_, composite| Ok(Self::new(composite)));
         methods.add_function("new_out_of_sync", |_, (position, velocity, dt)| {
             Ok(Self::new_out_of_sync(position, &velocity, dt))
+        });
+        methods.add_function("origin", |_, ()| {
+            Ok(Self::new(CompositePosition3::origin()))
         });
     }
 }
@@ -1276,5 +1280,63 @@ impl Add for CompositeVelocity3 {
 impl AddAssign for CompositeVelocity3 {
     fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs;
+    }
+}
+
+impl Sub for CompositeVelocity3 {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            linear: self.linear - rhs.linear,
+            angular: self.angular - rhs.angular,
+        }
+    }
+}
+
+impl SubAssign for CompositeVelocity3 {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
+    }
+}
+
+impl Mul<f32> for CompositeVelocity3 {
+    type Output = Self;
+    fn mul(self, rhs: f32) -> Self::Output {
+        Self {
+            linear: self.linear * rhs,
+            angular: self.angular * rhs,
+        }
+    }
+}
+
+impl MulAssign<f32> for CompositeVelocity3 {
+    fn mul_assign(&mut self, rhs: f32) {
+        *self = *self * rhs;
+    }
+}
+
+impl Div<f32> for CompositeVelocity3 {
+    type Output = Self;
+    fn div(self, rhs: f32) -> Self::Output {
+        Self {
+            linear: self.linear / rhs,
+            angular: self.angular / rhs,
+        }
+    }
+}
+
+impl DivAssign<f32> for CompositeVelocity3 {
+    fn div_assign(&mut self, rhs: f32) {
+        *self = *self / rhs;
+    }
+}
+
+impl Sub for CompositePosition3 {
+    type Output = CompositeVelocity3;
+    fn sub(self, rhs: Self) -> Self::Output {
+        CompositeVelocity3 {
+            linear: self.translation - rhs.translation,
+            angular: rhs.rotation.angle_to(&self.rotation),
+        }
     }
 }

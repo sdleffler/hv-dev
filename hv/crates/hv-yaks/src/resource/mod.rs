@@ -29,7 +29,7 @@ use hv_ecs::World;
 use hv_resources::{Ref, RefMut, Resource, Resources, SyncResources};
 pub use ref_extractor::{MultiRefExtractor, RefExtractor};
 pub use tuple::ResourceTuple;
-pub use wrap::ResourceWrap;
+pub use wrap::{ResourceWrap, ResourceWrapElem};
 
 use crate::{query_bundle::QueryBundle, System, SystemContext};
 

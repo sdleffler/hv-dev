@@ -1,6 +1,8 @@
 use hv_ecs::World;
 use hv_yaks::{Executor, QueryMarker};
 
+use std::cell::RefCell;
+
 struct A(usize);
 
 struct B(usize);
@@ -71,8 +73,28 @@ fn resources_wrap_single() {
             a.0 = 2;
         })
         .build();
-    executor.run(&world, &mut a);
+    executor.run(&world, (&mut a,));
     assert_eq!(a.0, 2);
+}
+
+#[test]
+fn resources_wrap_single_immutable() {
+    let world = World::new();
+    let mut a = RefCell::new(A(0));
+    let mut executor = Executor::<(), (RefCell<A>,)>::builder()
+        .local_system(|_, (): (), a: &RefCell<A>, _: &mut ()| {
+            a.borrow_mut().0 = 1;
+        })
+        .build();
+    executor.run_with_local(&world, ((), (&a,)));
+    assert_eq!(a.borrow().0, 1);
+    let mut executor = Executor::<(), (RefCell<A>,)>::builder()
+        .local_system(|_, (): (), a: &RefCell<A>, _: &mut ()| {
+            a.borrow_mut().0 = 2;
+        })
+        .build();
+    executor.run_with_local(&world, ((), (&mut a,)));
+    assert_eq!(a.borrow().0, 2);
 }
 
 #[test]
@@ -88,7 +110,7 @@ fn queries_decoding_single() {
             }
         })
         .build();
-    executor.run(&world, &mut a);
+    executor.run(&world, (&mut a,));
     assert_eq!(a.0, 3);
 }
 
@@ -135,7 +157,7 @@ fn queries_decoding_four() {
             },
         )
         .build();
-    executor.run(&world, &mut a);
+    executor.run(&world, (&mut a,));
 }
 
 #[test]

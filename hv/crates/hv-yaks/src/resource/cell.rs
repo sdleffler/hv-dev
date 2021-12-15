@@ -7,14 +7,27 @@ use super::AtomicBorrow;
 pub struct ResourceCell<R0> {
     cell: NonNull<R0>,
     borrow: NonNull<AtomicBorrow>,
+    mutable: bool,
 }
 
 impl<R0> ResourceCell<R0> {
-    pub fn new(resource: &mut R0, borrow: &mut AtomicBorrow) -> Self {
+    pub fn new_mut(resource: &mut R0, borrow: &mut AtomicBorrow) -> Self {
         Self {
-            cell: NonNull::new(resource).expect("pointers to resources should never be null"),
-            borrow: NonNull::new(borrow).expect("pointers to AtomicBorrows should never be null"),
+            cell: NonNull::from(resource),
+            borrow: NonNull::from(borrow),
+            mutable: true,
         }
+    }
+
+    pub fn new_shared(resource: &R0, borrow: &mut AtomicBorrow) -> Self {
+        let this = Self {
+            cell: NonNull::from(resource),
+            borrow: NonNull::from(borrow),
+            mutable: false,
+        };
+        // make a "virtual" immutable borrow to prevent any mutable borrows of this resource.
+        this.borrow();
+        this
     }
 
     pub fn borrow(&self) -> &R0 {
@@ -49,6 +62,11 @@ impl<R0> Drop for ResourceCell<R0> {
     fn drop(&mut self) {
         #[cfg(debug_assertions)]
         if !panicking() {
+            // if this is not a mutable borrow, we release the "virtual" immutable borrow.
+            if !self.mutable {
+                unsafe { self.release() };
+            }
+
             assert!(
                 unsafe { self.borrow.as_ref().is_free() },
                 "borrows of {} were not released properly",

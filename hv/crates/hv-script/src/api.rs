@@ -266,7 +266,10 @@ fn hv_filesystem_loader<'lua>(lua: &'lua Lua, path: LuaString<'lua>) -> LuaResul
         }
     }
 
-    "could not find a `Filesystem` resource to search!".to_lua(lua)
+    "could not find a `Filesystem` resource to search! you should make sure there's a `Filesystem`\
+    in your `Resources` or in your Lua app data, or an `ElasticMut<Filesystem>` in either place. \
+    did you forget to loan it?"
+        .to_lua(lua)
 }
 
 fn hv_filesystem_do_load<'lua>(

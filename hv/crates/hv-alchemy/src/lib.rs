@@ -287,11 +287,18 @@ pub trait IntoProxy<T> {
     /// not be dropped; just overwritten. `self` must also be a valid pointer, and if `Self` is not
     /// `Copy`, then the value at `ptr` should be considered moved after this operation.
     unsafe fn convert_into_ptr(self: *const Self, ptr: *mut T);
+
+    /// Convert a `Self` into `T`, where `Self` is held in a box.
+    fn convert_boxed(self: Box<Self>) -> T;
 }
 
 impl<T: Into<U>, U> IntoProxy<U> for T {
     unsafe fn convert_into_ptr(self: *const Self, ptr: *mut U) {
         core::ptr::write(ptr.cast::<U>(), T::into(core::ptr::read(self)));
+    }
+
+    fn convert_boxed(self: Box<Self>) -> U {
+        (*self).into()
     }
 }
 

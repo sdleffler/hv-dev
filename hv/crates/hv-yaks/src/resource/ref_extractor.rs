@@ -3,7 +3,7 @@ use hv_resources::Resources;
 
 use crate::Executor;
 
-use super::{ResourceTuple, ResourceWrap};
+use super::{ResourceTuple, ResourceWrap, ResourceWrapElem};
 
 // TODO consider exposing.
 
@@ -90,18 +90,19 @@ impl RefExtractor<()> for () {
     }
 }
 
-impl<R0> RefExtractor<&mut R0> for (R0,) {
-    // fn extract_and_run(executor: &mut Executor<Self>, world: &World, mut resources: &mut R0) {
+impl<R0> RefExtractor<(&R0,)> for (R0,) {
+    // fn extract_and_run(executor: &mut Executor<Self>, world: &World, mut resources: (&mut R0,)) {
     //     let wrapped = resources.wrap(&mut executor.borrows);
     //     executor.inner.run(world, wrapped);
     // }
 
     fn extract_and_run(
         borrows: &mut Self::BorrowTuple,
-        mut resources: &mut R0,
+        mut resources: (&R0,),
         f: impl FnOnce(Self::Wrapped),
     ) {
-        f(resources.wrap(borrows));
+        let wrapped = resources.wrap(borrows);
+        f(wrapped);
     }
 }
 
@@ -123,7 +124,9 @@ impl<R0> RefExtractor<(&mut R0,)> for (R0,) {
 
 macro_rules! impl_ref_extractor {
     ($($letter:ident),*) => {
-        impl<'a, $($letter),*> RefExtractor<($(&mut $letter,)*)> for ($($letter,)*) {
+        impl<'a, $($letter),*> RefExtractor<($($letter,)*)> for ($($letter::Elem,)*)
+            where $($letter: ResourceWrapElem),*
+        {
             // fn extract_and_run(
             //     executor: &mut Executor<Self>,
             //     world: &World,
@@ -135,7 +138,7 @@ macro_rules! impl_ref_extractor {
 
             fn extract_and_run(
                 borrows: &mut Self::BorrowTuple,
-                mut resources: ($(&mut $letter,)*),
+                mut resources: ($($letter,)*),
                 f: impl FnOnce(Self::Wrapped),
             ) {
                 let wrapped = resources.wrap(borrows);
