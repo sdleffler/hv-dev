@@ -5,8 +5,9 @@ use std::{
 
 use hv::{
     ecs::{ColumnMut, Entity, PreparedQuery, QueryMarker, Satisfies, SystemContext, With, Without},
-    elastic::ElasticMut,
+    elastic::{ElasticMut, ElasticRef},
     prelude::*,
+    resources::Resources,
 };
 use parry3d::{
     bounding_volume::{BoundingVolume, AABB},
@@ -1180,16 +1181,30 @@ impl LuaUserData for Physics {
 
         methods.add_method(
             "max_projected_contact_normal",
-            |lua, this, normal: Vector3<f32>| {
-                let pp_elastic = lua
-                    .app_data_ref::<ElasticMut<PhysicsPipeline>>()
-                    .ok_or_else(|| {
-                        LuaError::external("no physics pipeline loaned to Lua state!")
-                    })?;
+            |lua, this, (normal, out): (Vector3<f32>, Option<LuaAnyUserData>)| {
+                let pp_elastic;
+                let res_elastic;
+                let pp_borrow;
+                let res_borrow;
+                let pp_ref;
+                let pp;
 
-                let pp = pp_elastic.borrow();
+                if let Some(pp_ref) = lua.app_data_ref::<ElasticMut<PhysicsPipeline>>() {
+                    pp_elastic = pp_ref;
+                    pp_borrow = pp_elastic.borrow();
+                    pp = &*pp_borrow;
+                } else if let Some(resources) = lua.app_data_ref::<ElasticRef<Resources>>() {
+                    res_elastic = resources;
+                    res_borrow = res_elastic.borrow();
+                    pp_ref = res_borrow.get().to_lua_err()?;
+                    pp = &*pp_ref;
+                } else {
+                    return Err(anyhow!("no physics pipeline loaned to Lua state!")).to_lua_err();
+                }
+
                 let query_normal = UnitVector3::new_normalize(normal);
                 let mut max_projected = None::<f32>;
+                let mut max_normal = None::<Vector3<f32>>;
 
                 for &contact_id_entry in &this.contacts {
                     let constraint = pp.contact(contact_id_entry.id).expect("invalid contact");
@@ -1202,9 +1217,16 @@ impl LuaUserData for Physics {
                     let projected = query_normal.dot(&contact_normal);
                     let replace =
                         max_projected.map_or(true, |max_projected| projected > max_projected);
+
                     if replace {
                         max_projected = Some(projected);
+                        max_normal = Some(contact_normal.into_inner());
                     }
+                }
+
+                if let (Some(contact_normal), Some(out)) = (max_normal, out) {
+                    let mut out = out.borrow_mut::<Vector3<f32>>()?;
+                    *out = contact_normal;
                 }
 
                 Ok(max_projected)
@@ -1264,6 +1286,22 @@ impl LuaUserData for PhysicsPipeline {
         fields.add_field_method_set("bias_factor", |_, this, bias| {
             Ok(this.config.bias_factor = bias)
         });
+    }
+}
+
+impl<'lua> ToLua<'lua> for ContactId {
+    fn to_lua(self, lua: &'lua Lua) -> LuaResult<LuaValue<'lua>> {
+        LuaLightUserData(self.0.to_bits() as *mut _).to_lua(lua)
+    }
+}
+
+impl<'lua> FromLua<'lua> for ContactId {
+    fn from_lua(lua_value: LuaValue<'lua>, lua: &'lua Lua) -> LuaResult<Self> {
+        LuaLightUserData::from_lua(lua_value, lua).and_then(|lud| {
+            Index::from_bits(lud.0 as _)
+                .map(ContactId)
+                .ok_or_else(|| anyhow!("invalid index!").to_lua_err())
+        })
     }
 }
 
