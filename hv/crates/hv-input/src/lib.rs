@@ -738,6 +738,9 @@ where
 
     /// Updates the logical input state based on the actual physical input state.  Should be called
     /// in your update() handler. So, it will do things like move the axes and so on.
+    ///
+    /// This should be called BEFORE any input updates happen on a given frame; it will move any
+    /// input events before it to the "previous frame" in preparation for a new frame's inputs!
     pub fn update(&mut self, dt: f32) {
         for (_axis, axis_status) in self.axes.iter_mut() {
             if axis_status.direction != 0.0 {
