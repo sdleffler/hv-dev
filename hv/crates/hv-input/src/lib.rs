@@ -933,7 +933,7 @@ where
     /// Notification of acquisition or loss of focus.
     WindowFocus(bool),
     /// Notification of a change in the position of the window, if applicable.
-    WindowPos(Point2<u32>),
+    WindowPos(Point2<i32>),
     /// Notification of a change in the size of the window, if applicable.
     WindowSize(Vector2<u32>),
     /// Notification of minimization (being "iconified.")
