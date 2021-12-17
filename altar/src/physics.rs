@@ -1045,12 +1045,27 @@ impl LuaUserData for Velocity {
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method("get", |_, this, out: Option<LuaAnyUserData>| match out {
+        methods.add_method("get", |lua, this, out: Option<LuaAnyUserData>| match &out {
             Some(ud) => {
                 *ud.borrow_mut::<CompositeVelocity3>()? = this.composite;
-                Ok(None)
+                Ok(out)
             }
-            None => Ok(Some(this.composite)),
+            None => Ok(Some(lua.create_userdata(this.composite)?)),
+        });
+
+        methods.add_method(
+            "get_linear",
+            |lua, this, out: Option<LuaAnyUserData>| match &out {
+                Some(ud) => {
+                    *ud.borrow_mut::<Vector3<f32>>()? = this.composite.linear;
+                    Ok(out)
+                }
+                None => Ok(Some(lua.create_userdata(this.composite.linear)?)),
+            },
+        );
+
+        methods.add_method("get_speed_at_centroid", |_, this, ()| {
+            Ok(this.composite.linear.norm())
         });
 
         methods.add_method_mut("set", |_, this, composite: CompositeVelocity3| {
