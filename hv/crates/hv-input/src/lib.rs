@@ -35,7 +35,10 @@ use std::{hash::Hash, path::PathBuf};
 
 use hashbrown::HashMap;
 use hv_alchemy::Type;
-use hv_lua::{FromLua, ToLua, UserData, UserDataMethods};
+use hv_lua::{
+    hv::{LuaUserDataTypeExt, LuaUserDataTypeTypeExt},
+    FromLua, ToLua, UserData, UserDataMethods,
+};
 use hv_math::{Point2, Vector2};
 use serde::*;
 
@@ -752,7 +755,9 @@ where
                     } else {
                         -vel
                     };
-                axis_status.position = pending_position.clamp(-1., 1.);
+
+                let abs_direction = axis_status.direction.abs();
+                axis_status.position = pending_position.clamp(-abs_direction, abs_direction);
             } else {
                 // Gravitate back towards 0.
                 let abs_dx = f32::min(axis_status.gravity * dt, f32::abs(axis_status.position));
@@ -959,9 +964,13 @@ where
 
 impl<Axes, Buttons> UserData for InputState<Axes, Buttons>
 where
-    Axes: LuaMappable + 'static,
-    Buttons: LuaMappable + 'static,
+    Axes: LuaMappable + 'static + Send + Sync,
+    Buttons: LuaMappable + 'static + Send + Sync,
 {
+    fn on_metatable_init(table: Type<Self>) {
+        table.mark_component();
+    }
+
     #[allow(clippy::unit_arg)]
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("update_event", |_, this, ev| Ok(this.update_event(ev)));
@@ -978,6 +987,10 @@ where
         methods.add_method("mouse_position", |_, t, ()| Ok(t.mouse_position()));
         methods.add_method("mouse_delta", |_, t, ()| Ok(t.mouse_delta()));
         methods.add_method_mut("reset_input_state", |_, t, ()| Ok(t.reset_input_state()));
+    }
+
+    fn on_type_metatable_init(table: Type<Type<Self>>) {
+        table.mark_component_type();
     }
 
     fn add_type_methods<'lua, M: UserDataMethods<'lua, Type<Self>>>(methods: &mut M) {
