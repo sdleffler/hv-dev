@@ -21,6 +21,7 @@ use luminance::{
         tess_gate::TessGate as TessGateBackend,
         texture::Texture as TextureBackend,
     },
+    blending::{Blending, Equation, Factor},
     context::GraphicsContext,
     framebuffer::Framebuffer,
     pipeline::{Pipeline, PipelineState, TextureBinding},
@@ -51,8 +52,7 @@ use thunderdome::{Arena, Index};
 use crate::render::{
     pipeline::semantics::{
         InstanceColor, InstanceSource, InstanceTCol1, InstanceTCol2, InstanceTCol3, InstanceTCol4,
-        InstanceTColumns, VertexColor, VertexPosition, VertexScreenSpaceOffset, VertexSemantics,
-        VertexUv,
+        InstanceTColumns, VertexColor, VertexOffset, VertexPosition, VertexSemantics, VertexUv,
     },
     Color,
 };
@@ -105,13 +105,17 @@ impl TessOptions {
     pub fn fill() -> Self {
         Self::Fill(FillOptions::default())
     }
+
+    pub fn stroke(width: f32) -> Self {
+        Self::Stroke(StrokeOptions::default().with_line_width(width))
+    }
 }
 
 #[derive(Debug, Clone, Copy, Vertex)]
 #[vertex(sem = "VertexSemantics")]
 pub struct VertexData {
     pub position: VertexPosition,
-    pub screen_space_offset: VertexScreenSpaceOffset,
+    pub offset: VertexOffset,
     #[vertex(normalized = true)]
     pub color: VertexColor,
     pub uv: VertexUv,
@@ -121,7 +125,7 @@ impl Default for VertexData {
     fn default() -> Self {
         Self {
             position: VertexPosition::new([0.; 3]),
-            screen_space_offset: VertexScreenSpaceOffset::new([0.; 2]),
+            offset: VertexOffset::new([0.; 2]),
             color: VertexColor::new([1.; 4]),
             uv: VertexUv::new([0.; 2]),
         }
@@ -273,6 +277,14 @@ impl Vertex {
     pub fn xy_uv(x: f32, y: f32, u: f32, v: f32) -> Self {
         Self::new(Point3::new(x, y, 0.), Color::WHITE, Point2::new(u, v))
     }
+
+    pub fn xy(x: f32, y: f32) -> Self {
+        Self::new(Point3::new(x, y, 0.), Color::WHITE, Point2::origin())
+    }
+
+    pub fn xyz(x: f32, y: f32, z: f32) -> Self {
+        Self::new(Point3::new(x, y, z), Color::WHITE, Point2::origin())
+    }
 }
 
 impl Position for Vertex {
@@ -346,27 +358,30 @@ impl<'a> AttributeStore for VertexSlice<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Ctor {
+struct Ctor<'a> {
     color: Color,
     z: f32,
+    tx: &'a Matrix4<f32>,
 }
 
-impl FillVertexConstructor<VertexData> for Ctor {
+impl<'a> FillVertexConstructor<VertexData> for Ctor<'a> {
     fn new_vertex(&mut self, mut vertex: FillVertex) -> VertexData {
         let pos = vertex.position();
         let attrs = vertex.interpolated_attributes();
         if !attrs.is_empty() {
             let (&[r, g, b, a, z, u, v], _) = attrs.split_array_ref::<7>();
+            let pt = self.tx.transform_point(&Point3::new(pos.x, pos.y, z));
             VertexData {
-                position: VertexPosition::new([pos.x, pos.y, z]),
-                screen_space_offset: VertexScreenSpaceOffset::new([0., 0.]),
+                position: VertexPosition::new(pt.into()),
+                offset: VertexOffset::new([0., 0.]),
                 color: VertexColor::new([r, g, b, a]),
                 uv: VertexUv::new([u, v]),
             }
         } else {
+            let pt = self.tx.transform_point(&Point3::new(pos.x, pos.y, self.z));
             VertexData {
-                position: VertexPosition::new([pos.x, pos.y, self.z]),
-                screen_space_offset: VertexScreenSpaceOffset::new([0., 0.]),
+                position: VertexPosition::new(pt.into()),
+                offset: VertexOffset::new([0., 0.]),
                 color: VertexColor::new(self.color.into()),
                 uv: VertexUv::new([0., 0.]),
             }
@@ -374,23 +389,25 @@ impl FillVertexConstructor<VertexData> for Ctor {
     }
 }
 
-impl StrokeVertexConstructor<VertexData> for Ctor {
+impl<'a> StrokeVertexConstructor<VertexData> for Ctor<'a> {
     fn new_vertex(&mut self, mut vertex: StrokeVertex) -> VertexData {
         let pos = vertex.position_on_path();
         let offset = vertex.position() - pos;
         let attrs = vertex.interpolated_attributes();
         if !attrs.is_empty() {
             let (&[r, g, b, a, z, u, v], _) = attrs.split_array_ref::<7>();
+            let pt = self.tx.transform_point(&Point3::new(pos.x, pos.y, z));
             VertexData {
-                position: VertexPosition::new([pos.x, pos.y, z]),
-                screen_space_offset: VertexScreenSpaceOffset::new([offset.x, offset.y]),
+                position: VertexPosition::new(pt.into()),
+                offset: VertexOffset::new([offset.x, offset.y]),
                 color: VertexColor::new([r, g, b, a]),
                 uv: VertexUv::new([u, v]),
             }
         } else {
+            let pt = self.tx.transform_point(&Point3::new(pos.x, pos.y, self.z));
             VertexData {
-                position: VertexPosition::new([pos.x, pos.y, self.z]),
-                screen_space_offset: VertexScreenSpaceOffset::new([offset.x, offset.y]),
+                position: VertexPosition::new(pt.into()),
+                offset: VertexOffset::new([offset.x, offset.y]),
                 color: VertexColor::new(self.color.into()),
                 uv: VertexUv::new([0., 0.]),
             }
@@ -402,6 +419,7 @@ pub struct MeshBuilder {
     buffers: VertexBuffers<VertexData, u16>,
     fill_tessellator: FillTessellator,
     stroke_tessellator: StrokeTessellator,
+    tx: Matrix4<f32>,
 }
 
 impl Default for MeshBuilder {
@@ -416,7 +434,13 @@ impl MeshBuilder {
             buffers: VertexBuffers::new(),
             fill_tessellator: FillTessellator::new(),
             stroke_tessellator: StrokeTessellator::new(),
+            tx: Matrix4::identity(),
         }
+    }
+
+    pub fn set_transform(&mut self, tx: &Matrix4<f32>) -> &mut Self {
+        self.tx = *tx;
+        self
     }
 
     pub fn circle(
@@ -426,7 +450,14 @@ impl MeshBuilder {
         options: &TessOptions,
         color: Color,
     ) -> Result<&mut Self> {
-        let output = &mut BuffersBuilder::new(&mut self.buffers, Ctor { color, z: center.z });
+        let output = &mut BuffersBuilder::new(
+            &mut self.buffers,
+            Ctor {
+                color,
+                z: center.z,
+                tx: &self.tx,
+            },
+        );
 
         let tess_result = match options {
             TessOptions::Fill(fill_options) => self.fill_tessellator.tessellate_circle(
@@ -473,6 +504,7 @@ impl MeshBuilder {
             Ctor {
                 color: Color::WHITE,
                 z: 0.,
+                tx: &self.tx,
             },
         );
 
@@ -508,9 +540,24 @@ impl MeshBuilder {
         &self.buffers.indices
     }
 
-    pub fn clear(&mut self) {
+    pub fn reset(&mut self) {
         self.buffers.vertices.clear();
         self.buffers.indices.clear();
+        self.tx = Matrix4::identity();
+    }
+
+    /// Append one mesh builder into this one, optionally reversing the winding of the triangles.
+    pub fn append(&mut self, other: &mut Self, reverse_winding: bool) -> &mut Self {
+        self.buffers.vertices.append(&mut other.buffers.vertices);
+        if reverse_winding {
+            for [i1, i2, i3] in other.buffers.indices.array_chunks::<3>() {
+                self.buffers.indices.extend([i1, i3, i2]);
+            }
+            other.buffers.indices.clear();
+        } else {
+            self.buffers.indices.append(&mut other.buffers.indices);
+        }
+        self
     }
 
     /// Build the mesh and clear the builder's index and vertex buffers.
@@ -520,7 +567,7 @@ impl MeshBuilder {
         instance_count: usize,
     ) -> Result<Mesh<B>> {
         let mesh = self.build(ctx, instance_count)?;
-        self.clear();
+        self.reset();
         Ok(mesh)
     }
 
@@ -559,7 +606,7 @@ impl MeshBuilder {
         instance_count: usize,
     ) -> Result<()> {
         self.build_into(ctx, mesh, instance_count)?;
-        self.clear();
+        self.reset();
         Ok(())
     }
 
@@ -1215,6 +1262,11 @@ impl<B: EvolBackend> EvolRenderer<B> {
         let mut commands = buffer.commands.drain(..).peekable();
         let mut model = Matrix4::identity();
         let y_flip = Matrix4::new_nonuniform_scaling(&Vector3::new(1., -1., 1.));
+        let render_state = RenderState::default().set_blending(Blending {
+            equation: Equation::Additive,
+            src: Factor::SrcAlpha,
+            dst: Factor::SrcAlphaComplement,
+        });
 
         while let Some(command) = commands.peek() {
             match command {
@@ -1317,7 +1369,6 @@ impl<B: EvolBackend> EvolRenderer<B> {
                                     Mat44::from((view_projection * model).data.0),
                                 );
 
-                                let render_state = RenderState::default();
                                 render_gate.render(&render_state, |mut tess_gate| {
                                     quad_mesh.view().and_then(|view| tess_gate.render(view))
                                 })
@@ -1370,7 +1421,6 @@ impl<B: EvolBackend> EvolRenderer<B> {
                                     Mat44::from((view_projection * model).data.0),
                                 );
 
-                                let render_state = RenderState::default();
                                 render_gate.render(&render_state, |mut tess_gate| {
                                     mesh.view().and_then(|view| tess_gate.render(view))
                                 })
@@ -1404,7 +1454,6 @@ impl<B: EvolBackend> EvolRenderer<B> {
                                     Mat44::from((view_projection * model).data.0),
                                 );
 
-                                let render_state = RenderState::default();
                                 render_gate.render(&render_state, |mut tess_gate| {
                                     mesh.view().and_then(|view| tess_gate.render(view))
                                 })

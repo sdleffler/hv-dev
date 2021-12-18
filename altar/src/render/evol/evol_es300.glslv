@@ -1,6 +1,6 @@
 // Vertex attributes.
 in mediump vec3 a_Pos;
-in mediump vec2 a_ScreenSpaceOffset;
+in mediump vec2 a_Offset;
 in mediump vec4 a_Color;
 in mediump vec2 a_Uv;
 
@@ -26,7 +26,7 @@ void main() {
     // The perspective divide will ensure that the screen space offset is properly scaled, so lines
     // will appear to narrow with distance, etc. as should properly occur if the projection is set
     // up as a perspective projection.
-    gl_Position.xy += a_ScreenSpaceOffset / u_TargetSize * 2;
+    gl_Position.xy += a_Offset / u_TargetSize * 2;
     v_Uv = a_Uv * a_Src.zw + a_Src.xy;
     v_Color = a_InstanceColor * a_Color;
 }
