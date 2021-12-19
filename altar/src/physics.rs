@@ -950,7 +950,12 @@ pub fn update(
 
 impl LuaUserData for CompositePosition3 {
     fn on_metatable_init(table: Type<Self>) {
-        table.add_clone().add_copy().add_send().add_sync();
+        table
+            .add_clone()
+            .add_copy()
+            .add_send()
+            .add_sync()
+            .add::<dyn std::fmt::Debug>();
     }
 
     #[allow(clippy::unit_arg)]
@@ -981,7 +986,12 @@ impl LuaUserData for CompositePosition3 {
 
 impl LuaUserData for CompositeVelocity3 {
     fn on_metatable_init(table: Type<Self>) {
-        table.add_clone().add_copy().add_send().add_sync();
+        table
+            .add_clone()
+            .add_copy()
+            .add_send()
+            .add_sync()
+            .add::<dyn std::fmt::Debug>();
     }
 
     #[allow(clippy::unit_arg)]
@@ -1006,7 +1016,11 @@ impl LuaUserData for CompositeVelocity3 {
 
 impl LuaUserData for Position {
     fn on_metatable_init(table: Type<Self>) {
-        table.mark_component().add_clone().add_copy();
+        table
+            .mark_component()
+            .add_clone()
+            .add_copy()
+            .add::<dyn std::fmt::Debug>();
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
@@ -1041,7 +1055,11 @@ impl LuaUserData for Position {
 
 impl LuaUserData for Velocity {
     fn on_metatable_init(table: Type<Self>) {
-        table.mark_component().add_clone().add_copy();
+        table
+            .mark_component()
+            .add_clone()
+            .add_copy()
+            .add::<dyn std::fmt::Debug>();
     }
 
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {

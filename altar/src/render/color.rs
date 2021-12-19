@@ -1,3 +1,5 @@
+use std::ops::Mul;
+
 use hv::prelude::*;
 use serde::*;
 
@@ -281,5 +283,18 @@ impl From<LinearColor> for [f32; 3] {
 impl From<LinearColor> for [f32; 4] {
     fn from(color: LinearColor) -> Self {
         [color.r, color.g, color.b, color.a]
+    }
+}
+
+impl Mul for Color {
+    type Output = Color;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Color {
+            r: self.r * rhs.r,
+            g: self.g * rhs.g,
+            b: self.b * rhs.b,
+            a: self.a * rhs.a,
+        }
     }
 }

@@ -58,8 +58,6 @@ pub trait EventLoop<C> {
         Ok(())
     }
 
-    /// The vector provided is expected to be drained by this function. If it is not drained, the
-    /// events will be cleared!
     fn tick(
         &mut self,
         resources: &mut Resources,
