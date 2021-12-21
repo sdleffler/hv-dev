@@ -1,12 +1,11 @@
 use std::{
     collections::HashMap,
-    marker::PhantomData,
     ops::{Deref, DerefMut},
 };
 
 use decorum::Total;
 use genmesh::{
-    generators::{Cylinder, IndexedPolygon, SharedVertex, SphereUv},
+    generators::{Cube, Cylinder, IndexedPolygon, SharedVertex, SphereUv},
     MapToVertices, Triangulate,
 };
 use glyph::{
@@ -141,6 +140,15 @@ impl From<Vertex> for VertexData {
             position: VertexPosition::new([v.xy.x, v.xy.y, v.rgbazuv[4]]),
             color: VertexColor::new([v.rgbazuv[0], v.rgbazuv[1], v.rgbazuv[2], v.rgbazuv[3]]),
             uv: VertexUv::new([v.rgbazuv[5], v.rgbazuv[6]]),
+        }
+    }
+}
+
+impl VertexData {
+    pub fn xyz(point: Point3<f32>) -> Self {
+        Self {
+            position: VertexPosition::new(point.into()),
+            ..Self::default()
         }
     }
 }
@@ -446,6 +454,25 @@ impl MeshBuilder {
         }
     }
 
+    pub fn push_raw_vertex(&mut self, vertex: VertexData) -> u16 {
+        let i = self.buffers.vertices.len();
+        self.buffers.vertices.push(vertex);
+        i as u16
+    }
+
+    pub fn push_vertex(&mut self, mut vertex: VertexData) -> u16 {
+        vertex.position = VertexPosition::new(
+            self.tx
+                .transform_point(&Point3::from(*vertex.position))
+                .into(),
+        );
+        self.push_raw_vertex(vertex)
+    }
+
+    pub fn push_triangle(&mut self, indices: [u16; 3]) {
+        self.buffers.indices.extend(indices);
+    }
+
     pub fn set_transform(&mut self, tx: &Matrix4<f32>) -> &mut Self {
         *self.tx = *tx;
         self
@@ -572,6 +599,46 @@ impl MeshBuilder {
     }
 
     #[allow(clippy::identity_op)]
+    pub fn cuboid(&mut self, half_extents: &Vector3<f32>, color: &Color) -> Result<&mut Self> {
+        let generator = Cube::new();
+        let shared_vertices = generator
+            .shared_vertex_iter()
+            .map(|v| {
+                Vertex::new(
+                    Point3::new(
+                        v.pos.x * half_extents.x,
+                        v.pos.y * half_extents.y,
+                        v.pos.z * half_extents.z,
+                    ),
+                    *color,
+                    Point2::origin(),
+                )
+            })
+            .map(VertexData::from)
+            .collect::<Vec<_>>();
+
+        for triangle in generator
+            .indexed_polygon_iter()
+            .triangulate()
+            .vertex(|i| shared_vertices[i])
+        {
+            let offset_i = u16::try_from(self.buffers.vertices.len()).unwrap();
+            let verts = [triangle.x, triangle.y, triangle.z]
+                .into_iter()
+                .map(|mut v| {
+                    let mut pt = Point3::from(*v.position);
+                    pt = self.tx.transform_point(&pt);
+                    v.position = VertexPosition::new(pt.into());
+                    v
+                });
+            self.buffers.vertices.extend(verts);
+            self.buffers.indices.extend(offset_i..=(offset_i + 2));
+        }
+
+        Ok(self)
+    }
+
+    #[allow(clippy::identity_op)]
     pub fn uv_sphere(&mut self, u: u32, v: u32, radius: f32, color: &Color) -> Result<&mut Self> {
         let generator = SphereUv::new(u as usize, v as usize);
         let shared_vertices = generator
@@ -592,10 +659,16 @@ impl MeshBuilder {
             .vertex(|i| shared_vertices[i])
         {
             let offset_i = u16::try_from(self.buffers.vertices.len()).unwrap();
-            let verts = [triangle.x, triangle.y, triangle.z];
+            let verts = [triangle.x, triangle.y, triangle.z]
+                .into_iter()
+                .map(|mut v| {
+                    let mut pt = Point3::from(*v.position);
+                    pt = self.tx.transform_point(&pt);
+                    v.position = VertexPosition::new(pt.into());
+                    v
+                });
             self.buffers.vertices.extend(verts);
-            let indxs = [offset_i + 0, offset_i + 1, offset_i + 2];
-            self.buffers.indices.extend(indxs);
+            self.buffers.indices.extend(offset_i..=(offset_i + 2));
         }
 
         Ok(self)
@@ -823,7 +896,6 @@ impl MeshBuilder {
             tess,
             index_count: self.buffers.indices.len(),
             instance_count,
-            _backend: PhantomData,
         })
     }
 
@@ -893,6 +965,7 @@ impl MeshBuilder {
                 .zip(mesh.tess.indices_mut()?.iter_mut())
                 .for_each(|(src, dst)| *dst = *src);
 
+            mesh.index_count = self.buffers.indices.len();
             mesh.instance_count = instance_count;
         }
 
@@ -904,7 +977,6 @@ pub struct Mesh<B: EvolBackend> {
     tess: Tess<B, VertexData, u16, InstanceData>,
     index_count: usize,
     instance_count: usize,
-    _backend: PhantomData<B>,
 }
 
 impl<B: EvolBackend> Mesh<B> {
@@ -1208,8 +1280,11 @@ pub struct EvolCommandBuffer {
     section_pool: Vec<Vec<Text<'static>>>,
     string_pool: Vec<String>,
     text_vec_pool: Vec<Vec<PooledText>>,
+    #[allow(clippy::vec_box)]
+    builder_pool: Vec<Box<MeshBuilder>>,
     matrices: Vec<Matrix4<f32>>,
     instances: Vec<Instance>,
+    builders: Arena<Box<MeshBuilder>>,
     commands: Vec<EvolCommand>,
     line_thickness: f32,
     transforms: TransformStack,
@@ -1228,8 +1303,10 @@ impl EvolCommandBuffer {
             section_pool: Vec::new(),
             string_pool: Vec::new(),
             text_vec_pool: Vec::new(),
+            builder_pool: Vec::new(),
             matrices: Vec::new(),
             instances: Vec::new(),
+            builders: Arena::new(),
             commands: Vec::new(),
             line_thickness: DEFAULT_LINE_THICKNESS,
             transforms: TransformStack::new(),
@@ -1242,6 +1319,8 @@ impl EvolCommandBuffer {
         self.instances.clear();
         self.commands.clear();
         self.transforms.clear();
+        self.builder_pool
+            .extend(self.builders.drain().map(|(_, b)| b));
         self.transforms_dirty = true;
     }
 
@@ -1264,6 +1343,10 @@ impl EvolCommandBuffer {
                 text,
             })
             .unwrap_or_else(Section::new)
+    }
+
+    pub fn new_or_cached_mesh_builder(&mut self) -> Box<MeshBuilder> {
+        self.builder_pool.pop().unwrap_or_default()
     }
 
     pub fn cache_section(&mut self, mut section: Section) {
@@ -1400,6 +1483,40 @@ impl EvolCommandBuffer {
         self.commands.push(EvolCommand::DrawTransientWireframe(
             texture,
             mesh_params,
+            instance_id,
+        ));
+        self
+    }
+
+    pub fn draw_streamed_mesh(
+        &mut self,
+        texture: Option<TextureId>,
+        mesh_builder: Box<MeshBuilder>,
+        instance: &Instance,
+    ) -> &mut Self {
+        let instance_id = self.instances.len();
+        self.instances.push(*instance);
+        let builder_id = self.builders.insert(mesh_builder);
+        self.commands.push(EvolCommand::DrawStreamedMesh(
+            texture,
+            builder_id,
+            instance_id,
+        ));
+        self
+    }
+
+    pub fn draw_streamed_wireframe(
+        &mut self,
+        texture: Option<TextureId>,
+        mesh_builder: Box<MeshBuilder>,
+        instance: &Instance,
+    ) -> &mut Self {
+        let instance_id = self.instances.len();
+        self.instances.push(*instance);
+        let builder_id = self.builders.insert(mesh_builder);
+        self.commands.push(EvolCommand::DrawStreamedWireframe(
+            texture,
+            builder_id,
             instance_id,
         ));
         self
@@ -1637,10 +1754,12 @@ enum EvolCommand {
     DrawMesh(Option<TextureId>, MeshId, usize),
     DrawMeshInstanced(Option<TextureId>, MeshId),
     DrawTransientMesh(Option<TextureId>, MeshBuilderParams, usize),
+    DrawStreamedMesh(Option<TextureId>, Index, usize),
     SetLineThickness(f32),
     DrawWireframe(Option<TextureId>, MeshId, usize),
     DrawWireframeInstanced(Option<TextureId>, MeshId),
     DrawTransientWireframe(Option<TextureId>, MeshBuilderParams, usize),
+    DrawStreamedWireframe(Option<TextureId>, Index, usize),
 }
 
 pub struct EvolRenderer<B: EvolBackend> {
@@ -1653,6 +1772,7 @@ pub struct EvolRenderer<B: EvolBackend> {
     glyph_brush: GlyphBrush<B>,
     white: TextureId,
     quad: MeshId,
+    streaming_mesh: Mesh<B>,
 }
 
 impl<B: EvolBackend> EvolRenderer<B> {
@@ -1680,6 +1800,18 @@ impl<B: EvolBackend> EvolRenderer<B> {
                     .build(context, 1)?,
             ),
         );
+
+        let streaming_mesh = Mesh {
+            tess: context
+                .new_tess()
+                .set_mode(Mode::Triangle)
+                .set_vertices(vec![VertexData::default(); 1024])
+                .set_indices(vec![0; 1024])
+                .set_instances(vec![InstanceData::default()])
+                .build()?,
+            index_count: 0,
+            instance_count: 1,
+        };
 
         let built_fill_program = context.new_shader_program().from_strings(
             include_str!("evol/evol_es300.glslv"),
@@ -1711,6 +1843,7 @@ impl<B: EvolBackend> EvolRenderer<B> {
             glyph_brush,
             white,
             quad,
+            streaming_mesh,
         })
     }
 
@@ -2006,6 +2139,49 @@ impl<B: EvolBackend> EvolRenderer<B> {
 
                     commands.next();
                 }
+                &EvolCommand::DrawStreamedMesh(texture_id, builder_id, instance_id) => {
+                    let mut builder = buffer.builders.remove(builder_id).unwrap();
+                    builder.build_into(context, &mut self.streaming_mesh, 1)?;
+                    builder.reset();
+                    buffer.builder_pool.push(builder);
+
+                    commands.next();
+
+                    let do_draw = |pipeline: Pipeline<B>, mut shading_gate: ShadingGate<B>| {
+                        let texture_id = texture_id.unwrap_or(self.white);
+                        let bound = pipeline
+                            .bind_texture::<Dim2, NormRGBA8UI>(&mut self.textures[texture_id.0])?
+                            .binding();
+
+                        self.streaming_mesh.clear();
+                        self.streaming_mesh
+                            .try_push(&buffer.instances[instance_id])?;
+
+                        shading_gate.shade(
+                            &mut self.fill_program,
+                            |mut iface, uni, mut render_gate| {
+                                iface.set(&uni.texture, bound);
+                                iface.set(
+                                    &uni.view_projection,
+                                    Mat44::from((view_projection * model).data.0),
+                                );
+
+                                render_gate.render(&render_state, |mut tess_gate| {
+                                    self.streaming_mesh
+                                        .view()
+                                        .and_then(|view| tess_gate.render(view))
+                                })
+                            },
+                        )?;
+
+                        Ok::<_, Error>(())
+                    };
+
+                    context
+                        .new_pipeline_gate()
+                        .pipeline(framebuffer, pipeline_state, do_draw)
+                        .into_result()?;
+                }
                 &EvolCommand::DrawWireframe(texture_id, mesh_id, instance_id) => {
                     let do_draw = |pipeline: Pipeline<B>, mut shading_gate: ShadingGate<B>| {
                         let first_texture_id = texture_id;
@@ -2146,6 +2322,50 @@ impl<B: EvolBackend> EvolRenderer<B> {
 
                                 render_gate.render(&render_state, |mut tess_gate| {
                                     cached.mesh.view().and_then(|view| tess_gate.render(view))
+                                })
+                            },
+                        )?;
+
+                        Ok::<_, Error>(())
+                    };
+
+                    context
+                        .new_pipeline_gate()
+                        .pipeline(framebuffer, pipeline_state, do_draw)
+                        .into_result()?;
+                }
+                &EvolCommand::DrawStreamedWireframe(texture_id, builder_id, instance_id) => {
+                    let mut builder = buffer.builders.remove(builder_id).unwrap();
+                    builder.build_into(context, &mut self.streaming_mesh, 1)?;
+                    builder.reset();
+                    buffer.builder_pool.push(builder);
+
+                    commands.next();
+
+                    let do_draw = |pipeline: Pipeline<B>, mut shading_gate: ShadingGate<B>| {
+                        let texture_id = texture_id.unwrap_or(self.white);
+                        let bound = pipeline
+                            .bind_texture::<Dim2, NormRGBA8UI>(&mut self.textures[texture_id.0])?
+                            .binding();
+
+                        self.streaming_mesh.clear();
+                        self.streaming_mesh
+                            .try_push(&buffer.instances[instance_id])?;
+
+                        shading_gate.shade(
+                            &mut self.wireframe_program,
+                            |mut iface, uni, mut render_gate| {
+                                iface.set(&uni.texture, bound);
+                                iface.set(&uni.line_thickness, line_thickness);
+                                iface.set(
+                                    &uni.view_projection,
+                                    Mat44::from((view_projection * model).data.0),
+                                );
+
+                                render_gate.render(&render_state, |mut tess_gate| {
+                                    self.streaming_mesh
+                                        .view()
+                                        .and_then(|view| tess_gate.render(view))
                                 })
                             },
                         )?;

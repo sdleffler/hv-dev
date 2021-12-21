@@ -17,7 +17,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use hv_alchemy::Type;
 use hv_elastic::{ElasticMut, ElasticRef};
 use hv_filesystem::Filesystem;
-use hv_lua::prelude::*;
+use hv_lua::{prelude::*, AsChunk};
 use hv_resources::Resources;
 
 pub struct Module {
@@ -113,6 +113,15 @@ impl<'lua> ModuleBuilder<'lua> {
         }
         self.table.set(name, value.to_lua(self.lua)?)?;
         Ok(self)
+    }
+
+    pub fn load_function<S, R>(&mut self, name: &S, source: &R) -> Result<&mut Self>
+    where
+        S: AsRef<str> + ?Sized,
+        R: AsChunk<'lua> + ?Sized,
+    {
+        let value = self.lua.load(source).into_function()?;
+        self.value(name, value)
     }
 
     pub fn function<S, F, A, R>(&mut self, name: &S, closure: F) -> Result<&mut Self>
@@ -381,7 +390,8 @@ fn hv_lua(lua: &Lua) -> Result<ModuleBuilder> {
         .userdata_type::<LuaRegistryKey>("RegistryKey")?
         .submodule(&*BINSER)?
         .submodule(&*CLASS)?
-        .submodule(&*AGENT)?;
+        .submodule(&*AGENT)?
+        .load_function("submodule", include_str!("../resources/submodule.lua"))?;
 
     Ok(builder)
 }
