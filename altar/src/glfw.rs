@@ -1,13 +1,13 @@
-use std::ops::ControlFlow;
+use std::{cell::RefCell, collections::HashMap, ops::ControlFlow, rc::Rc};
 
 use crate::{
     event_loop::{EventLoop, MainLoopContext, TickEvents},
     window::WindowKind,
 };
-use glfw::{Context, SwapInterval, WindowMode};
+use glfw::{Context, Joystick, JoystickEvent, JoystickHats, JoystickId, SwapInterval, WindowMode};
 use hv::{
     input::{
-        GenericAxis, GenericButton, GenericWindowEvent, InputEvent, Key, ScrollAxis,
+        GenericAxis, GenericButton, GenericWindowEvent, InputEvent, InputState, Key, ScrollAxis,
         WindowEvent as Event,
     },
     prelude::*,
@@ -25,6 +25,19 @@ impl MainLoopContext for GL33Context {
         self.window.glfw.set_swap_interval(interval);
         Ok(())
     }
+}
+
+fn joystick_callback(
+    id: JoystickId,
+    event: JoystickEvent,
+    userdata: &Rc<RefCell<Vec<(JoystickId, JoystickEvent)>>>,
+) {
+    userdata.borrow_mut().push((id, event));
+}
+
+struct GamepadEntry {
+    joystick: Joystick,
+    input_state: InputState<glfw::GamepadAxis, glfw::GamepadButton>,
 }
 
 pub fn run(
@@ -85,6 +98,17 @@ pub fn run(
         events
     });
 
+    let joystick_events = Rc::new(RefCell::new(Vec::new()));
+    let mut gamepad_map = HashMap::new();
+
+    context
+        .window
+        .glfw
+        .set_joystick_callback(Some(glfw::Callback {
+            f: joystick_callback,
+            data: joystick_events.clone(),
+        }));
+
     let lua = crate::api::create_lua_context()?;
 
     event_loop.init(resources, &lua, &mut context)?;
@@ -94,9 +118,7 @@ pub fn run(
         let mut events_buf = resources.get_mut::<TickEvents<GenericWindowEvent>>()?;
         for (_, event) in glfw::flush_messages(&events_rx) {
             let generic_event = match event {
-                glfw::WindowEvent::Pos(x, y) => {
-                    Event::WindowPos(Point2::new(x.try_into().unwrap(), y.try_into().unwrap()))
-                }
+                glfw::WindowEvent::Pos(x, y) => Event::WindowPos(Point2::new(x, y)),
                 glfw::WindowEvent::Size(w, h) => {
                     Event::WindowSize(Vector2::new(w.try_into().unwrap(), h.try_into().unwrap()))
                 }
@@ -175,6 +197,70 @@ pub fn run(
 
             events_buf.push(generic_event);
         }
+
+        for (id, event) in joystick_events.borrow_mut().drain(..) {
+            match event {
+                JoystickEvent::Connected => {
+                    let joystick = context.window.glfw.get_joystick(id);
+                    if joystick.is_gamepad() {
+                        gamepad_map.insert(
+                            id,
+                            GamepadEntry {
+                                joystick,
+                                input_state: InputState::new(),
+                            },
+                        );
+                    }
+                }
+                JoystickEvent::Disconnected => {
+                    gamepad_map.remove(&id);
+                }
+            }
+        }
+
+        for entry in gamepad_map.values_mut() {
+            let state = match entry.joystick.get_gamepad_state() {
+                Some(state) => state,
+                None => continue,
+            };
+            entry.input_state.update(0.);
+
+            for button in (0..).map_while(glfw::GamepadButton::from_i32) {
+                let button_state = state.get_button_state(button);
+                match button_state {
+                    glfw::Action::Press => entry.input_state.update_button_down(button, false),
+                    glfw::Action::Release => entry.input_state.update_button_up(button),
+                    glfw::Action::Repeat => entry.input_state.update_button_down(button, true),
+                }
+
+                if entry.input_state.get_button_pressed(button) {
+                    events_buf.push(Event::Mapped(InputEvent::Button {
+                        button: GenericButton::Gamepad(button.into()),
+                        state: true,
+                        repeat: false,
+                    }));
+                } else if entry.input_state.get_button_up(button) {
+                    events_buf.push(Event::Mapped(InputEvent::Button {
+                        button: GenericButton::Gamepad(button.into()),
+                        state: false,
+                        repeat: false,
+                    }));
+                }
+            }
+
+            for axis in (0..).map_while(glfw::GamepadAxis::from_i32) {
+                let axis_state = state.get_axis(axis);
+                events_buf.push(Event::Mapped(InputEvent::Axis(
+                    GenericAxis::Gamepad(axis.into()),
+                    if axis_state.abs() > 0.03 {
+                        axis_state
+                    } else {
+                        0.0
+                    },
+                )));
+            }
+        }
+
         drop(events_buf);
 
         if let ControlFlow::Break(_) = event_loop.tick(resources, &lua, &mut context)? {
