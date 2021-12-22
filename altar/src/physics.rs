@@ -1036,6 +1036,11 @@ impl LuaUserData for Position {
             this.current = composite;
             Ok(())
         });
+
+        methods.add_method_mut("set_rotation", |_, this, angle| {
+            this.current.rotation = UnitComplex::new(angle);
+            Ok(())
+        });
     }
 
     fn on_type_metatable_init(table: Type<Type<Self>>) {
