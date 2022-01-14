@@ -5,6 +5,7 @@ pub mod evol;
 pub mod gui;
 pub mod pipeline;
 pub mod wireframe;
+pub mod terracotta;
 
 pub use color::{Color, LinearColor};
 

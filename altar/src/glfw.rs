@@ -4,7 +4,7 @@ use crate::{
     event_loop::{EventLoop, MainLoopContext, TickEvents},
     window::WindowKind,
 };
-use glfw::{Context, Joystick, JoystickEvent, JoystickHats, JoystickId, SwapInterval, WindowMode};
+use glfw::{Context, Joystick, JoystickEvent, JoystickId, SwapInterval, WindowMode};
 use hv::{
     input::{
         GenericAxis, GenericButton, GenericWindowEvent, InputEvent, InputState, Key, ScrollAxis,

@@ -79,6 +79,53 @@ impl ObjectShape {
             e => Err(anyhow!("Got an unsupported shape type: {}", e)),
         }
     }
+
+    pub fn from_json(v: &Value) -> Result<Self> {
+        let mut shape = None;
+        if let Some(e) = v.get("ellipse") {
+            match e
+                .as_bool()
+                .ok_or_else(|| anyhow!("Ellipse shape entry was not a bool"))?
+            {
+                true => {
+                    shape = Some(ObjectShape::Ellipse);
+                }
+                false => {
+                    // TODO: log a warning?
+                }
+            }
+        }
+
+        if let Some(p) = v.get("point") {
+            if shape.is_some() {
+                return Err(anyhow!(
+                    "Objects cant have 2 or more shapes. Error while parsing point, found {:?}",
+                    shape
+                ));
+            }
+
+            match p
+                .as_bool()
+                .ok_or_else(|| anyhow!("Point shape entry was not a bool"))?
+            {
+                true => {
+                    shape = Some(ObjectShape::Point);
+                }
+                false => {
+                    // TODO: log a warning!
+                }
+            }
+        }
+        if let Some(e) = v.get("polyline") {
+            return Err(anyhow!("Polyline unsupported {:?}", e));
+        }
+        if let Some(e) = v.get("polygon") {
+            return Err(anyhow!("Polygon unsupported {:?}", e));
+        }
+
+        // This logic could be wrong, I think by default json object shapes are rectangles
+        Ok(shape.unwrap_or(ObjectShape::Rect))
+    }
 }
 
 #[derive(Debug, Clone)]
