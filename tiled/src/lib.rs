@@ -1,3 +1,4 @@
+pub mod json_parser;
 pub mod lua_parser;
 pub mod object_layer;
 pub mod tile_layer;
@@ -6,13 +7,14 @@ use crate::object_layer::*;
 use crate::tile_layer::*;
 pub use hv::math::Vector2;
 use hv::prelude::*;
+use serde_json::value::Value;
 
 // use hv_friends::math::Box2;
 
 use std::{collections::HashMap, io::Read, path::Path};
 
-const EMPTY_TILE: TileId = TileId(0, TileMetaData(0));
-const CHUNK_SIZE: u32 = 16;
+pub const EMPTY_TILE: TileId = TileId(0, TileMetaData(0));
+pub const CHUNK_SIZE: u32 = 16;
 
 const FLIPPED_HORIZONTALLY_FLAG: u32 = 0x80000000;
 const FLIPPED_VERTICALLY_FLAG: u32 = 0x40000000;
@@ -100,6 +102,30 @@ impl Property {
             p => Err(anyhow!("Attempted to get a color from a {:?}", p)),
         }
     }
+
+    pub fn from_json_entry(v: &Value) -> Result<Self> {
+        match v {
+            Value::Bool(b) => Ok(Property::Bool(*b)),
+            Value::Number(n) => {
+                if n.is_f64() {
+                    Ok(Property::Float(n.as_f64().unwrap()))
+                } else {
+                    Ok(Property::Int(n.as_i64().unwrap()))
+                }
+            }
+            Value::String(s) => Ok(Property::String(s.as_str().to_owned())),
+            Value::Object(o) => Ok(Property::Obj(ObjectId::new(
+                o.get("id")
+                    .ok_or_else(|| anyhow!("All object properties should have IDs"))?
+                    .as_u64()
+                    .ok_or_else(|| anyhow!("Should be able to turn object ID into u64"))?
+                    .try_into()
+                    .expect("Object IDs should fit in a u64"),
+                false,
+            ))),
+            v => Err(anyhow!("Not sure what this should be turned into {:?}", v)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -135,10 +161,12 @@ bitfield::bitfield! {
 }
 
 impl TileMetaData {
-    pub fn new(tileset_id: u32, flipx: bool, flipy: bool, diagonal_flip: bool) -> TileMetaData {
-        assert_eq!(tileset_id >> 29, 0);
+    pub fn new(tileset_id: u8, flipx: bool, flipy: bool, diagonal_flip: bool) -> TileMetaData {
         TileMetaData(
-            (flipx as u32) << 31 | (flipy as u32) << 30 | (diagonal_flip as u32) << 29 | tileset_id,
+            (flipx as u32) << 31
+                | (flipy as u32) << 30
+                | (diagonal_flip as u32) << 29
+                | tileset_id as u32,
         )
     }
 }
@@ -158,7 +186,7 @@ impl TileId {
     // Input the tile id here as is found in tiled
     pub fn new(
         tile_id: u32,
-        tileset_id: u32,
+        tileset_id: u8,
         flipx: bool,
         flipy: bool,
         diagonal_flip: bool,
@@ -172,7 +200,15 @@ impl TileId {
         )
     }
 
-    fn from_gid(mut gid: u32, tile_buffer: &[u32]) -> TileId {
+    pub fn tileset_id(&self) -> u8 {
+        self.1.tileset_id() as u8
+    }
+
+    pub fn gid(&self) -> u32 {
+        self.0
+    }
+
+    fn from_gid(mut gid: u32, tile_buffer: &[u8]) -> TileId {
         // For each tile, we check the flip flags and set the metadata with them.
         // We then unset the flip flags in the tile ID
         let flipx = (gid & FLIPPED_HORIZONTALLY_FLAG) != 0;
@@ -205,19 +241,21 @@ pub struct MapMetaData {
 
 #[derive(Debug, Clone)]
 pub struct TileRemoval {
-    id: TileId,
-    layer_id: TileLayerId,
-    x: i32,
-    y: i32,
+    _id: TileId,
+    pub layer_id: TileLayerId,
+    pub chunk_x: i32,
+    pub chunk_y: i32,
+    pub chunk_index: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct TileAddition {
-    changed_id: Option<TileId>,
-    new_id: TileId,
-    layer_id: TileLayerId,
-    x: i32,
-    y: i32,
+    _changed_id: Option<TileId>,
+    pub new_id: TileId,
+    pub layer_id: TileLayerId,
+    pub chunk_x: i32,
+    pub chunk_y: i32,
+    pub chunk_index: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -226,30 +264,20 @@ pub struct ObjectRemoval;
 #[derive(Debug, Clone)]
 pub struct ObjectAddition;
 
-#[derive(Debug, Clone)]
-pub enum TileChange {
-    TileRemoval(TileRemoval),
-    TileAddition(TileAddition),
-}
-
-#[derive(Debug, Clone)]
-pub enum ObjectChange {
-    ObjectRemoval(ObjectRemoval),
-    ObjectAddition(ObjectAddition),
-}
-
 #[derive(Debug)]
 pub struct Map {
     pub meta_data: MapMetaData,
     pub tile_layers: Vec<TileLayer>,
     pub object_layers: Vec<ObjectLayer>,
     pub tilesets: Tilesets,
-    pub tile_layer_map: HashMap<String, TileLayerId>,
-    pub object_layer_map: HashMap<String, ObjectLayerId>,
+    tile_layer_map: HashMap<String, TileLayerId>,
+    object_layer_map: HashMap<String, ObjectLayerId>,
     obj_slab: slab::Slab<Object>,
     obj_id_to_ref_map: HashMap<ObjectId, ObjectRef>,
-    pub chunk_changes: shrev::EventChannel<TileChange>,
-    pub object_changes: shrev::EventChannel<ObjectChange>,
+    pub tile_additions: shrev::EventChannel<TileAddition>,
+    pub tile_removals: shrev::EventChannel<TileRemoval>,
+    pub object_additions: shrev::EventChannel<ObjectAddition>,
+    pub object_removals: shrev::EventChannel<ObjectRemoval>,
 }
 
 impl Clone for Map {
@@ -263,8 +291,10 @@ impl Clone for Map {
             object_layer_map: self.object_layer_map.clone(),
             obj_slab: self.obj_slab.clone(),
             obj_id_to_ref_map: self.obj_id_to_ref_map.clone(),
-            chunk_changes: shrev::EventChannel::new(),
-            object_changes: shrev::EventChannel::new(),
+            tile_additions: shrev::EventChannel::new(),
+            tile_removals: shrev::EventChannel::new(),
+            object_additions: shrev::EventChannel::new(),
+            object_removals: shrev::EventChannel::new(),
         }
     }
 }
@@ -296,8 +326,10 @@ impl Map {
             object_layer_map,
             obj_slab,
             obj_id_to_ref_map,
-            chunk_changes: shrev::EventChannel::new(),
-            object_changes: shrev::EventChannel::new(),
+            tile_additions: shrev::EventChannel::new(),
+            tile_removals: shrev::EventChannel::new(),
+            object_additions: shrev::EventChannel::new(),
+            object_removals: shrev::EventChannel::new(),
         }
     }
 
@@ -316,18 +348,24 @@ impl Map {
             CoordSpace::Tile => (x, y),
         };
 
-        if let Some(tile_id) = self.tile_layers[layer_id.llid as usize]
-            .data
-            .remove_tile(x, y)
+        let (chunk_x, chunk_y, tile_x, tile_y) = to_chunk_indices_and_subindices(x, y);
+        let chunk_index = (tile_y * CHUNK_SIZE + tile_x) as usize;
+
+        if let Some(tile_id) =
+            self.tile_layers[layer_id.llid as usize]
+                .data
+                .remove_tile(chunk_x, chunk_y, chunk_index)
         {
             assert!(tile_id.to_index().is_some());
-            self.chunk_changes
-                .single_write(TileChange::TileRemoval(TileRemoval {
-                    id: tile_id,
-                    layer_id,
-                    x,
-                    y,
-                }))
+            self.tile_removals.single_write(TileRemoval {
+                _id: tile_id,
+                layer_id,
+                chunk_x,
+                chunk_y,
+                chunk_index,
+            })
+        } else {
+            // TODO: maybe log?
         }
     }
 
@@ -335,9 +373,9 @@ impl Map {
         &mut self,
         x: i32,
         y: i32,
+        coordinate_space: CoordSpace,
         layer_id: TileLayerId,
         tile: TileId,
-        coordinate_space: CoordSpace,
     ) {
         let (x, y) = match coordinate_space {
             CoordSpace::Pixel => (
@@ -348,15 +386,19 @@ impl Map {
         };
 
         let layer = &mut self.tile_layers[layer_id.llid as usize];
-        let changed_id = layer.data.set_tile(x, y, tile);
-        self.chunk_changes
-            .single_write(TileChange::TileAddition(TileAddition {
-                new_id: tile,
-                changed_id,
-                layer_id,
-                x,
-                y,
-            }));
+
+        let (chunk_x, chunk_y, tile_x, tile_y) = to_chunk_indices_and_subindices(x, y);
+        let chunk_index = (tile_y * CHUNK_SIZE + tile_x) as usize;
+
+        let _changed_id = layer.data.set_tile(chunk_x, chunk_y, chunk_index, tile);
+        self.tile_additions.single_write(TileAddition {
+            new_id: tile,
+            _changed_id,
+            layer_id,
+            chunk_x,
+            chunk_y,
+            chunk_index,
+        });
     }
 
     pub fn get_tile(
@@ -448,6 +490,16 @@ impl Map {
             .get(obj_id)
             .map(|obj_ref| self.get_obj_from_ref(obj_ref))
     }
+
+    pub fn get_tile_layer_id_by_name(&self, layer_name: &str) -> Option<TileLayerId> {
+        self.tile_layer_map.get(layer_name).copied()
+    }
+
+    pub fn get_tile_layer_by_name(&self, layer_name: &str) -> Option<&TileLayer> {
+        self.tile_layer_map
+            .get(layer_name)
+            .map(|lid| &self.tile_layers[lid.llid as usize])
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -474,7 +526,7 @@ pub struct Image {
 }
 
 impl Image {
-    pub fn new(it: &LuaTable, prefix: Option<&str>) -> Result<Self, Error> {
+    pub fn from_lua(it: &LuaTable, prefix: Option<&str>) -> Result<Self, Error> {
         Ok(Image {
             source: prefix.unwrap_or("").to_owned() + it.get::<_, LuaString>("image")?.to_str()?,
             width: it.get("imagewidth")?,
@@ -483,6 +535,27 @@ impl Image {
                 Ok(s) => Some(Color::from_tiled_hex(s.to_str()?)?),
                 _ => None,
             },
+        })
+    }
+
+    pub fn from_json(
+        v: &serde_json::Map<String, Value>,
+        prefix: Option<&str>,
+    ) -> Result<Self, Error> {
+        Ok(Image {
+            source: prefix.unwrap_or("").to_owned() + v.get("image")
+                        .ok_or_else(|| anyhow!("Should've gotten an image, if this is a list, image lists aren't supported yet"))?
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Image value wasn't an image"))?,
+            width: v.get("imagewidth").ok_or_else(|| anyhow!("Should've gotten an imagewidth"))?.as_u64().ok_or_else(|| anyhow!("Imagewidth value wasn't a u32"))?.try_into().expect("Check your imagewidth wtf"),
+            height: v.get("imageheight").ok_or_else(|| anyhow!("Should've gotten an imageheight"))?.as_u64().ok_or_else(|| anyhow!("Imageheight value wasn't a u32"))?.try_into().expect("Check your imageheight wtf"),
+            trans_color: v.get("transparentcolor").map(|s| {
+                Color::from_tiled_hex(
+                    s.as_str()
+                        .ok_or_else(|| anyhow!("Expected a string for transparentcolor"))?,
+                )
+            })
+            .transpose()?,
         })
     }
 }
@@ -500,6 +573,7 @@ pub struct Tileset {
     pub tiles: HashMap<TileId, Tile>,
     pub properties: Properties,
     pub images: Vec<Image>,
+    pub filename: Option<String>,
 }
 
 impl Tileset {
@@ -514,5 +588,17 @@ pub struct Tilesets(Vec<Tileset>);
 impl Tilesets {
     pub fn get_tile(&self, tile_id: &TileId) -> Option<&Tile> {
         self.0[tile_id.1.tileset_id() as usize].get_tile(tile_id)
+    }
+
+    pub fn iter_tilesets(&self) -> std::slice::Iter<'_, Tileset> {
+        self.0.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 }

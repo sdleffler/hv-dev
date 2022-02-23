@@ -1,6 +1,6 @@
 use crate::*;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct TileLayerId {
     // global layer id and local layer id
     // global layer id is set by tiled, local layer id is generated sequentially in the order
@@ -16,10 +16,13 @@ impl Chunk {
     fn new() -> Self {
         Chunk(vec![EMPTY_TILE; (CHUNK_SIZE * CHUNK_SIZE) as usize])
     }
+
+    pub fn tiles(&self) -> &[TileId] {
+        &self.0
+    }
 }
 
-fn to_chunk_indices_and_subindices(x: i32, y: i32) -> (i32, i32, u32, u32) {
-    let y = -y;
+pub fn to_chunk_indices_and_subindices(x: i32, y: i32) -> (i32, i32, u32, u32) {
     let (chunk_x, tile_x) = (
         x.div_euclid(CHUNK_SIZE as i32),
         x.rem_euclid(CHUNK_SIZE as i32) as u32,
@@ -39,10 +42,22 @@ impl Chunks {
         Chunks(HashMap::default())
     }
 
-    pub fn set_tile(&mut self, x: i32, y: i32, tile: TileId) -> Option<TileId> {
-        let (chunk_x, chunk_y, tile_x, tile_y) = to_chunk_indices_and_subindices(x, y);
+    pub fn get_chunk(&self, x: i32, y: i32) -> Option<&Chunk> {
+        self.0.get(&(x, y))
+    }
+
+    pub fn chunk_coordinates(&self) -> std::collections::hash_map::Keys<'_, (i32, i32), Chunk> {
+        self.0.keys()
+    }
+
+    pub fn set_tile(
+        &mut self,
+        chunk_x: i32,
+        chunk_y: i32,
+        index: usize,
+        tile: TileId,
+    ) -> Option<TileId> {
         let chunk = self.0.entry((chunk_x, chunk_y)).or_insert_with(Chunk::new);
-        let index = (tile_y * CHUNK_SIZE + tile_x) as usize;
         let tile_id = chunk.0[index];
         chunk.0[index] = tile;
         if tile_id != EMPTY_TILE {
@@ -52,10 +67,8 @@ impl Chunks {
         }
     }
 
-    pub fn remove_tile(&mut self, x: i32, y: i32) -> Option<TileId> {
-        let (chunk_x, chunk_y, tile_x, tile_y) = to_chunk_indices_and_subindices(x, y);
+    pub fn remove_tile(&mut self, chunk_x: i32, chunk_y: i32, index: usize) -> Option<TileId> {
         if let Some(chunk) = self.0.get_mut(&(chunk_x, chunk_y)) {
-            let index = (tile_y * CHUNK_SIZE + tile_x) as usize;
             let tile_id = chunk.0[index];
             chunk.0[index] = EMPTY_TILE;
             if tile_id != EMPTY_TILE {
@@ -77,13 +90,24 @@ impl Chunks {
             }
         })
     }
+
+    pub fn chunks(&self) -> std::collections::hash_map::Iter<'_, (i32, i32), tile_layer::Chunk> {
+        self.0.iter()
+    }
 }
 
 pub fn to_chunks(data: &[TileId], width: u32, height: u32) -> Chunks {
     let mut chunks = Chunks::default();
     for y in 0..height {
         for x in 0..width {
-            chunks.set_tile(x as i32, y as i32, data[(y * width + x) as usize]);
+            let (chunk_x, chunk_y, tile_x, tile_y) =
+                to_chunk_indices_and_subindices(x as i32, y as i32);
+            chunks.set_tile(
+                chunk_x,
+                chunk_y,
+                ((tile_y * CHUNK_SIZE) + tile_x) as usize,
+                data[(y * width + x) as usize],
+            );
         }
     }
     chunks
@@ -123,7 +147,7 @@ impl TileLayer {
         encoding: &Encoding,
         compression: &Option<Compression>,
         t: &LuaTable,
-        tile_buffer: &[u32],
+        tile_buffer: &[u8],
     ) -> Result<Vec<TileId>, Error> {
         // TODO: Vector capacity can be pre-calculated here, optimize this
         let mut tile_data = Vec::new();
