@@ -860,10 +860,12 @@ macro_rules! impl_tuple {
             }
 
             unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {
+                #[allow(clippy::transmute_undefined_repr)]
                 core::mem::transmute(this)
             }
 
             unsafe fn shorten_ref<'a>(this: &'_ Self) -> &'_ Self::Parameterized<'a> {
+                #[allow(clippy::transmute_undefined_repr)]
                 core::mem::transmute(this)
             }
         }
