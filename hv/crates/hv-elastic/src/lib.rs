@@ -734,13 +734,9 @@ where
     for<'a> T::Parameterized<'a>: core::borrow::Borrow<U>,
 {
     type Guard<'a>
-    where
-        U: 'a,
-    = AtomicRef<'a, U>;
+    = AtomicRef<'a, U> where U: 'a,;
     type BorrowError<'a>
-    where
-        U: 'a,
-    = BorrowError;
+    = BorrowError where U: 'a,;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         self.try_borrow_as_parameterized()
@@ -753,13 +749,9 @@ where
     for<'a> T::Parameterized<'a>: core::borrow::BorrowMut<U>,
 {
     type GuardMut<'a>
-    where
-        U: 'a,
-    = AtomicRefMut<'a, U>;
+    = AtomicRefMut<'a, U> where U: 'a,;
     type BorrowMutError<'a>
-    where
-        U: 'a,
-    = BorrowMutError;
+    = BorrowMutError where U: 'a,;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -774,13 +766,9 @@ where
     for<'a> T::Parameterized<'a>: core::borrow::BorrowMut<U>,
 {
     type MutGuardMut<'a>
-    where
-        U: 'a,
-    = AtomicRefMut<'a, U>;
+    = AtomicRefMut<'a, U> where U: 'a,;
     type MutBorrowMutError<'a>
-    where
-        U: 'a,
-    = BorrowMutError;
+    = BorrowMutError where U: 'a,;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
@@ -903,11 +891,11 @@ unsafe impl<T: Stretched> Stretched for Option<T> {
     type Parameterized<'a> = Option<T::Parameterized<'a>>;
 
     unsafe fn lengthen(this: Self::Parameterized<'_>) -> Self {
-        this.map(|t| unsafe { T::lengthen(t) })
+        this.map(|t| T::lengthen(t))
     }
 
     unsafe fn shorten<'a>(this: Self) -> Self::Parameterized<'a> {
-        this.map(|t| unsafe { T::shorten(t) })
+        this.map(|t| T::shorten(t))
     }
 
     unsafe fn shorten_mut<'a>(this: &'_ mut Self) -> &'_ mut Self::Parameterized<'a> {

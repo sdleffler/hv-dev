@@ -4,13 +4,9 @@ use crate::{NonBlockingGuardedBorrow, NonBlockingGuardedMutBorrowMut};
 
 impl<T> NonBlockingGuardedBorrow<T> for hv_ecs::DynamicComponent<T> {
     type Guard<'a>
-    where
-        T: 'a,
-    = hv_ecs::DynamicItemRef<'a, T>;
+    = hv_ecs::DynamicItemRef<'a, T> where T: 'a;
     type BorrowError<'a>
-    where
-        T: 'a,
-    = Infallible;
+    = Infallible where T: 'a;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         Ok(self.borrow())
@@ -19,13 +15,9 @@ impl<T> NonBlockingGuardedBorrow<T> for hv_ecs::DynamicComponent<T> {
 
 impl<T> NonBlockingGuardedMutBorrowMut<T> for hv_ecs::DynamicComponent<T> {
     type MutGuardMut<'a>
-    where
-        T: 'a,
-    = hv_ecs::DynamicItemRefMut<'a, T>;
+    = hv_ecs::DynamicItemRefMut<'a, T> where T: 'a;
     type MutBorrowMutError<'a>
-    where
-        T: 'a,
-    = Infallible;
+    = Infallible where T: 'a;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,

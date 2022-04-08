@@ -81,15 +81,9 @@ pub trait NonBlockingGuardedMutBorrowMut<T: ?Sized> {
 
 impl<'a, T: ?Sized> NonBlockingGuardedBorrow<T> for &'a T {
     type Guard<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = &'b T;
+    = &'b T where T: 'b, Self: 'b;
     type BorrowError<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = Infallible;
+    = Infallible where T: 'b, Self: 'b;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         Ok(self)
@@ -98,15 +92,9 @@ impl<'a, T: ?Sized> NonBlockingGuardedBorrow<T> for &'a T {
 
 impl<'a, T: ?Sized> NonBlockingGuardedBorrowMut<T> for &'a T {
     type GuardMut<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = &'b mut T;
+    = &'b mut T where T: 'b, Self: 'b;
     type BorrowMutError<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = &'static str;
+    = &'static str where T: 'b, Self: 'b;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -117,15 +105,9 @@ impl<'a, T: ?Sized> NonBlockingGuardedBorrowMut<T> for &'a T {
 
 impl<'a, T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for &'a T {
     type MutGuardMut<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = &'b mut T;
+    = &'b mut T where T: 'b, Self: 'b;
     type MutBorrowMutError<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = &'static str;
+    = &'static str where T: 'b, Self: 'b;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
@@ -136,15 +118,9 @@ impl<'a, T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for &'a T {
 
 impl<'a, T: ?Sized> NonBlockingGuardedBorrow<T> for &'a mut T {
     type Guard<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = &'b T;
+    = &'b T where T: 'b, Self: 'b;
     type BorrowError<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = Infallible;
+    = Infallible where T: 'b, Self: 'b;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         Ok(self)
@@ -153,15 +129,9 @@ impl<'a, T: ?Sized> NonBlockingGuardedBorrow<T> for &'a mut T {
 
 impl<'a, T: ?Sized> NonBlockingGuardedBorrowMut<T> for &'a mut T {
     type GuardMut<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = &'b mut T;
+    = &'b mut T where T: 'b, Self: 'b;
     type BorrowMutError<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = &'static str;
+    = &'static str where T: 'b, Self: 'b;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -172,15 +142,9 @@ impl<'a, T: ?Sized> NonBlockingGuardedBorrowMut<T> for &'a mut T {
 
 impl<'a, T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for &'a mut T {
     type MutGuardMut<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = &'b mut T;
+    = &'b mut T where T: 'b, Self: 'b;
     type MutBorrowMutError<'b>
-    where
-        T: 'b,
-        Self: 'b,
-    = Infallible;
+    = Infallible where T: 'b, Self: 'b;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
@@ -191,13 +155,9 @@ impl<'a, T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for &'a mut T {
 
 impl<T: ?Sized> NonBlockingGuardedBorrow<T> for RefCell<T> {
     type Guard<'a>
-    where
-        T: 'a,
-    = Ref<'a, T>;
+    = Ref<'a, T> where T: 'a,;
     type BorrowError<'a>
-    where
-        T: 'a,
-    = BorrowError;
+    = BorrowError where T: 'a,;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         self.try_borrow()
@@ -206,13 +166,9 @@ impl<T: ?Sized> NonBlockingGuardedBorrow<T> for RefCell<T> {
 
 impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for RefCell<T> {
     type GuardMut<'a>
-    where
-        T: 'a,
-    = RefMut<'a, T>;
+    = RefMut<'a, T> where T: 'a,;
     type BorrowMutError<'a>
-    where
-        T: 'a,
-    = BorrowMutError;
+    = BorrowMutError where T: 'a,;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -223,13 +179,9 @@ impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for RefCell<T> {
 
 impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for RefCell<T> {
     type MutGuardMut<'a>
-    where
-        T: 'a,
-    = &'a mut T;
+    = &'a mut T where T: 'a,;
     type MutBorrowMutError<'a>
-    where
-        T: 'a,
-    = Infallible;
+    = Infallible where T: 'a,;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
@@ -243,15 +195,9 @@ where
     T: NonBlockingGuardedBorrow<U>,
 {
     type Guard<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::Guard<'a>;
+    = T::Guard<'a> where U: 'a, Self: 'a,;
     type BorrowError<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::BorrowError<'a>;
+    = T::BorrowError<'a> where U: 'a, Self: 'a,;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         T::try_nonblocking_guarded_borrow(self)
@@ -263,15 +209,9 @@ where
     T: NonBlockingGuardedBorrowMut<U>,
 {
     type GuardMut<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::GuardMut<'a>;
+    = T::GuardMut<'a> where U: 'a, Self: 'a,;
     type BorrowMutError<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::BorrowMutError<'a>;
+    = T::BorrowMutError<'a> where U: 'a, Self: 'a,;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -285,15 +225,9 @@ where
     T: NonBlockingGuardedBorrowMut<U>,
 {
     type MutGuardMut<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::GuardMut<'a>;
+    = T::GuardMut<'a> where U: 'a, Self: 'a,;
     type MutBorrowMutError<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::BorrowMutError<'a>;
+    = T::BorrowMutError<'a> where U: 'a, Self: 'a,;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
@@ -307,15 +241,9 @@ where
     T: NonBlockingGuardedBorrow<U>,
 {
     type Guard<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::Guard<'a>;
+    = T::Guard<'a> where U: 'a, Self: 'a,;
     type BorrowError<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::BorrowError<'a>;
+    = T::BorrowError<'a> where U: 'a, Self: 'a,;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         T::try_nonblocking_guarded_borrow(self)
@@ -327,15 +255,9 @@ where
     T: NonBlockingGuardedBorrowMut<U>,
 {
     type GuardMut<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::GuardMut<'a>;
+    = T::GuardMut<'a> where U: 'a, Self: 'a,;
     type BorrowMutError<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::BorrowMutError<'a>;
+    = T::BorrowMutError<'a> where U: 'a, Self: 'a,;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -349,15 +271,9 @@ where
     T: NonBlockingGuardedBorrowMut<U>,
 {
     type MutGuardMut<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::GuardMut<'a>;
+    = T::GuardMut<'a> where U: 'a, Self: 'a,;
     type MutBorrowMutError<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::BorrowMutError<'a>;
+    = T::BorrowMutError<'a> where U: 'a, Self: 'a,;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
@@ -371,15 +287,9 @@ where
     T: NonBlockingGuardedBorrow<U>,
 {
     type Guard<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::Guard<'a>;
+    = T::Guard<'a> where U: 'a, Self: 'a,;
     type BorrowError<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::BorrowError<'a>;
+    = T::BorrowError<'a> where U: 'a, Self: 'a,;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         T::try_nonblocking_guarded_borrow(self)
@@ -391,15 +301,9 @@ where
     T: NonBlockingGuardedBorrowMut<U>,
 {
     type GuardMut<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::GuardMut<'a>;
+    = T::GuardMut<'a> where U: 'a, Self: 'a,;
     type BorrowMutError<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::BorrowMutError<'a>;
+    = T::BorrowMutError<'a> where U: 'a, Self: 'a,;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -413,15 +317,9 @@ where
     T: NonBlockingGuardedMutBorrowMut<U>,
 {
     type MutGuardMut<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::MutGuardMut<'a>;
+    = T::MutGuardMut<'a> where U: 'a, Self: 'a,;
     type MutBorrowMutError<'a>
-    where
-        U: 'a,
-        Self: 'a,
-    = T::MutBorrowMutError<'a>;
+    = T::MutBorrowMutError<'a> where U: 'a, Self: 'a,;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,

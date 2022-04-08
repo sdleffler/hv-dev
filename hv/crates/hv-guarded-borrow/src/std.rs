@@ -8,13 +8,9 @@ use crate::{
 
 impl<T: ?Sized> NonBlockingGuardedBorrow<T> for Mutex<T> {
     type Guard<'a>
-    where
-        T: 'a,
-    = MutexGuard<'a, T>;
+    = MutexGuard<'a, T> where T: 'a,;
     type BorrowError<'a>
-    where
-        T: 'a,
-    = TryLockError<MutexGuard<'a, T>>;
+    = TryLockError<MutexGuard<'a, T>> where T: 'a;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         self.try_lock()
@@ -23,13 +19,9 @@ impl<T: ?Sized> NonBlockingGuardedBorrow<T> for Mutex<T> {
 
 impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for Mutex<T> {
     type GuardMut<'a>
-    where
-        T: 'a,
-    = MutexGuard<'a, T>;
+    = MutexGuard<'a, T> where T: 'a;
     type BorrowMutError<'a>
-    where
-        T: 'a,
-    = TryLockError<MutexGuard<'a, T>>;
+    = TryLockError<MutexGuard<'a, T>> where T: 'a;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -40,13 +32,9 @@ impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for Mutex<T> {
 
 impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for Mutex<T> {
     type MutGuardMut<'a>
-    where
-        T: 'a,
-    = &'a mut T;
+    = &'a mut T where T: 'a;
     type MutBorrowMutError<'a>
-    where
-        T: 'a,
-    = PoisonError<&'a mut T>;
+    = PoisonError<&'a mut T> where T: 'a;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
@@ -57,13 +45,9 @@ impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for Mutex<T> {
 
 impl<T: ?Sized> NonBlockingGuardedBorrow<T> for RwLock<T> {
     type Guard<'a>
-    where
-        T: 'a,
-    = RwLockReadGuard<'a, T>;
+    = RwLockReadGuard<'a, T> where T: 'a;
     type BorrowError<'a>
-    where
-        T: 'a,
-    = TryLockError<RwLockReadGuard<'a, T>>;
+    = TryLockError<RwLockReadGuard<'a, T>> where T: 'a;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         self.try_read()
@@ -72,13 +56,9 @@ impl<T: ?Sized> NonBlockingGuardedBorrow<T> for RwLock<T> {
 
 impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for RwLock<T> {
     type GuardMut<'a>
-    where
-        T: 'a,
-    = RwLockWriteGuard<'a, T>;
+    = RwLockWriteGuard<'a, T> where T: 'a;
     type BorrowMutError<'a>
-    where
-        T: 'a,
-    = TryLockError<RwLockWriteGuard<'a, T>>;
+    = TryLockError<RwLockWriteGuard<'a, T>> where T: 'a;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -89,13 +69,9 @@ impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for RwLock<T> {
 
 impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for RwLock<T> {
     type MutGuardMut<'a>
-    where
-        T: 'a,
-    = &'a mut T;
+    = &'a mut T where T: 'a;
     type MutBorrowMutError<'a>
-    where
-        T: 'a,
-    = PoisonError<&'a mut T>;
+    = PoisonError<&'a mut T> where T: 'a;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,

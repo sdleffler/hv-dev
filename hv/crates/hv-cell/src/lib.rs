@@ -1012,13 +1012,9 @@ impl<T: ?Sized + Debug> Debug for AtomicRefCell<T> {
 
 impl<T: ?Sized> NonBlockingGuardedBorrow<T> for AtomicRefCell<T> {
     type Guard<'a>
-    where
-        T: 'a,
-    = AtomicRef<'a, T>;
+    = AtomicRef<'a, T> where T: 'a,;
     type BorrowError<'a>
-    where
-        T: 'a,
-    = BorrowError;
+    = BorrowError where T: 'a,;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         self.try_borrow()
@@ -1027,13 +1023,9 @@ impl<T: ?Sized> NonBlockingGuardedBorrow<T> for AtomicRefCell<T> {
 
 impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for AtomicRefCell<T> {
     type GuardMut<'a>
-    where
-        T: 'a,
-    = AtomicRefMut<'a, T>;
+    = AtomicRefMut<'a, T> where T: 'a,;
     type BorrowMutError<'a>
-    where
-        T: 'a,
-    = BorrowMutError;
+    = BorrowMutError where T: 'a,;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -1044,13 +1036,9 @@ impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for AtomicRefCell<T> {
 
 impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for AtomicRefCell<T> {
     type MutGuardMut<'a>
-    where
-        T: 'a,
-    = &'a mut T;
+    = &'a mut T where T: 'a,;
     type MutBorrowMutError<'a>
-    where
-        T: 'a,
-    = Infallible;
+    = Infallible where T: 'a,;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
@@ -1061,13 +1049,9 @@ impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for AtomicRefCell<T> {
 
 impl<T: ?Sized> NonBlockingGuardedBorrow<T> for ArcCell<T> {
     type Guard<'a>
-    where
-        T: 'a,
-    = AtomicRef<'a, T>;
+    = AtomicRef<'a, T> where T: 'a;
     type BorrowError<'a>
-    where
-        T: 'a,
-    = BorrowError;
+    = BorrowError where T: 'a;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         self.as_inner().try_borrow()
@@ -1076,13 +1060,9 @@ impl<T: ?Sized> NonBlockingGuardedBorrow<T> for ArcCell<T> {
 
 impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for ArcCell<T> {
     type GuardMut<'a>
-    where
-        T: 'a,
-    = AtomicRefMut<'a, T>;
+    = AtomicRefMut<'a, T> where T: 'a,;
     type BorrowMutError<'a>
-    where
-        T: 'a,
-    = BorrowMutError;
+    = BorrowMutError where T: 'a,;
 
     fn try_nonblocking_guarded_borrow_mut(
         &self,
@@ -1093,13 +1073,9 @@ impl<T: ?Sized> NonBlockingGuardedBorrowMut<T> for ArcCell<T> {
 
 impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcCell<T> {
     type MutGuardMut<'a>
-    where
-        T: 'a,
-    = AtomicRefMut<'a, T>;
+    = AtomicRefMut<'a, T> where T: 'a,;
     type MutBorrowMutError<'a>
-    where
-        T: 'a,
-    = BorrowMutError;
+    = BorrowMutError where T: 'a,;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
@@ -1110,15 +1086,9 @@ impl<T: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcCell<T> {
 
 impl<T: ?Sized, C: ?Sized> NonBlockingGuardedBorrow<T> for ArcRef<T, C> {
     type Guard<'a>
-    where
-        T: 'a,
-        Self: 'a,
-    = &'a T;
+    = &'a T where T: 'a, Self: 'a,;
     type BorrowError<'a>
-    where
-        T: 'a,
-        Self: 'a,
-    = Infallible;
+    = Infallible where T: 'a, Self: 'a,;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         Ok(self)
@@ -1127,15 +1097,9 @@ impl<T: ?Sized, C: ?Sized> NonBlockingGuardedBorrow<T> for ArcRef<T, C> {
 
 impl<T: ?Sized, C: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRef<T, C> {
     type MutGuardMut<'a>
-    where
-        T: 'a,
-        Self: 'a,
-    = &'a mut T;
+    = &'a mut T where T: 'a, Self: 'a,;
     type MutBorrowMutError<'a>
-    where
-        T: 'a,
-        Self: 'a,
-    = &'static str;
+    = &'static str where T: 'a, Self: 'a;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,
@@ -1146,15 +1110,9 @@ impl<T: ?Sized, C: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRef<T, C> {
 
 impl<T: ?Sized, C: ?Sized> NonBlockingGuardedBorrow<T> for ArcRefMut<T, C> {
     type Guard<'a>
-    where
-        T: 'a,
-        Self: 'a,
-    = &'a T;
+    = &'a T where T: 'a, Self: 'a,;
     type BorrowError<'a>
-    where
-        T: 'a,
-        Self: 'a,
-    = Infallible;
+    = Infallible where T: 'a, Self: 'a;
 
     fn try_nonblocking_guarded_borrow(&self) -> Result<Self::Guard<'_>, Self::BorrowError<'_>> {
         Ok(self)
@@ -1163,15 +1121,9 @@ impl<T: ?Sized, C: ?Sized> NonBlockingGuardedBorrow<T> for ArcRefMut<T, C> {
 
 impl<T: ?Sized, C: ?Sized> NonBlockingGuardedMutBorrowMut<T> for ArcRefMut<T, C> {
     type MutGuardMut<'a>
-    where
-        T: 'a,
-        Self: 'a,
-    = &'a mut T;
+    = &'a mut T where T: 'a, Self: 'a,;
     type MutBorrowMutError<'a>
-    where
-        T: 'a,
-        Self: 'a,
-    = Infallible;
+    = Infallible where T: 'a, Self: 'a;
 
     fn try_nonblocking_guarded_mut_borrow_mut(
         &mut self,

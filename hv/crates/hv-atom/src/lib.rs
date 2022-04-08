@@ -7,7 +7,6 @@
 //!   `const_fn_fn_ptr_basics` feature. This crate requires nightly rust, 1.58 up.)
 
 #![no_std]
-#![feature(const_fn_fn_ptr_basics)]
 #![feature(result_into_ok_or_err)]
 
 //   Copyright 2015 Colin Sherratt
