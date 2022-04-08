@@ -76,7 +76,7 @@ pub trait Storable<T: ?Sized, U: ?Sized>: Storage<T> {
     #[allow(clippy::missing_safety_doc)]
     unsafe fn downcast_unchecked(self) -> Self::Downcast
     where
-        U: Any + Sized;
+        U: Sized;
 }
 
 /// Trait describing storage for a given type.
@@ -122,7 +122,7 @@ impl<T: ?Sized, Space, U: ?Sized> Storable<T, U> for NonCopyable<T, Space> {
     type Downcast = NonCopyable<U, Space>;
     unsafe fn downcast_unchecked(self) -> Self::Downcast
     where
-        U: Any + Sized,
+        U: Sized,
     {
         let size = mem::size_of::<U>();
         let mut space = mem::MaybeUninit::<Space>::uninit();
@@ -206,7 +206,7 @@ impl<T: ?Sized, Space: Copy, U: Copy> Storable<T, U> for Copyable<T, Space> {
     type Downcast = Copyable<U, Space>;
     unsafe fn downcast_unchecked(self) -> Self::Downcast
     where
-        U: Any + Sized,
+        U: Sized,
     {
         let size = mem::size_of::<U>();
         let mut space = mem::MaybeUninit::<Space>::uninit();
