@@ -1055,7 +1055,7 @@ impl AlchemicalPtr {
     pub unsafe fn downcast_dyn_ref<'a, U: ?Sized + Alchemy>(self) -> Option<&'a U> {
         self.table
             .get::<U>()
-            .map(|vtable| &*unsafe { vtable.to_dyn_object_ptr::<U>(self.data.cast()) })
+            .map(|vtable| &*vtable.to_dyn_object_ptr::<U>(self.data.cast()))
     }
 
     /// Downcast the pointer to a mutable reference to a given trait object, if it implements it.
@@ -1069,7 +1069,7 @@ impl AlchemicalPtr {
     pub unsafe fn downcast_dyn_mut<'a, U: ?Sized + Alchemy>(self) -> Option<&'a mut U> {
         self.table
             .get::<U>()
-            .map(|vtable| &mut *unsafe { vtable.to_dyn_object_mut_ptr::<U>(self.data.cast()) })
+            .map(|vtable| &mut *vtable.to_dyn_object_mut_ptr::<U>(self.data.cast()))
     }
 }
 

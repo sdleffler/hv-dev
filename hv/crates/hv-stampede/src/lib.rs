@@ -9,7 +9,7 @@
 //!   returned to the pool.
 //! - [`PooledBump::as_bump_unbound`], unsafe access to the managed [`Bump`] inside.
 
-#![feature(maybe_uninit_slice, maybe_uninit_extra)]
+#![feature(maybe_uninit_slice)]
 #![no_std]
 
 use core::{
