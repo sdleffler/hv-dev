@@ -1,6 +1,6 @@
 [workspace]
 exclude = [
-    "hv-ecs"
+    "hv-ecs",
 ]
 
 members = [

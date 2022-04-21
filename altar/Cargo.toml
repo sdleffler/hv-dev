@@ -34,3 +34,4 @@ thunderdome = "0.5.0"
 tracing = "0.1.29"
 tiled = { path = "../tiled" }
 image = "0.23.14"
+static-rc = "0.5.0"

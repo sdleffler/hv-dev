@@ -72,6 +72,7 @@ dependencies = [
  "slab",
  "soft-edge",
  "spin 0.9.2",
+ "static-rc",
  "static_assertions",
  "thunderdome",
  "tiled",
@@ -2698,6 +2699,12 @@ checksum = "511254be0c5bcf062b019a6c89c01a664aa359ded62f78aa72c6fc137c0590e5"
 dependencies = [
  "lock_api",
 ]
+
+[[package]]
+name = "static-rc"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83b7d8e792a05af115e097af2513e1c28ac1b993bcc553e56bcf14d1e954e8ff"
 
 [[package]]
 name = "static_assertions"

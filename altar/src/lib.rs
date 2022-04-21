@@ -1,4 +1,5 @@
 #![allow(clippy::needless_option_as_deref)]
+#![feature(map_try_insert)]
 #![feature(allocator_api)]
 #![feature(control_flow_enum)]
 #![feature(generic_associated_types)]

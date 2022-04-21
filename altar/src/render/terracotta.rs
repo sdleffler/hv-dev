@@ -1,10 +1,6 @@
-use hv::prelude::*;
+use crate::render::*;
 use image::ImageBuffer;
 use image::Rgba;
-use luminance::blending::{Blending, Equation, Factor};
-use luminance::depth_stencil::Comparison;
-use luminance::render_state::RenderState;
-use luminance::texture::Dim2Array;
 use luminance::{
     backend::{
         framebuffer::Framebuffer as FramebufferBackend,
@@ -15,16 +11,17 @@ use luminance::{
         tess_gate::TessGate as TessGateBackend,
         texture::Texture as TextureBackend,
     },
+    blending::{Blending, Equation, Factor},
     context::GraphicsContext,
+    depth_stencil::Comparison,
     pipeline::{Pipeline, TextureBinding},
     pixel::{NormUnsigned, SRGBA8UI},
+    render_state::RenderState,
     shader::{types::Mat44, Program, Uniform},
     shading_gate::ShadingGate,
     tess::{Interleaved, Mode, Tess, TessBuilder},
     texture::Dim2,
-    texture::MagFilter,
-    texture::MinFilter,
-    texture::Sampler,
+    texture::Dim2Array,
     texture::TexelUpload,
     texture::Texture,
     Semantics, UniformInterface, Vertex,
@@ -170,48 +167,6 @@ impl<B: ?Sized> TiledBackend for B where
 {
 }
 
-#[derive(Debug, Clone, Copy)]
-struct F32Box2 {
-    origin: Point2<f32>,
-    extents: Vector2<f32>,
-}
-
-impl F32Box2 {
-    fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self {
-            origin: Point2::new(x, y),
-            extents: Vector2::new(width, height),
-        }
-    }
-
-    fn is_valid(&self) -> bool {
-        self.extents.x > 0. && self.extents.y > 0.
-    }
-
-    // Bottom left, bottom right, top left, top right
-    #[inline]
-    fn corners(&self) -> ([f32; 2], [f32; 2], [f32; 2], [f32; 2]) {
-        (
-            [self.origin.x, self.origin.y],
-            [self.origin.x + self.extents.x, self.origin.y],
-            [self.origin.x, self.origin.y + self.extents.y],
-            [
-                self.origin.x + self.extents.x,
-                self.origin.y + self.extents.y,
-            ],
-        )
-    }
-
-    fn inverse_scale(&self, width: f32, height: f32) -> Self {
-        F32Box2::new(
-            self.origin.x / width,
-            self.origin.y / height,
-            self.extents.x / width,
-            self.extents.y / height,
-        )
-    }
-}
-
 struct TilesetRenderData {
     tile_pixel_coords: Vec<F32Box2>,
     tile_width: u32,
@@ -310,11 +265,7 @@ where
             current_texture: Texture::new(
                 ctx,
                 ([1, 1], 1),
-                Sampler {
-                    min_filter: MinFilter::Nearest,
-                    mag_filter: MagFilter::Nearest,
-                    ..Sampler::default()
-                },
+                nearest_sampler(),
                 TexelUpload::base_level_without_mipmaps(&[[255, 255, 255, 255]]),
             )?,
             tileset_tile_dims: Vec::new(),
