@@ -38,6 +38,7 @@ use tiled::{
 const VERTEX_SRC: &str = include_str!("terracotta/terracotta_es300.glslv");
 const FRAGMENT_SRC: &str = include_str!("terracotta/terracotta_es300.glslf");
 
+/// Semantics for each vertex that makes up a tile.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Semantics)]
 pub enum VertexSemantics {
     #[sem(name = "v_Pos", repr = "[f32; 3]", wrapper = "VertexPosition")]
@@ -48,11 +49,15 @@ pub enum VertexSemantics {
     Tileset,
 }
 
+/// A group of attributes that define a Vertex used to make a tile.
 #[derive(Clone, Copy, Debug, Vertex, PartialEq)]
 #[vertex(sem = "VertexSemantics")]
 pub struct Vertex {
+    /// X Y and Z positions of a vertex used to make a tile. The Z position is used to determine the height.
     pub position: VertexPosition,
+    /// UV coordinate in the tileset the vertex is a part of.
     pub uv: VertexUv,
+    /// An index into the tileset this vertex belongs to (note that a map cannot have more than [`u8::MAX`] unique tilesets).
     pub tileset: VertexTileset,
 }
 
@@ -115,14 +120,18 @@ impl Vertex {
     }
 }
 
+/// The uniforms used by each chunk.
 #[derive(Debug, UniformInterface)]
 pub struct Uniforms {
+    /// A texture array containing all of the tilesets, loaded as textures, used in a map.
     #[uniform(unbound, name = "u_Textures")]
     textures: Uniform<TextureBinding<Dim2Array, NormUnsigned>>,
+    /// A transform used to determine the transformation of a chunk.
     #[uniform(unbound, name = "u_Transform")]
     transform: Uniform<Mat44<f32>>,
 }
 
+/// A trait synonym for all the trait bounds that the terracotta tiled renderer requires.
 pub trait TiledBackend:
     TessBackend<Vertex, u16, (), Interleaved>
     + ShaderBackend
@@ -175,7 +184,7 @@ struct TilesetRenderData {
 }
 
 impl TilesetRenderData {
-    pub fn new(tileset: &Tileset, fs: &mut hv::fs::Filesystem) -> Result<Self, Error> {
+    fn new(tileset: &Tileset, fs: &mut hv::fs::Filesystem) -> Result<Self, Error> {
         if tileset.images.len() > 1 {
             return Err(anyhow!(
                 "Multiple images per tilesets aren't supported yet. Expected 1 image, got {}",
@@ -220,6 +229,8 @@ impl TilesetRenderData {
     }
 }
 
+/// A renderer primitive equivalent for the [`tiled::tile_layer::Chunk`] type. Owns graphics data
+/// for rendering chunks.
 pub struct ChunkMesh<B>
 where
     B: TiledBackend,
@@ -228,6 +239,7 @@ where
     tess: Tess<B, Vertex, u16, (), Interleaved>,
 }
 
+/// A renderer for Tiled maps. Exposes an API to load, update, and draw maps divided up into chunks.
 pub struct TiledRenderer<B>
 where
     B: TiledBackend,
@@ -252,6 +264,7 @@ impl<B> TiledRenderer<B>
 where
     B: TiledBackend,
 {
+    /// Creates a new TiledRenderer given a graphics context.
     pub fn new(ctx: &mut impl GraphicsContext<Backend = B>) -> Result<Self> {
         let program = ctx
             .new_shader_program::<VertexSemantics, (), Uniforms>()
@@ -273,6 +286,8 @@ where
         })
     }
 
+    /// Loads in a new Tiled [`Map`], expects a filesystem to get passed in so the renderer can load
+    /// the tilesets.
     pub fn load_new_map(
         &mut self,
         map: &Map,
@@ -430,6 +445,8 @@ where
         Ok(())
     }
 
+    /// Given an iterator of [`TileRemoval`]s, updates all indices making up the tiles and sets them to
+    /// [`u16::MAX`], effectively removing them.
     pub fn remove_tiles<'a>(
         &mut self,
         removals: impl Iterator<Item = &'a TileRemoval>,
@@ -463,6 +480,10 @@ where
         Ok(())
     }
 
+    /// Given an iterator of [`TileAddition`] and a Tiled [`Map`] object, overwrite the indices currently
+    /// making up the specified tile with the information provided in the new [`TileAddition`] object.
+    /// Note that this will return an [`Error`] if attemping to add a tile to a chunk which does not
+    /// exist yet.
     pub fn add_tiles<'a>(
         &mut self,
         additions: impl Iterator<Item = &'a TileAddition>,
@@ -553,6 +574,8 @@ where
         Ok(())
     }
 
+    /// Renders the entire [`Map`], using the specified `transform` as a model matrix, and a `comparison` to
+    /// determine how layers should get sorted.
     pub fn draw(
         &mut self,
         transform: Matrix4<f32>,
@@ -574,6 +597,7 @@ where
         Ok(())
     }
 
+    /// Renders all [`tiled::tile_layer::Chunks`] within the specified `tile_layer`.
     pub fn draw_layer(
         &mut self,
         transform: Matrix4<f32>,
@@ -592,6 +616,7 @@ where
         )
     }
 
+    /// Renders all chunks at the specified `coords` within the `tile_layer`.
     pub fn draw_chunks(
         &mut self,
         transform: Matrix4<f32>,
@@ -615,6 +640,7 @@ where
         Ok(())
     }
 
+    /// Renders a chunk at the given `x` and `y` coordinates in the specified `tile_layer`.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_chunk(
         &mut self,
@@ -646,6 +672,9 @@ where
                         if let Some(chunk_mesh) =
                             self.chunk_meshes[tile_layer.id.llid as usize].get(&(chunk_x, chunk_y))
                         {
+                            // A chunk might be considered dirty here if the memory for it was
+                            // allocated from a previous map, but it was never filled in for the
+                            // current map
                             if !chunk_mesh.dirty {
                                 tess_gate.render::<Error, _, _, _, _, _>(&chunk_mesh.tess)?;
                             }
