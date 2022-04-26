@@ -29,8 +29,6 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::hash::Hash;
-use std::io::BufReader;
-use std::path::Path;
 
 const VERTEX_SRC: &str = include_str!("brisk/brisk_es300.glslv");
 const FRAGMENT_SRC: &str = include_str!("brisk/brisk_es300.glslf");
@@ -198,21 +196,11 @@ pub struct Sprite {
     pub flipy: bool,
     /// The sprite's opacity, 1.0 being fully opaque, and 0.0 being fully transparent.
     pub opacity: f32,
-    /// An offset that will translate the sprite in the X direction by the given value.
-    pub offx: i32,
-    /// An offset that will translate the sprite in the Y direction by the given value.
-    pub offy: i32,
-    /// An offset that will translate the sprite in the Z direction by the given value.
-    pub offz: i32,
     /// Scales the sprite by the given value.
     pub scale: f32,
     /// Selects which frame to use within the spritesheet that this sprite belongs to. Indexed from top
     /// left to bottom right. This will be changed in the future once arbitrarily packed spritesheets are added.
     pub frame_id: usize,
-    /// Sprite width.
-    pub width: u32,
-    /// Sprite height.
-    pub height: u32,
 }
 
 impl Default for Sprite {
@@ -221,22 +209,33 @@ impl Default for Sprite {
             flipx: false,
             flipy: false,
             opacity: 1.,
-            offx: 0,
-            offy: 0,
-            offz: 0,
             scale: 1.,
             frame_id: 0,
-            width: 0,
-            height: 0,
         }
     }
+}
+
+/// Represents parameters used by the renderer to render a specific frame within a spritesheet.
+#[derive(Debug, Default)]
+pub struct Frame {
+    /// The UV coordinates for this specific frame.
+    pub uvs: F32Box2,
+    /// Integer offset in the X direction.
+    pub offx: u32,
+    /// Integer offset in the Y direction.
+    pub offy: u32,
+    // TODO: Not sure how aseprite uses this but it's probably important
+    _rotated: bool,
+    /// Frame width.
+    pub width: u32,
+    /// Frame height.
+    pub height: u32,
 }
 
 #[derive(Debug)]
 struct Spritesheet {
     path: StaticRc<str, 1, 2>,
-    id: Option<SpritesheetId>,
-    uvs: Vec<F32Box2>,
+    frames: Vec<Frame>,
 }
 
 /// A handle used to map sprite data to render data.
@@ -280,9 +279,9 @@ impl Drop for Spritesheets {
 
 impl Spritesheets {
     /// Creates a new spritesheet given a path and a [`Vec<F32Box2>`], representing the
-    /// UVs. Returns the [`SpritesheetId`] for the new spritesheet (in the event that the
-    /// specified path was already in present, the old SpritesheetId will be returned).
-    pub fn new_sheet(&mut self, path: &str, uvs: Vec<F32Box2>) -> SpritesheetId {
+    /// frames. Returns the [`SpritesheetId`] for the new spritesheet (in the event that the
+    /// specified path was already present, the old SpritesheetId will be returned).
+    pub fn new_sheet(&mut self, path: &str, frames: Vec<Frame>) -> SpritesheetId {
         if let Some(ssid) = self.path_map.get_mut(path) {
             self.uncached.insert(*ssid);
             *ssid
@@ -291,11 +290,60 @@ impl Spritesheets {
             let (half_1, half_2) = Full::split::<1, 1>(full);
             let id = self.ss_arena.insert(Spritesheet {
                 path: half_1,
-                id: None,
-                uvs,
+                frames,
             });
             let ssid = id.into();
-            self.ss_arena.get_mut(id).unwrap().id = Some(ssid);
+            self.path_map.insert(half_2, ssid);
+            self.uncached.insert(ssid);
+            ssid
+        }
+    }
+
+    #[cfg(feature = "aseprite")]
+    /// Creates a new spritesheet given an aseprite [`aseprite::SpritesheetData`]. Aseprite
+    /// frames are indexed using the `frame_id` field defined in the [`Sprite`] type.
+    /// Returns the [`SpritesheetId`] for the new spritesheet (in the event that the
+    /// specified path was already present, the old SpritesheetId will be returned).
+    pub fn new_from_aseprite_sheet(
+        &mut self,
+        ase_sheet: &aseprite::SpritesheetData,
+    ) -> SpritesheetId {
+        let path: &str = ase_sheet.meta.image.as_ref().unwrap();
+        if let Some(ssid) = self.path_map.get_mut(path) {
+            self.uncached.insert(*ssid);
+            *ssid
+        } else {
+            let full: StaticRc<str, 2, 2> = path.into();
+            let (half_1, half_2) = Full::split::<1, 1>(full);
+            let mut frames = Vec::with_capacity(ase_sheet.frames.len());
+            for ase_frame in ase_sheet.frames.iter() {
+                // I think these are always the same, but this assert is here to blow up in case they aren't
+                assert_eq!(ase_frame.sprite_source_size.w, ase_frame.frame.w);
+                assert_eq!(ase_frame.sprite_source_size.h, ase_frame.frame.h);
+                frames.push(Frame {
+                    // TODO: Need to flip the Ys everywhere here
+                    uvs: F32Box2::new(
+                        (ase_frame.frame.x as f32) / (ase_sheet.meta.size.w as f32),
+                        (ase_sheet.meta.size.h - ase_frame.frame.y - ase_frame.sprite_source_size.h)
+                            as f32
+                            / (ase_sheet.meta.size.h as f32),
+                        (ase_frame.frame.w as f32) / (ase_sheet.meta.size.w as f32),
+                        (ase_frame.frame.h as f32) / (ase_sheet.meta.size.h as f32),
+                    ),
+                    _rotated: ase_frame.rotated,
+                    width: ase_frame.sprite_source_size.w,
+                    height: ase_frame.sprite_source_size.h,
+                    offx: ase_frame.sprite_source_size.x,
+                    offy: ase_frame.source_size.h
+                        - ase_frame.sprite_source_size.y
+                        - ase_frame.frame.h,
+                });
+            }
+            let id = self.ss_arena.insert(Spritesheet {
+                path: half_1,
+                frames,
+            });
+            let ssid = id.into();
             self.path_map.insert(half_2, ssid);
             self.uncached.insert(ssid);
             ssid
@@ -329,10 +377,13 @@ where
         fs: &mut hv::fs::Filesystem,
         ss: &Spritesheet,
     ) -> Result<Self> {
-        let spritesheet_img = fs.open(&mut Path::new(&("/".to_owned() + &ss.path)))?;
+        let spritesheet_img = fs.open(&mut std::path::Path::new(&("/".to_owned() + &ss.path)))?;
 
-        let img = image::load(BufReader::new(spritesheet_img), image::ImageFormat::Png)
-            .map(|img| img.flipv().to_rgba8())?;
+        let img = image::load(
+            std::io::BufReader::new(spritesheet_img),
+            image::ImageFormat::Png,
+        )
+        .map(|img| img.flipv().to_rgba8())?;
         let (width, height) = img.dimensions();
         let texels = img.as_raw();
 
@@ -387,7 +438,6 @@ where
         fs: &mut hv::fs::Filesystem,
     ) -> Result<()> {
         for ssid in spritesheets.uncached.iter() {
-            println!("{:?}", ssid);
             let ss = spritesheets.get_spritesheet(*ssid);
             self.load_spritesheet(ctxt, ss, *ssid, fs)?;
         }
@@ -423,8 +473,8 @@ where
         mut set_function: impl FnMut(usize, Instance),
     ) -> Result<()> {
         for (i, (sprite, transform)) in sprite_data.iter().enumerate() {
-            let (mut uv_bot_left, _, _, mut uv_top_right) = spritesheet
-                .uvs
+            let frame = spritesheet
+                .frames
                 .get(sprite.frame_id)
                 // TODO: in the event of an out of bound this should log a warning and do what
                 // with the UVs?
@@ -434,8 +484,9 @@ where
                         sprite.frame_id,
                         spritesheet
                     )
-                })?
-                .corners();
+                })?;
+
+            let (mut uv_bot_left, _, _, mut uv_top_right) = frame.uvs.corners();
 
             // Flip sprite by flipping UVs
             if sprite.flipx {
@@ -445,31 +496,33 @@ where
             if sprite.flipy {
                 std::mem::swap(&mut uv_bot_left[1], &mut uv_top_right[1]);
             }
+            let offset_transform = transform
+                * Matrix4::new_translation(&Vector3::new(frame.offx as f32, frame.offy as f32, 0.));
 
             let instance = Instance {
                 col1: VertexInstanceTCol1::new([
-                    transform.m11,
-                    transform.m21,
-                    transform.m31,
-                    transform.m41,
+                    offset_transform.m11,
+                    offset_transform.m21,
+                    offset_transform.m31,
+                    offset_transform.m41,
                 ]),
                 col2: VertexInstanceTCol2::new([
-                    transform.m12,
-                    transform.m22,
-                    transform.m32,
-                    transform.m42,
+                    offset_transform.m12,
+                    offset_transform.m22,
+                    offset_transform.m32,
+                    offset_transform.m42,
                 ]),
                 col3: VertexInstanceTCol3::new([
-                    transform.m13,
-                    transform.m23,
-                    transform.m33,
-                    transform.m43,
+                    offset_transform.m13,
+                    offset_transform.m23,
+                    offset_transform.m33,
+                    offset_transform.m43,
                 ]),
                 col4: VertexInstanceTCol4::new([
-                    transform.m14,
-                    transform.m24,
-                    transform.m34,
-                    transform.m44,
+                    offset_transform.m14,
+                    offset_transform.m24,
+                    offset_transform.m34,
+                    offset_transform.m44,
                 ]),
                 uvs: VertexInstanceUvs::new([
                     uv_bot_left[0],
@@ -478,7 +531,7 @@ where
                     uv_top_right[1],
                 ]),
                 opacity: VertexInstanceOpacity::new(sprite.opacity),
-                dims: VertexInstanceDims::new([sprite.width, sprite.height]),
+                dims: VertexInstanceDims::new([frame.width, frame.height]),
             };
 
             set_function(i, instance);
