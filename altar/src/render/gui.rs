@@ -142,7 +142,7 @@ where
             Sampler::default(),
             TexelUpload::BaseLevel {
                 texels: &[[255, 255, 255, 255]],
-                mipmaps: None,
+                mipmaps: 0,
             },
         )?;
         textures.insert(egui::TextureId::Egui, initial_font_texture);
@@ -210,7 +210,7 @@ where
             egui_tex.size().map(|i| i as u32),
             TexelUpload::BaseLevel {
                 texels: &data,
-                mipmaps: None,
+                mipmaps: 0,
             },
         )?;
         Ok(())

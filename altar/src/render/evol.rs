@@ -1787,7 +1787,7 @@ impl<B: EvolBackend> EvolRenderer<B> {
             let texture = context.new_texture(
                 [1, 1],
                 Sampler::default(),
-                TexelUpload::base_level_without_mipmaps(&[[255, 255, 255, 255]]),
+                TexelUpload::base_level(&[[255, 255, 255, 255]], 0),
             )?;
             TextureId(textures.insert(texture))
         };

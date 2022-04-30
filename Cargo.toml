@@ -14,3 +14,6 @@ members = [
 [profile.dev]
 # Rust iterators are absolutely horrific without any optimizations, and we like them a lot.
 opt-level = 1
+
+[patch.crates-io]
+luminance-glyph = { path = "../luminance-glyph" }

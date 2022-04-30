@@ -279,7 +279,7 @@ where
                 ctx,
                 ([1, 1], 1),
                 nearest_sampler(),
-                TexelUpload::base_level_without_mipmaps(&[[255, 255, 255, 255]]),
+                TexelUpload::base_level(&[[255, 255, 255, 255]], 0),
             )?,
             tileset_tile_dims: Vec::new(),
             embedded_counter: 0,
@@ -397,7 +397,7 @@ where
                 [max_tileset_width, max_tileset_height],
                 render_data_keys.len().try_into().unwrap(),
             ),
-            TexelUpload::base_level_without_mipmaps(&texel_upload_rgba),
+            TexelUpload::base_level(&texel_upload_rgba, 0),
         )?;
 
         if self.chunk_meshes.len() < map.tile_layers.len() {

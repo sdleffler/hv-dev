@@ -392,7 +392,7 @@ where
                 ctxt,
                 [width, height],
                 nearest_sampler(),
-                TexelUpload::base_level_without_mipmaps(texels),
+                TexelUpload::base_level(texels, 0),
             )?,
             tess: TessBuilder::build(
                 TessBuilder::new(ctxt)
