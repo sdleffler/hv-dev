@@ -16,4 +16,6 @@ members = [
 opt-level = 1
 
 [patch.crates-io]
-luminance-glyph = { path = "../luminance-glyph" }
+luminance-glyph = { git = "https://github.com/maximveligan/luminance-glyph" }
+glfw-sys = { git = "https://github.com/maximveligan/glfw-sys-wayland.git" }
+glfw = { git = "https://github.com/maximveligan/glfw-rs-wayland.git" }
