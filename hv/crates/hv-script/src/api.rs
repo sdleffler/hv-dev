@@ -293,7 +293,7 @@ fn hv_filesystem_do_load<'lua>(
     fs: &mut Filesystem,
 ) -> LuaResult<LuaValue<'lua>> {
     let segments = package_path.split(';');
-    let path_replaced = path.replace(".", "/");
+    let path_replaced = path.replace('.', "/");
     let mut tried = Vec::new();
 
     for segment in segments {

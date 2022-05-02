@@ -871,6 +871,7 @@ dependencies = [
 [[package]]
 name = "glfw"
 version = "0.44.0"
+source = "git+https://github.com/maximveligan/glfw-rs-wayland.git#66c263b87c873a064420d2fd8fb452d15f2838bc"
 dependencies = [
  "bitflags",
  "glfw-sys",
@@ -882,6 +883,7 @@ dependencies = [
 [[package]]
 name = "glfw-sys"
 version = "3.3.5"
+source = "git+https://github.com/maximveligan/glfw-sys-wayland.git#afeed4e033f24df6dce16c2e51d930949e1e0613"
 dependencies = [
  "cmake",
 ]
@@ -1573,6 +1575,7 @@ dependencies = [
 [[package]]
 name = "luminance-glyph"
 version = "0.4.0"
+source = "git+https://github.com/maximveligan/luminance-glyph#2746296d08fd99bf288cccc41f6210fca833aefd"
 dependencies = [
  "glyph_brush",
  "log",

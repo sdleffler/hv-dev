@@ -639,7 +639,7 @@ impl<T: Read + Seek + Send + Sync> ZipArchiveAccess for zip::ZipArchive<T> {
         let stripped_name = str_name
             .strip_prefix('/')
             .unwrap_or(str_name)
-            .replace("\\", "/");
+            .replace('\\', "/");
         self.by_name(&stripped_name)
     }
 
