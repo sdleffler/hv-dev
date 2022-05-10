@@ -17,5 +17,5 @@ opt-level = 1
 
 [patch.crates-io]
 luminance-glyph = { git = "https://github.com/maximveligan/luminance-glyph" }
-glfw-sys = { git = "https://github.com/maximveligan/glfw-sys-wayland.git" }
+glfw-sys = { git = "https://github.com/PistonDevelopers/glfw-sys" }
 glfw = { git = "https://github.com/maximveligan/glfw-rs-wayland.git" }
